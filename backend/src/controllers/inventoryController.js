@@ -198,18 +198,47 @@ const addInventoryItem = async (req, res) => {
   }
 
   try {
-    const resolvedBranchId = branchId ? parseInt(branchId, 10) : 1;
+    let resolvedBranchId = branchId ? parseInt(branchId, 10) : (req.user?.branchId || null);
+    if (resolvedBranchId) {
+      const bExists = await prisma.branch.findUnique({ where: { id: resolvedBranchId } });
+      if (!bExists) {
+        const firstB = await prisma.branch.findFirst({ select: { id: true } });
+        resolvedBranchId = firstB ? firstB.id : 1;
+      }
+    } else {
+      const firstB = await prisma.branch.findFirst({ select: { id: true } });
+      resolvedBranchId = firstB ? firstB.id : 1;
+    }
 
-    // Check branch uniqueness
+    // Check branch uniqueness (case-insensitive)
     const existingSameBranch = await prisma.inventoryItem.findFirst({
       where: {
-        name,
+        name: { equals: name.trim(), mode: 'insensitive' },
         branchId: resolvedBranchId
       }
     });
 
     if (existingSameBranch) {
-      return res.status(400).json({ error: `An inventory item named "${name}" already exists for this branch.` });
+      return res.status(400).json({
+        error: `An inventory item named "${name}" already exists for this branch.`,
+        existingItem: existingSameBranch
+      });
+    }
+
+    // Check SKU uniqueness if provided
+    if (sku && String(sku).trim()) {
+      const existingSku = await prisma.inventoryItem.findFirst({
+        where: {
+          sku: String(sku).trim(),
+          branchId: resolvedBranchId
+        }
+      });
+      if (existingSku) {
+        return res.status(400).json({
+          error: `SKU "${sku}" is already assigned to item "${existingSku.name}".`,
+          existingItem: existingSku
+        });
+      }
     }
 
     const item = await prisma.inventoryItem.create({
@@ -1342,7 +1371,7 @@ const getReceivingById = async (req, res) => {
  * Create new stock receiving transaction (DRAFT or CONFIRMED RECEIVED)
  */
 const createReceiving = async (req, res) => {
-  const { supplierId, invoiceNumber, branchId, receivingDate, notes, items, status } = req.body;
+  const { supplierId, invoiceNumber, receivingRef, branchId, receivingDate, notes, items, status } = req.body;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'At least one inventory item is required for stock receiving.' });
@@ -1352,12 +1381,35 @@ const createReceiving = async (req, res) => {
   const targetStatus = isConfirmed ? 'RECEIVED' : 'DRAFT';
 
   try {
-    const year = new Date().getFullYear();
-    const timestamp = Date.now().toString().slice(-6);
-    const receivingNumber = `REC-${year}-${timestamp}`;
+    let receivingNumber = receivingRef ? String(receivingRef).trim() : null;
+    if (!receivingNumber) {
+      const year = new Date().getFullYear();
+      const timestamp = Date.now().toString().slice(-6);
+      receivingNumber = `REC-${year}-${timestamp}`;
+    }
 
-    const resolvedBranchId = branchId ? parseInt(branchId, 10) : (req.user?.branchId || 1);
-    const resolvedSupplierId = supplierId ? parseInt(supplierId, 10) : null;
+    // Parallelize pre-checks to eliminate sequential round-trip network delays
+    const candidateBranchId = branchId ? parseInt(branchId, 10) : (req.user?.branchId || null);
+    const candidateSupplierId = supplierId ? parseInt(supplierId, 10) : null;
+
+    const [existingRec, branchCheck, supplierCheck] = await Promise.all([
+      prisma.inventoryReceiving.findUnique({ where: { receivingNumber }, select: { id: true } }),
+      candidateBranchId ? prisma.branch.findUnique({ where: { id: candidateBranchId }, select: { id: true } }) : null,
+      candidateSupplierId ? prisma.supplier.findUnique({ where: { id: candidateSupplierId }, select: { id: true } }) : null
+    ]);
+
+    if (existingRec) {
+      receivingNumber = `${receivingNumber}-${Math.floor(100 + Math.random() * 900)}`;
+    }
+
+    let resolvedBranchId = branchCheck ? branchCheck.id : null;
+    if (!resolvedBranchId) {
+      const defaultBranch = await prisma.branch.findFirst({ select: { id: true } });
+      resolvedBranchId = defaultBranch ? defaultBranch.id : null;
+    }
+
+    let resolvedSupplierId = supplierCheck ? supplierCheck.id : null;
+
     const resolvedDate = receivingDate ? new Date(receivingDate) : new Date();
 
     const preparedItems = [];
@@ -1387,17 +1439,18 @@ const createReceiving = async (req, res) => {
       });
     }
 
-    const receiving = await prisma.$transaction(async (tx) => {
-      const newReceiving = await tx.inventoryReceiving.create({
+    let receiving;
+    if (targetStatus === 'DRAFT') {
+      receiving = await prisma.inventoryReceiving.create({
         data: {
           receivingNumber,
           supplierId: resolvedSupplierId,
           invoiceNumber: invoiceNumber ? String(invoiceNumber).trim() : null,
           branchId: resolvedBranchId,
           receivingDate: resolvedDate,
-          receivedById: req.user.id,
+          receivedById: req.user?.id || null,
           notes: notes ? String(notes).trim() : null,
-          status: targetStatus,
+          status: 'DRAFT',
           totalCost: calculatedTotalCost,
           items: {
             create: preparedItems,
@@ -1410,12 +1463,40 @@ const createReceiving = async (req, res) => {
           items: { include: { inventoryItem: true } },
         },
       });
+    } else {
+      receiving = await prisma.$transaction(async (tx) => {
+        const newReceiving = await tx.inventoryReceiving.create({
+          data: {
+            receivingNumber,
+            supplierId: resolvedSupplierId,
+            invoiceNumber: invoiceNumber ? String(invoiceNumber).trim() : null,
+            branchId: resolvedBranchId,
+            receivingDate: resolvedDate,
+            receivedById: req.user?.id || null,
+            notes: notes ? String(notes).trim() : null,
+            status: targetStatus,
+            totalCost: calculatedTotalCost,
+            items: {
+              create: preparedItems,
+            },
+          },
+          include: {
+            supplier: true,
+            branch: true,
+            receivedBy: { select: { id: true, name: true, email: true } },
+            items: { include: { inventoryItem: true } },
+          },
+        });
 
-      if (targetStatus === 'RECEIVED') {
+        const itemIds = [...new Set(newReceiving.items.map(i => i.inventoryItemId))];
+        const existingItems = await tx.inventoryItem.findMany({
+          where: { id: { in: itemIds } }
+        });
+        const itemsMap = new Map(existingItems.map(i => [i.id, i]));
+        const logsToCreate = [];
+
         for (const item of newReceiving.items) {
-          const existingItem = await tx.inventoryItem.findUnique({
-            where: { id: item.inventoryItemId }
-          });
+          const existingItem = itemsMap.get(item.inventoryItemId);
 
           if (!existingItem) {
             throw new Error(`Inventory item ID ${item.inventoryItemId} not found.`);
@@ -1424,6 +1505,7 @@ const createReceiving = async (req, res) => {
           const qtyBefore = existingItem.stockLevel;
           const qtyAfter = qtyBefore + item.quantity;
           const newCost = item.unitCost > 0 ? item.unitCost : existingItem.costPrice;
+          existingItem.stockLevel = qtyAfter;
 
           const updateData = {
             stockLevel: qtyAfter,
@@ -1438,37 +1520,44 @@ const createReceiving = async (req, res) => {
             data: updateData
           });
 
-          await tx.inventoryLog.create({
-            data: {
-              inventoryItemId: existingItem.id,
-              type: 'STOCK_IN',
-              quantity: item.quantity,
-              quantityBefore: qtyBefore,
-              quantityAfter: qtyAfter,
-              changeQty: item.quantity,
-              cost: item.totalCost,
-              reason: `Stock receiving #${newReceiving.receivingNumber} (Inv: ${newReceiving.invoiceNumber || 'N/A'})`,
-              batchNumber: item.batchNumber,
-              expiryDate: item.expiryDate,
-              supplierId: resolvedSupplierId,
-              receivingId: newReceiving.id,
-              userId: req.user.id,
-            }
+          logsToCreate.push({
+            inventoryItemId: existingItem.id,
+            type: 'STOCK_IN',
+            quantity: item.quantity,
+            quantityBefore: qtyBefore,
+            quantityAfter: qtyAfter,
+            changeQty: item.quantity,
+            cost: item.totalCost,
+            reason: `Stock receiving #${newReceiving.receivingNumber} (Inv: ${newReceiving.invoiceNumber || 'N/A'})`,
+            batchNumber: item.batchNumber,
+            expiryDate: item.expiryDate,
+            supplierId: resolvedSupplierId,
+            receivingId: newReceiving.id,
+            userId: req.user?.id || null,
           });
         }
-      }
 
-      return newReceiving;
-    });
+        if (logsToCreate.length > 0) {
+          await tx.inventoryLog.createMany({
+            data: logsToCreate
+          });
+        }
 
-    await logAudit({
-      userId: req.user.id,
+        return newReceiving;
+      }, {
+        maxWait: 20000,
+        timeout: 60000
+      });
+    }
+
+    logAudit({
+      userId: req.user?.id || 1,
       action: isConfirmed ? 'STOCK_RECEIVING_CONFIRMED' : 'STOCK_RECEIVING_DRAFT_CREATED',
       entity: 'InventoryReceiving',
-      entityId: receiving.id,
+      entityId: String(receiving.id),
       newValue: { receivingNumber: receiving.receivingNumber, totalCost: receiving.totalCost, status: receiving.status },
       req
-    });
+    }).catch(err => console.error('Audit log error:', err?.message));
 
     if (isConfirmed) {
       emitToAdmin('inventory:update', { receiving });
@@ -1509,11 +1598,26 @@ const confirmReceiving = async (req, res) => {
       return res.status(400).json({ error: 'Cancelled receiving records cannot be confirmed.' });
     }
 
+    if (!existingReceiving.items || existingReceiving.items.length === 0) {
+      return res.status(400).json({ error: 'Cannot confirm a receiving record with no items.' });
+    }
+
     const updatedReceiving = await prisma.$transaction(async (tx) => {
+      let resolvedSupplierId = existingReceiving.supplierId;
+      if (resolvedSupplierId) {
+        const supExists = await tx.supplier.findUnique({ where: { id: resolvedSupplierId } });
+        if (!supExists) resolvedSupplierId = null;
+      }
+
+      const itemIds = [...new Set(existingReceiving.items.map(i => i.inventoryItemId))];
+      const existingItems = await tx.inventoryItem.findMany({
+        where: { id: { in: itemIds } }
+      });
+      const itemsMap = new Map(existingItems.map(i => [i.id, i]));
+      const logsToCreate = [];
+
       for (const item of existingReceiving.items) {
-        const existingItem = await tx.inventoryItem.findUnique({
-          where: { id: item.inventoryItemId }
-        });
+        const existingItem = itemsMap.get(item.inventoryItemId);
 
         if (!existingItem) {
           throw new Error(`Inventory item ID ${item.inventoryItemId} not found.`);
@@ -1522,6 +1626,7 @@ const confirmReceiving = async (req, res) => {
         const qtyBefore = existingItem.stockLevel;
         const qtyAfter = qtyBefore + item.quantity;
         const newCost = item.unitCost > 0 ? item.unitCost : existingItem.costPrice;
+        existingItem.stockLevel = qtyAfter;
 
         const updateData = {
           stockLevel: qtyAfter,
@@ -1536,22 +1641,26 @@ const confirmReceiving = async (req, res) => {
           data: updateData
         });
 
-        await tx.inventoryLog.create({
-          data: {
-            inventoryItemId: existingItem.id,
-            type: 'STOCK_IN',
-            quantity: item.quantity,
-            quantityBefore: qtyBefore,
-            quantityAfter: qtyAfter,
-            changeQty: item.quantity,
-            cost: item.totalCost,
-            reason: `Stock receiving #${existingReceiving.receivingNumber} (Inv: ${existingReceiving.invoiceNumber || 'N/A'})`,
-            batchNumber: item.batchNumber,
-            expiryDate: item.expiryDate,
-            supplierId: existingReceiving.supplierId,
-            receivingId: existingReceiving.id,
-            userId: req.user.id,
-          }
+        logsToCreate.push({
+          inventoryItemId: existingItem.id,
+          type: 'STOCK_IN',
+          quantity: item.quantity,
+          quantityBefore: qtyBefore,
+          quantityAfter: qtyAfter,
+          changeQty: item.quantity,
+          cost: item.totalCost,
+          reason: `Stock receiving #${existingReceiving.receivingNumber} (Inv: ${existingReceiving.invoiceNumber || 'N/A'})`,
+          batchNumber: item.batchNumber,
+          expiryDate: item.expiryDate,
+          supplierId: resolvedSupplierId,
+          receivingId: existingReceiving.id,
+          userId: req.user?.id || null,
+        });
+      }
+
+      if (logsToCreate.length > 0) {
+        await tx.inventoryLog.createMany({
+          data: logsToCreate
         });
       }
 
@@ -1559,7 +1668,7 @@ const confirmReceiving = async (req, res) => {
         where: { id: existingReceiving.id },
         data: {
           status: 'RECEIVED',
-          receivedById: req.user.id,
+          receivedById: req.user?.id || existingReceiving.receivedById,
         },
         include: {
           supplier: true,
@@ -1570,16 +1679,19 @@ const confirmReceiving = async (req, res) => {
       });
 
       return updated;
+    }, {
+      maxWait: 20000,
+      timeout: 60000
     });
 
-    await logAudit({
-      userId: req.user.id,
+    logAudit({
+      userId: req.user?.id || 1,
       action: 'STOCK_RECEIVING_CONFIRMED',
       entity: 'InventoryReceiving',
-      entityId: updatedReceiving.id,
+      entityId: String(updatedReceiving.id),
       newValue: { receivingNumber: updatedReceiving.receivingNumber, status: 'RECEIVED' },
       req
-    });
+    }).catch(err => console.error('Audit log error:', err?.message));
 
     emitToAdmin('inventory:update', { receiving: updatedReceiving });
     emitToVendor('inventory:update', { receiving: updatedReceiving });
@@ -1631,6 +1743,194 @@ const cancelReceiving = async (req, res) => {
   } catch (error) {
     console.error('Cancel receiving error:', error);
     return res.status(500).json({ error: 'Failed to cancel stock receiving.' });
+  }
+};
+
+/**
+ * Update an existing draft stock receiving transaction
+ */
+const updateReceiving = async (req, res) => {
+  const { id } = req.params;
+  const { supplierId, invoiceNumber, receivingRef, branchId, receivingDate, notes, items, status, batchNumber: docBatch } = req.body;
+
+  try {
+    const recId = parseInt(id, 10);
+    const existing = await prisma.inventoryReceiving.findUnique({
+      where: { id: recId },
+      include: { items: true }
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Stock receiving record not found.' });
+    }
+
+    if (existing.status === 'RECEIVED') {
+      return res.status(400).json({ error: 'Confirmed stock receiving records cannot be edited.' });
+    }
+
+    const isConfirmed = status && status.toUpperCase() === 'RECEIVED';
+    const targetStatus = isConfirmed ? 'RECEIVED' : 'DRAFT';
+
+    const candidateBranchId = branchId !== undefined ? (branchId ? parseInt(branchId, 10) : null) : existing.branchId;
+    const candidateSupplierId = supplierId !== undefined ? (supplierId ? parseInt(supplierId, 10) : null) : existing.supplierId;
+
+    const [branchCheck, supplierCheck] = await Promise.all([
+      candidateBranchId ? prisma.branch.findUnique({ where: { id: candidateBranchId }, select: { id: true } }) : null,
+      candidateSupplierId ? prisma.supplier.findUnique({ where: { id: candidateSupplierId }, select: { id: true } }) : null
+    ]);
+
+    const resolvedBranchId = branchCheck ? branchCheck.id : existing.branchId;
+    const resolvedSupplierId = supplierCheck ? supplierCheck.id : existing.supplierId;
+
+    const resolvedDate = receivingDate ? new Date(receivingDate) : existing.receivingDate;
+    const shipmentBatch = docBatch ? String(docBatch).trim() : null;
+
+    let preparedItems = [];
+    let calculatedTotalCost = 0.0;
+
+    if (items && Array.isArray(items) && items.length > 0) {
+      for (const item of items) {
+        const invId = parseInt(item.inventoryItemId, 10);
+        const qty = parseFloat(item.quantity);
+        const cost = item.unitCost !== undefined && item.unitCost !== '' ? parseFloat(item.unitCost) : 0.0;
+
+        if (isNaN(invId) || isNaN(qty) || qty <= 0) {
+          return res.status(400).json({ error: 'All receiving items must specify a valid inventory item and positive quantity.' });
+        }
+
+        const itemTotal = qty * cost;
+        calculatedTotalCost += itemTotal;
+
+        preparedItems.push({
+          inventoryItemId: invId,
+          quantity: qty,
+          unit: item.unit || 'PCS',
+          unitCost: cost,
+          totalCost: itemTotal,
+          batchNumber: shipmentBatch || (item.batchNumber ? String(item.batchNumber).trim() : null),
+          expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+          notes: item.notes ? String(item.notes).trim() : null,
+        });
+      }
+    }
+
+    const updatedReceiving = await prisma.$transaction(async (tx) => {
+      if (preparedItems.length > 0) {
+        await tx.inventoryReceivingItem.deleteMany({
+          where: { receivingId: recId }
+        });
+      }
+
+      const updated = await tx.inventoryReceiving.update({
+        where: { id: recId },
+        data: {
+          ...(receivingRef && receivingRef.trim() !== existing.receivingNumber ? { receivingNumber: receivingRef.trim() } : {}),
+          supplierId: resolvedSupplierId,
+          invoiceNumber: invoiceNumber ? String(invoiceNumber).trim() : existing.invoiceNumber,
+          branchId: resolvedBranchId,
+          receivingDate: resolvedDate,
+          receivedById: req.user?.id || existing.receivedById,
+          notes: notes ? String(notes).trim() : existing.notes,
+          status: targetStatus,
+          ...(preparedItems.length > 0 ? { totalCost: calculatedTotalCost } : {}),
+          ...(preparedItems.length > 0 ? {
+            items: {
+              create: preparedItems
+            }
+          } : {})
+        },
+        include: {
+          supplier: true,
+          branch: true,
+          receivedBy: { select: { id: true, name: true, email: true } },
+          items: { include: { inventoryItem: true } }
+        }
+      });
+
+      if (targetStatus === 'RECEIVED') {
+        const itemIds = [...new Set(updated.items.map(i => i.inventoryItemId))];
+        const existingItems = await tx.inventoryItem.findMany({
+          where: { id: { in: itemIds } }
+        });
+        const itemsMap = new Map(existingItems.map(i => [i.id, i]));
+        const logsToCreate = [];
+
+        for (const item of updated.items) {
+          const existingItem = itemsMap.get(item.inventoryItemId);
+
+          if (!existingItem) {
+            throw new Error(`Inventory item ID ${item.inventoryItemId} not found.`);
+          }
+
+          const qtyBefore = existingItem.stockLevel;
+          const qtyAfter = qtyBefore + item.quantity;
+          const newCost = item.unitCost > 0 ? item.unitCost : existingItem.costPrice;
+          existingItem.stockLevel = qtyAfter;
+
+          const updateData = {
+            stockLevel: qtyAfter,
+            costPrice: newCost,
+          };
+          if (item.expiryDate) {
+            updateData.expiryDate = item.expiryDate;
+          }
+
+          await tx.inventoryItem.update({
+            where: { id: existingItem.id },
+            data: updateData
+          });
+
+          logsToCreate.push({
+            inventoryItemId: existingItem.id,
+            type: 'STOCK_IN',
+            quantity: item.quantity,
+            quantityBefore: qtyBefore,
+            quantityAfter: qtyAfter,
+            changeQty: item.quantity,
+            cost: item.totalCost,
+            reason: `Stock receiving #${updated.receivingNumber} (Inv: ${updated.invoiceNumber || 'N/A'})`,
+            batchNumber: item.batchNumber,
+            expiryDate: item.expiryDate,
+            supplierId: resolvedSupplierId,
+            receivingId: updated.id,
+            userId: req.user?.id || null,
+          });
+        }
+
+        if (logsToCreate.length > 0) {
+          await tx.inventoryLog.createMany({
+            data: logsToCreate
+          });
+        }
+      }
+
+      return updated;
+    }, {
+      maxWait: 20000,
+      timeout: 60000
+    });
+
+    logAudit({
+      userId: req.user?.id || 1,
+      action: isConfirmed ? 'STOCK_RECEIVING_CONFIRMED' : 'STOCK_RECEIVING_DRAFT_UPDATED',
+      entity: 'InventoryReceiving',
+      entityId: String(updatedReceiving.id),
+      newValue: { receivingNumber: updatedReceiving.receivingNumber, status: updatedReceiving.status },
+      req
+    }).catch(err => console.error('Audit log error:', err?.message));
+
+    if (isConfirmed) {
+      emitToAdmin('inventory:update', { receiving: updatedReceiving });
+      emitToVendor('inventory:update', { receiving: updatedReceiving });
+    }
+
+    return res.json({
+      message: isConfirmed ? 'Stock receiving confirmed successfully. Inventory quantities updated.' : 'Draft stock receiving updated successfully.',
+      receiving: updatedReceiving
+    });
+  } catch (error) {
+    console.error('Update receiving error:', error.message);
+    return res.status(500).json({ error: error.message || 'Failed to update stock receiving.' });
   }
 };
 
@@ -2220,9 +2520,16 @@ const updateBatchExpiry = async (req, res) => {
         }).catch(() => null);
       }
 
-      emitToAdmin('inventory:updated', { type: 'BATCH_EXPIRY_UPDATE', item: updatedRecItem });
-      emitToVendor('inventory:updated', { type: 'BATCH_EXPIRY_UPDATE', item: updatedRecItem });
-      logAudit(req.user?.id || 1, 'UPDATE_BATCH_EXPIRY', 'InventoryReceivingItem', recItemId, { expiryDate, batchNumber });
+      emitToAdmin('inventory:update', { type: 'BATCH_EXPIRY_UPDATE', item: updatedRecItem });
+      emitToVendor('inventory:update', { type: 'BATCH_EXPIRY_UPDATE', item: updatedRecItem });
+      await logAudit({
+        userId: req.user?.id || 1,
+        action: 'UPDATE_BATCH_EXPIRY',
+        entity: 'InventoryReceivingItem',
+        entityId: recItemId,
+        newValue: { expiryDate, batchNumber },
+        req
+      });
 
       return res.json({ message: 'Batch expiry updated successfully.', item: updatedRecItem });
     } else if (inventoryItemId || source === 'ITEM') {
@@ -2248,9 +2555,16 @@ const updateBatchExpiry = async (req, res) => {
         include: { supplier: true, branch: true }
       });
 
-      emitToAdmin('inventory:updated', { type: 'ITEM_EXPIRY_UPDATE', item: updatedItem });
-      emitToVendor('inventory:updated', { type: 'ITEM_EXPIRY_UPDATE', item: updatedItem });
-      logAudit(req.user?.id || 1, 'UPDATE_ITEM_EXPIRY', 'InventoryItem', invId, { expiryDate, batchNumber });
+      emitToAdmin('inventory:update', { type: 'ITEM_EXPIRY_UPDATE', item: updatedItem });
+      emitToVendor('inventory:update', { type: 'ITEM_EXPIRY_UPDATE', item: updatedItem });
+      await logAudit({
+        userId: req.user?.id || 1,
+        action: 'UPDATE_ITEM_EXPIRY',
+        entity: 'InventoryItem',
+        entityId: invId,
+        newValue: { expiryDate, batchNumber },
+        req
+      });
 
       return res.json({ message: 'Inventory item expiry updated successfully.', item: updatedItem });
     } else {
@@ -2262,11 +2576,176 @@ const updateBatchExpiry = async (req, res) => {
   }
 };
 
+/**
+ * Bulk add new inventory items to catalog (without stock increment)
+ */
+const bulkAddInventoryItems = async (req, res) => {
+  const { items, branchId } = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Items array is required.' });
+  }
+
+  try {
+    let resolvedBranchId = branchId ? parseInt(branchId, 10) : (req.user?.branchId || null);
+    if (resolvedBranchId) {
+      const bExists = await prisma.branch.findUnique({ where: { id: resolvedBranchId } });
+      if (!bExists) {
+        const firstB = await prisma.branch.findFirst({ select: { id: true } });
+        resolvedBranchId = firstB ? firstB.id : 1;
+      }
+    } else {
+      const firstB = await prisma.branch.findFirst({ select: { id: true } });
+      resolvedBranchId = firstB ? firstB.id : 1;
+    }
+
+    const results = [];
+    let savedCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < items.length; i++) {
+      const itemData = items[i];
+      const {
+        name,
+        unit,
+        category,
+        sku,
+        costPrice,
+        minThreshold,
+        maxThreshold,
+        supplierId,
+        expiryDate,
+        rowIndex
+      } = itemData;
+
+      if (!name || !String(name).trim()) {
+        results.push({
+          index: rowIndex !== undefined ? rowIndex : i,
+          name: name || 'Unnamed Item',
+          success: false,
+          error: 'Item name is required.'
+        });
+        failedCount++;
+        continue;
+      }
+
+      if (!unit || !String(unit).trim()) {
+        results.push({
+          index: rowIndex !== undefined ? rowIndex : i,
+          name: String(name).trim(),
+          success: false,
+          error: 'Unit is required.'
+        });
+        failedCount++;
+        continue;
+      }
+
+      const trimmedName = String(name).trim();
+      const trimmedUnit = String(unit).trim().toUpperCase();
+
+      // Check if duplicate item name already exists in branch
+      const existing = await prisma.inventoryItem.findFirst({
+        where: {
+          name: { equals: trimmedName, mode: 'insensitive' },
+          branchId: resolvedBranchId
+        }
+      });
+
+      if (existing) {
+        results.push({
+          index: rowIndex !== undefined ? rowIndex : i,
+          name: trimmedName,
+          success: true,
+          alreadyExists: true,
+          item: existing,
+          message: 'Item already exists in catalog; linked existing item.'
+        });
+        savedCount++;
+        continue;
+      }
+
+      // Check SKU uniqueness if provided
+      if (sku && String(sku).trim()) {
+        const existingSku = await prisma.inventoryItem.findFirst({
+          where: {
+            sku: String(sku).trim(),
+            branchId: resolvedBranchId
+          }
+        });
+        if (existingSku) {
+          results.push({
+            index: rowIndex !== undefined ? rowIndex : i,
+            name: trimmedName,
+            success: false,
+            error: `SKU "${sku}" is already assigned to item "${existingSku.name}".`,
+            existingItem: existingSku
+          });
+          failedCount++;
+          continue;
+        }
+      }
+
+      try {
+        const newItem = await prisma.inventoryItem.create({
+          data: {
+            name: trimmedName,
+            stockLevel: 0.0, // Strictly 0 initial stock! Catalog creation does NOT increase stock!
+            unit: trimmedUnit,
+            minThreshold: minThreshold ? parseFloat(minThreshold) : 10.0,
+            maxThreshold: maxThreshold ? parseFloat(maxThreshold) : 100.0,
+            category: category || 'General',
+            sku: sku ? String(sku).trim() : null,
+            costPrice: costPrice ? parseFloat(costPrice) : 0.0,
+            expiryDate: expiryDate ? new Date(expiryDate) : null,
+            supplierId: supplierId ? parseInt(supplierId, 10) : null,
+            branchId: resolvedBranchId
+          },
+          include: { supplier: true, branch: true }
+        });
+
+        emitToAdmin('inventory:update', newItem);
+        emitToVendor('inventory:update', newItem);
+
+        results.push({
+          index: rowIndex !== undefined ? rowIndex : i,
+          name: trimmedName,
+          success: true,
+          item: newItem
+        });
+        savedCount++;
+      } catch (itemErr) {
+        console.error(`Bulk add catalog item "${trimmedName}" error:`, itemErr);
+        results.push({
+          index: rowIndex !== undefined ? rowIndex : i,
+          name: trimmedName,
+          success: false,
+          error: itemErr.code === 'P2002' ? 'Duplicate item name in this branch.' : (itemErr.message || 'Database error')
+        });
+        failedCount++;
+      }
+    }
+
+    return res.status(200).json({
+      message: `${items.length} new items processed: ${savedCount} saved successfully, ${failedCount} need correction.`,
+      summary: {
+        total: items.length,
+        savedCount,
+        failedCount
+      },
+      results
+    });
+  } catch (error) {
+    console.error('Bulk add inventory items error:', error);
+    return res.status(500).json({ error: 'Failed to process bulk catalog saving.' });
+  }
+};
+
 module.exports = {
   getSmartAIInsights,
   getInventorySummary,
   getInventoryItems,
   addInventoryItem,
+  bulkAddInventoryItems,
   updateInventoryItem,
   deleteInventoryItem,
   stockIn,
@@ -2291,6 +2770,7 @@ module.exports = {
   createReceiving,
   confirmReceiving,
   cancelReceiving,
+  updateReceiving,
   previewImportCSV,
   previewAiOcrInvoice,
   suggestRecipeForMenuItem,

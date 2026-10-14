@@ -3,68 +3,99 @@
  * Supports .xlsx, .xls, .csv files, PDF/image OCR text, Groq AI Vision scan, and matches rows against InventoryItem catalog.
  */
 const XLSX = require('xlsx');
+const pdfParse = require('pdf-parse');
 const { prisma } = require('../config/db');
-const { analyzeInvoiceImageWithGroq } = require('./groqService');
+const { analyzeInvoiceImageWithGroq, parseInvoiceTextWithGroq } = require('./groqService');
 
 /**
  * Normalizes header string for fuzzy matching
  */
 const normalizeHeader = (h) => String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-// Urdu / English POS Alias Dictionary for Smart Match
+/**
+ * Normalizes item names for exact and token comparison
+ */
+const normalizeItemName = (str) => {
+  return String(str || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+/**
+ * Groups of mutually exclusive variant keywords.
+ * If an invoice item and a catalog candidate contain DIFFERENT keywords from the same group,
+ * they MUST NEVER be auto-matched!
+ */
+const VARIANT_EXCLUSIVE_GROUPS = [
+  // Meat cuts & preparations
+  ['breast', 'mince', 'keema', 'qeema', 'wings', 'thigh', 'boneless', 'fillet', 'boti', 'tikka', 'patty', 'patties', 'kebab', 'kabab', 'seekh', 'strips'],
+  // Meat species
+  ['chicken', 'beef', 'mutton', 'lamb', 'fish', 'prawn', 'prawns', 'shrimp'],
+  // Bakery
+  ['bun', 'buns', 'bread', 'pita', 'naan', 'paratha', 'crust', 'dough', 'croissant'],
+  // Fats & dairy
+  ['oil', 'ghee', 'butter', 'cream', 'milk', 'yogurt', 'curd', 'cheese'],
+  // Physical form
+  ['powder', 'seeds', 'flakes', 'paste', 'sauce', 'whole', 'slices', 'shredded'],
+  // Volume/packaging sizes
+  ['250ml', '500ml', '1l', '1.5l', '2l', '19l', '1kg', '5kg', '10kg', 'small', 'medium', 'large']
+];
+
+/**
+ * Checks if two item names have conflicting exclusive variant keywords.
+ */
+const hasConflictingVariants = (name1, name2) => {
+  const norm1 = normalizeItemName(name1);
+  const norm2 = normalizeItemName(name2);
+  const words1 = new Set(norm1.split(' '));
+  const words2 = new Set(norm2.split(' '));
+
+  for (const group of VARIANT_EXCLUSIVE_GROUPS) {
+    const foundIn1 = group.filter(w => words1.has(w));
+    const foundIn2 = group.filter(w => words2.has(w));
+
+    if (foundIn1.length > 0 && foundIn2.length > 0) {
+      // Both specify a keyword from this variant group. Check if they overlap.
+      const overlap = foundIn1.some(w => foundIn2.includes(w));
+      if (!overlap) {
+        // They explicitly specify DIFFERENT variants from the same category! (e.g. breast vs mince)
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+// Urdu / English POS Alias Dictionary for Smart Match (exact term mappings)
 const ITEM_ALIASES_MAP = {
-  'aloo': ['potatoes', 'potato', 'fresh potatoes'],
-  'potatoes': ['potatoes', 'potato', 'aloo', 'patato'],
-  'potato': ['potatoes', 'potato', 'aloo'],
-  'pyaz': ['onions', 'onion', 'pyaaz'],
-  'onions': ['onions', 'onion', 'pyaz', 'pyaaz'],
-  'onion': ['onions', 'onion', 'pyaz'],
-  'tamatar': ['tomatoes', 'tomato'],
-  'tomatoes': ['tomatoes', 'tomato', 'tamatar'],
-  'tomato': ['tomatoes', 'tomato', 'tamatar'],
-  'doodh': ['milk', 'fresh milk', 'tetrapak milk'],
-  'milk': ['milk', 'fresh milk', 'doodh'],
-  'anda': ['eggs', 'egg', 'anday', 'fresh eggs'],
-  'eggs': ['eggs', 'egg', 'anda', 'anday'],
-  'egg': ['eggs', 'egg', 'anda'],
+  'aloo': ['potatoes'],
+  'pyaz': ['onions'],
+  'pyaaz': ['onions'],
+  'tamatar': ['tomatoes'],
+  'doodh': ['fresh milk', 'milk'],
+  'anda': ['eggs'],
+  'anday': ['eggs'],
   'adrak': ['ginger'],
-  'ginger': ['ginger', 'adrak'],
-  'lehsan': ['garlic', 'lahsan'],
-  'garlic': ['garlic', 'lehsan', 'lahsan'],
-  'hari mirch': ['green chillies', 'green chilli'],
-  'dahi': ['yogurt', 'curd'],
-  'yogurt': ['yogurt', 'dahi', 'curd'],
+  'lehsan': ['garlic'],
+  'lahsan': ['garlic'],
+  'hari mirch': ['green chillies'],
+  'dahi': ['yogurt'],
   'makhan': ['butter'],
-  'butter': ['butter', 'makhan'],
-  'aata': ['wheat flour', 'flour'],
-  'flour': ['wheat flour', 'maida', 'aata', 'refined flour'],
-  'maida': ['refined flour', 'all-purpose flour', 'maida'],
+  'aata': ['wheat flour'],
+  'maida': ['refined flour', 'maida'],
   'besan': ['gram flour', 'besan'],
-  'chawal': ['basmati rice', 'rice', 'sella rice'],
-  'rice': ['basmati rice', 'rice', 'sella rice', 'chawal'],
-  'keema': ['mince', 'beef mince', 'chicken mince'],
-  'qeema': ['mince', 'beef mince', 'chicken mince'],
-  'qima': ['mince', 'beef mince'],
-  'mince': ['mince', 'beef mince', 'chicken mince', 'keema', 'qeema'],
-  'murghi': ['chicken', 'chicken breast', 'chicken boneless'],
-  'chicken': ['chicken', 'chicken breast', 'chicken boneless', 'murghi'],
-  'gosht': ['mutton', 'beef', 'meat'],
-  'beef': ['beef', 'beef boneless', 'beef mince', 'gosht'],
-  'mutton': ['mutton', 'mutton meat', 'gosht'],
-  'tel': ['cooking oil', 'oil'],
-  'oil': ['cooking oil', 'oil', 'tel', 'ghee'],
-  'ghee': ['banaspati ghee', 'desi ghee', 'ghee', 'oil'],
+  'chawal': ['basmati rice'],
+  'tel': ['cooking oil'],
   'namak': ['salt'],
-  'salt': ['salt', 'namak'],
-  'haldi': ['turmeric powder', 'turmeric'],
-  'lal mirch': ['red chilli powder', 'red chilli'],
-  'zeera': ['cumin seeds', 'cumin'],
-  'chai': ['tea leaves', 'tea'],
-  'tea': ['tea leaves', 'tea', 'chai patti', 'chai'],
+  'haldi': ['turmeric powder'],
+  'lal mirch': ['red chilli powder'],
+  'zeera': ['cumin seeds'],
+  'chai patti': ['tea leaves'],
   'cheeni': ['sugar'],
-  'sugar': ['sugar', 'cheeni'],
-  'bun': ['burger buns', 'sesame burger buns', 'buns'],
-  'buns': ['burger buns', 'sesame burger buns', 'bun'],
+  'shakar': ['sugar'],
   'ketchup': ['tomato ketchup'],
   'mayo': ['mayonnaise']
 };
@@ -94,136 +125,252 @@ const levenshteinDistance = (a, b) => {
 };
 
 /**
- * Calculates string similarity ratio (0.0 to 1.0) using Levenshtein distance
+ * Calculates string similarity ratio (0.0 to 1.0) using Levenshtein distance & Token Dice coefficient
  */
 const calculateStringSimilarity = (str1, str2) => {
-  const s1 = String(str1 || '').toLowerCase().trim();
-  const s2 = String(str2 || '').toLowerCase().trim();
+  const s1 = normalizeItemName(str1);
+  const s2 = normalizeItemName(str2);
   if (s1 === s2) return 1.0;
   if (!s1 || !s2) return 0;
 
+  // Direct Levenshtein character similarity
   const maxLen = Math.max(s1.length, s2.length);
-  if (maxLen === 0) return 1.0;
+  const charSim = maxLen === 0 ? 1.0 : (maxLen - levenshteinDistance(s1, s2)) / maxLen;
 
-  const dist = levenshteinDistance(s1, s2);
-  return (maxLen - dist) / maxLen;
+  // Token-level Dice coefficient
+  const t1 = s1.split(' ').filter(w => w.length > 0);
+  const t2 = s2.split(' ').filter(w => w.length > 0);
+  if (t1.length === 0 || t2.length === 0) return charSim;
+
+  let matchedTokens = 0;
+  for (const w1 of t1) {
+    const matched = t2.some(w2 => {
+      if (w1 === w2) return true;
+      const wMax = Math.max(w1.length, w2.length);
+      return wMax >= 4 && (wMax - levenshteinDistance(w1, w2)) / wMax >= 0.75;
+    });
+    if (matched) matchedTokens++;
+  }
+
+  const tokenSim = (2 * matchedTokens) / (t1.length + t2.length);
+  return Math.max(charSim, tokenSim);
 };
 
 /**
- * Smart Fuzzy Catalog Matcher
- * Analyzes raw item name from Excel / OCR invoice and matches against catalog items:
- * - SKU Match
- * - Exact Name Match
- * - Alias Dictionary Match (e.g. "Aloo" -> "Potatoes", "Chiken" -> "Chicken")
- * - Substring Match
- * - Levenshtein Distance Typo Match (e.g. "Chiken Boneles" -> "Chicken Boneless")
- * - Token Overlap Similarity Match
+ * Smart Safe Catalog Matcher
+ * Matching Priority Order:
+ * 1. Exact SKU or Barcode match (1.0)
+ * 2. Exact Normalized Product Name (1.0)
+ * 3. Approved POS / Urdu Alias Match (0.95)
+ * 4. Token Order Invariant Match (0.93)
+ * 5. Safe Substring / Token Subset Match without variant conflicts (0.88)
+ * 6. High Typo Similarity (>= 0.85) without variant conflicts
+ * 7. Candidate Suggestion (0.60 - 0.84) -> REVIEW_MATCH status (never auto-accepted)
+ * 8. Below 0.60 -> NEW_ITEM status
  */
 const findBestFuzzyCatalogMatch = (rawName, sku, catalogItems) => {
-  if (sku) {
-    const skuMatch = catalogItems.find(c => c.sku && c.sku.toLowerCase().trim() === sku.toLowerCase().trim());
-    if (skuMatch) return { item: skuMatch, confidence: 1.0 };
+  if (!catalogItems || catalogItems.length === 0) {
+    return { item: null, status: 'NEW_ITEM', confidence: 0 };
   }
 
-  if (!rawName) return null;
-  const cleanRaw = rawName.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-  if (!cleanRaw) return null;
+  // 1. Exact SKU or Barcode Match
+  if (sku && String(sku).trim()) {
+    const cleanSku = String(sku).trim().toLowerCase();
+    const skuMatch = catalogItems.find(c => c.sku && c.sku.toLowerCase().trim() === cleanSku);
+    if (skuMatch) {
+      return { item: skuMatch, status: 'MATCHED', confidence: 1.0, matchType: 'EXACT_SKU' };
+    }
+  }
 
-  // 1. Exact match (case insensitive)
-  const exactMatch = catalogItems.find(c => c.name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim() === cleanRaw);
-  if (exactMatch) return { item: exactMatch, confidence: 1.0 };
+  if (!rawName || !String(rawName).trim()) {
+    return { item: null, status: 'NEW_ITEM', confidence: 0 };
+  }
 
-  // 2. Alias dictionary lookup (Urdu / Roman Urdu / Synonyms)
+  const cleanRaw = normalizeItemName(rawName);
+  if (!cleanRaw) {
+    return { item: null, status: 'NEW_ITEM', confidence: 0 };
+  }
+
+  // 2. Exact Normalized Name Match
+  const exactMatch = catalogItems.find(c => normalizeItemName(c.name) === cleanRaw);
+  if (exactMatch) {
+    return { item: exactMatch, status: 'MATCHED', confidence: 1.0, matchType: 'EXACT_NAME' };
+  }
+
+  // 3. Approved POS / Alias Match
   for (const [aliasKey, targetWords] of Object.entries(ITEM_ALIASES_MAP)) {
-    if (cleanRaw.includes(aliasKey) || aliasKey.includes(cleanRaw)) {
+    if (cleanRaw === aliasKey || cleanRaw.startsWith(aliasKey + ' ') || cleanRaw.endsWith(' ' + aliasKey) || cleanRaw.includes(' ' + aliasKey + ' ')) {
       for (const targetWord of targetWords) {
-        const aliasMatch = catalogItems.find(c => c.name.toLowerCase().includes(targetWord));
-        if (aliasMatch) {
-          return { item: aliasMatch, confidence: 0.95 };
+        const aliasMatch = catalogItems.find(c => {
+          const normCat = normalizeItemName(c.name);
+          return normCat === targetWord || normCat.includes(targetWord) || targetWord.includes(normCat);
+        });
+        if (aliasMatch && !hasConflictingVariants(rawName, aliasMatch.name)) {
+          return { item: aliasMatch, status: 'MATCHED', confidence: 0.95, matchType: 'APPROVED_ALIAS' };
         }
       }
     }
   }
 
-  // 3. Substring match (e.g. "cooking oil" includes "oil", "chicken breast" includes "chicken")
+  // 4. Token Order Invariant Match (e.g. "Cooking Oil" vs "Oil Cooking", "Fresh Milk" vs "Milk Fresh")
+  const rawTokens = cleanRaw.split(' ').filter(w => w.length > 0).sort();
+  const rawTokenStr = rawTokens.join(' ');
+
+  for (const cat of catalogItems) {
+    const catTokens = normalizeItemName(cat.name).split(' ').filter(w => w.length > 0).sort();
+    if (rawTokens.length === catTokens.length && rawTokenStr === catTokens.join(' ')) {
+      return { item: cat, status: 'MATCHED', confidence: 0.93, matchType: 'TOKEN_ORDER' };
+    }
+  }
+
+  // 5. Safe Substring / Token Subset Match WITH Variant Conflict Guard
   const subCandidates = catalogItems.filter(c => {
-    const cleanCat = c.name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-    return cleanCat.includes(cleanRaw) || cleanRaw.includes(cleanCat);
+    const cleanCat = normalizeItemName(c.name);
+    const catTokens = cleanCat.split(' ').filter(w => w.length > 0);
+    const isSub = cleanCat.includes(cleanRaw) || cleanRaw.includes(cleanCat);
+    const isTokenSubset = (rawTokens.length >= 2 && rawTokens.every(t => catTokens.includes(t))) ||
+                          (catTokens.length >= 2 && catTokens.every(t => rawTokens.includes(t)));
+    // Crucial: check for conflicting variant keywords!
+    return (isSub || isTokenSubset) && !hasConflictingVariants(rawName, c.name);
   });
+
   if (subCandidates.length === 1) {
-    return { item: subCandidates[0], confidence: 0.90 };
+    const cand = subCandidates[0];
+    const sim = calculateStringSimilarity(cleanRaw, cand.name);
+    if (sim >= 0.70) {
+      return { item: cand, status: 'MATCHED', confidence: 0.88, matchType: 'SAFE_SUBSTRING' };
+    } else {
+      return { item: cand, status: 'REVIEW_MATCH', confidence: 0.75, suggestedItem: cand, matchType: 'SUGGESTED_SUBSTRING' };
+    }
   } else if (subCandidates.length > 1) {
-    // Pick the substring candidate with closest string length / highest similarity
-    let bestSub = subCandidates[0];
+    // Pick the candidate with highest similarity
+    let bestCand = subCandidates[0];
     let bestSim = 0;
     for (const cand of subCandidates) {
       const sim = calculateStringSimilarity(cleanRaw, cand.name);
       if (sim > bestSim) {
         bestSim = sim;
-        bestSub = cand;
+        bestCand = cand;
       }
     }
-    return { item: bestSub, confidence: 0.88 };
+    if (bestSim >= 0.75) {
+      return { item: bestCand, status: 'MATCHED', confidence: 0.86, matchType: 'SAFE_SUBSTRING' };
+    } else {
+      return { item: bestCand, status: 'REVIEW_MATCH', confidence: 0.75, suggestedItem: bestCand, matchType: 'SUGGESTED_SUBSTRING' };
+    }
   }
 
-  // 4. Levenshtein Typo Tolerance + Token Similarity Match
-  const rawTokens = cleanRaw.split(/\s+/).filter(w => w.length > 1);
+  // 6. Typo Tolerance with Levenshtein Distance & Token Overlap (Safeguarded against variant mismatch)
   let bestItem = null;
   let bestScore = 0;
 
   for (const cat of catalogItems) {
-    const cleanCat = cat.name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-    const catTokens = cleanCat.split(/\s+/).filter(w => w.length > 1);
-
-    // Direct string similarity ratio
-    const directSim = calculateStringSimilarity(cleanRaw, cleanCat);
-
-    // Token overlap score with Levenshtein tolerance
-    let tokenMatches = 0;
-    for (const rToken of rawTokens) {
-      for (const cToken of catTokens) {
-        if (cToken === rToken || cToken.includes(rToken) || rToken.includes(cToken)) {
-          tokenMatches += 1.0;
-          break;
-        } else if (rToken.length > 3 && cToken.length > 3 && calculateStringSimilarity(rToken, cToken) >= 0.75) {
-          tokenMatches += 0.8; // Typo match between tokens e.g. "chiken" ~ "chicken"
-          break;
-        }
-      }
+    // Skip if they have conflicting variants (e.g. breast vs mince)
+    if (hasConflictingVariants(rawName, cat.name)) {
+      continue;
     }
 
-    const tokenScore = rawTokens.length > 0 ? (tokenMatches / Math.max(rawTokens.length, catTokens.length)) : 0;
-    const combinedScore = Math.max(directSim, tokenScore);
-
-    if (combinedScore > bestScore) {
-      bestScore = combinedScore;
+    const sim = calculateStringSimilarity(cleanRaw, cat.name);
+    if (sim > bestScore) {
+      bestScore = sim;
       bestItem = cat;
     }
   }
 
-  if (bestItem && bestScore >= 0.35) {
-    return { item: bestItem, confidence: parseFloat(Math.min(0.92, bestScore + 0.1).toFixed(2)) };
+  // Tiered Confidence Thresholds:
+  // - >= 0.85: Confident typo match -> MATCHED
+  // - 0.60 to 0.84: Plausible match -> REVIEW_MATCH (requires admin confirmation)
+  // - < 0.60: NEW_ITEM
+  if (bestItem) {
+    if (bestScore >= 0.85) {
+      return { item: bestItem, status: 'MATCHED', confidence: parseFloat(bestScore.toFixed(2)), matchType: 'TYPO_SAFE' };
+    } else if (bestScore >= 0.60) {
+      return {
+        item: null, // do NOT auto-assign ID! Let admin review!
+        suggestedItem: bestItem,
+        status: 'REVIEW_MATCH',
+        confidence: parseFloat(bestScore.toFixed(2)),
+        matchType: 'SUGGESTED_MATCH'
+      };
+    }
   }
 
-  return null;
+  return { item: null, status: 'NEW_ITEM', confidence: 0, matchType: 'NONE' };
 };
 
 /**
- * Parses buffer/base64/text from CSV, Excel, or Invoice payload and matches against catalog
+ * Parses buffer/base64/text from CSV, Excel, PDF, or Invoice image payload and matches against catalog
  */
 const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName, supplierNameHint }) => {
   let rawRows = [];
   let extractedInvoiceNumber = null;
   let extractedDate = null;
   let detectedSupplierName = supplierNameHint || null;
+  let detectedTotal = null;
 
-  // 1. Check if file is image / base64 image -> use Groq AI Vision
-  const isImageBase64 = fileBase64 && (
+  // 1. Detect PDF Invoice (via mime or extension)
+  const isPdf = (fileBase64 && (fileBase64.startsWith('data:application/pdf') || fileBase64.includes('application/pdf'))) ||
+    (fileName && /\.pdf$/i.test(fileName));
+
+  if (isPdf) {
+    console.log('[AI OCR] Detected PDF invoice file. Extracting text via pdf-parse...');
+    try {
+      const cleanBase64 = fileBase64 ? fileBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:.*?;base64,/, '') : '';
+      const pdfBuffer = fileBuffer || Buffer.from(cleanBase64, 'base64');
+      let pdfText = '';
+      if (typeof pdfParse === 'function') {
+        const pdfData = await pdfParse(pdfBuffer);
+        pdfText = pdfData.text || '';
+      } else if (pdfParse && pdfParse.PDFParse) {
+        const parser = new pdfParse.PDFParse({ data: pdfBuffer });
+        const pdfData = await parser.getText();
+        pdfText = pdfData?.text || '';
+        await parser.destroy().catch(() => {});
+      }
+      console.log(`[AI OCR] PDF extracted text length: ${pdfText.length} characters.`);
+
+      if (pdfText.trim().length > 10) {
+        const groqResult = await parseInvoiceTextWithGroq(pdfText);
+        if (groqResult && Array.isArray(groqResult.items) && groqResult.items.length > 0) {
+          if (groqResult.supplierName) detectedSupplierName = groqResult.supplierName;
+          if (groqResult.invoiceNumber) extractedInvoiceNumber = groqResult.invoiceNumber;
+          if (groqResult.date) extractedDate = groqResult.date;
+          if (groqResult.invoiceTotal) detectedTotal = groqResult.invoiceTotal;
+
+          for (const item of groqResult.items) {
+            if (item.rawName) {
+              const qty = parseFloat(item.quantity) || 1;
+              const unitCost = parseFloat(item.unitCost) || 0;
+              const lineTotal = parseFloat(item.totalCost) || (qty * unitCost);
+
+              rawRows.push({
+                rawName: String(item.rawName).trim(),
+                sku: item.sku || null,
+                quantity: qty,
+                unit: (item.unit || 'KG').toUpperCase(),
+                unitCost: unitCost,
+                totalCost: lineTotal,
+                batchNumber: item.batchNumber || null,
+                expiryDate: item.expiryDate || null,
+                needsReview: Boolean(item.needsReview) || (unitCost <= 0),
+                reviewReason: item.reviewReason || (unitCost <= 0 ? 'Zero or missing unit price' : null)
+              });
+            }
+          }
+        }
+      }
+    } catch (pdfErr) {
+      console.warn('[AI OCR] PDF parsing failed:', pdfErr.message);
+    }
+  }
+
+  // 2. Check if file is image / base64 image -> use Groq AI Vision
+  const isImageBase64 = !isPdf && fileBase64 && (
     fileBase64.startsWith('data:image') ||
     (fileName && /\.(jpg|jpeg|png|webp|bmp|gif)$/i.test(fileName))
   );
 
-  if (isImageBase64) {
+  if (isImageBase64 && rawRows.length === 0) {
     console.log('[AI OCR] Attempting Groq AI Vision scan for receipt image...');
     const groqResult = await analyzeInvoiceImageWithGroq(fileBase64);
 
@@ -231,25 +378,33 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
       if (groqResult.supplierName) detectedSupplierName = groqResult.supplierName;
       if (groqResult.invoiceNumber) extractedInvoiceNumber = groqResult.invoiceNumber;
       if (groqResult.date) extractedDate = groqResult.date;
+      if (groqResult.invoiceTotal) detectedTotal = groqResult.invoiceTotal;
 
       for (const item of groqResult.items) {
-        if (item.rawName && item.quantity > 0) {
+        if (item.rawName) {
+          const qty = parseFloat(item.quantity) || 1;
+          const unitCost = parseFloat(item.unitCost) || 0;
+          const lineTotal = parseFloat(item.totalCost) || (qty * unitCost);
+
           rawRows.push({
-            rawName: item.rawName,
-            sku: null,
-            quantity: parseFloat(item.quantity),
+            rawName: String(item.rawName).trim(),
+            sku: item.sku || null,
+            quantity: qty,
             unit: (item.unit || 'KG').toUpperCase(),
-            unitCost: parseFloat(item.unitCost || 0),
+            unitCost: unitCost,
+            totalCost: lineTotal,
             batchNumber: item.batchNumber || null,
             expiryDate: item.expiryDate || null,
+            needsReview: Boolean(item.needsReview) || (unitCost <= 0),
+            reviewReason: item.reviewReason || (unitCost <= 0 ? 'Zero or missing unit price' : null)
           });
         }
       }
     }
   }
 
-  // 2. Process Excel / CSV file buffer or base64 if provided and not image
-  if (rawRows.length === 0 && (fileBuffer || fileBase64)) {
+  // 3. Process Excel / CSV file buffer or base64 if provided and not image/pdf
+  if (rawRows.length === 0 && !isPdf && (fileBuffer || fileBase64)) {
     try {
       const buffer = fileBuffer || Buffer.from(fileBase64.replace(/^data:.*?;base64,/, ''), 'base64');
       const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
@@ -296,20 +451,22 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
               quantity: qtyVal,
               unit: unitVal.toUpperCase(),
               unitCost: isNaN(costVal) ? 0 : costVal,
+              totalCost: (qtyVal * (isNaN(costVal) ? 0 : costVal)),
               batchNumber: batchVal || null,
               expiryDate: expVal || null,
+              needsReview: false,
+              reviewReason: null
             });
           }
         }
       }
     } catch (excelErr) {
-      console.warn('Excel parse error:', excelErr.message);
+      console.warn('[AI OCR] Excel parse error:', excelErr.message);
     }
   }
 
-  // 3. Fallback to rawText / CSV string parser if file buffer didn't yield rows
+  // 4. Fallback to rawText / CSV string parser if file buffer didn't yield rows
   if (rawRows.length === 0 && rawText && typeof rawText === 'string') {
-    // Try XLSX to parse CSV text with header detection first (for structured CSV with column names)
     try {
       const csvBuffer = Buffer.from(rawText, 'utf-8');
       const workbook = XLSX.read(csvBuffer, { type: 'buffer', cellDates: true });
@@ -356,58 +513,18 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
                 quantity: qtyVal,
                 unit: unitVal.toUpperCase(),
                 unitCost: isNaN(costVal) ? 0 : costVal,
+                totalCost: (qtyVal * (isNaN(costVal) ? 0 : costVal)),
                 batchNumber: batchVal || null,
                 expiryDate: expVal || null,
+                needsReview: false,
+                reviewReason: null
               });
             }
           }
         }
       }
     } catch (csvXlsxErr) {
-      console.warn('CSV XLSX parse failed, falling back to line parser:', csvXlsxErr.message);
-    }
-
-    // Simple line-by-line fallback for un-headered CSV/TSV plain text
-    if (rawRows.length === 0) {
-      const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
-      for (const line of lines) {
-        const invMatch = line.match(/(?:Invoice|INV|Ref)[#:\s]+([A-Za-z0-9-]+)/i);
-        if (invMatch && !extractedInvoiceNumber) {
-          extractedInvoiceNumber = invMatch[1];
-          continue;
-        }
-
-        const dateMatch = line.match(/(?:Date|Dated)[#:\s]+(\d{2,4}[-/.]\d{1,2}[-/.]\d{1,4})/i);
-        if (dateMatch && !extractedDate) {
-          extractedDate = dateMatch[1];
-          continue;
-        }
-
-        const parts = line.split(/,|\t|;|\|/).map(p => p.trim());
-        if (parts.length >= 2) {
-          const name = parts[0];
-          const qtyStr = parts[1];
-          const qty = parseFloat(qtyStr);
-
-          if (name && !isNaN(qty) && qty > 0 && !name.toLowerCase().includes('item name') && !name.toLowerCase().includes('quantity')) {
-            const unit = parts[2] || 'KG';
-            const costStr = parts[3] ? parseFloat(parts[3]) : 0;
-            const batch = parts[4] || null;
-            const expiry = parts[5] || null;
-
-            rawRows.push({
-              rawName: name,
-              sku: null,
-              quantity: qty,
-              unit: unit.toUpperCase(),
-              unitCost: isNaN(costStr) ? 0 : costStr,
-              batchNumber: batch,
-              expiryDate: expiry,
-            });
-          }
-        }
-      }
+      console.warn('[AI OCR] CSV XLSX parse failed, falling back to line parser:', csvXlsxErr.message);
     }
   }
 
@@ -422,10 +539,10 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
   const seenIds = new Set();
 
   for (const item of rawRows) {
-    const fuzzyResult = findBestFuzzyCatalogMatch(item.rawName, item.sku, catalogItems);
+    const matchResult = findBestFuzzyCatalogMatch(item.rawName, item.sku, catalogItems);
 
-    if (fuzzyResult && fuzzyResult.item) {
-      const match = fuzzyResult.item;
+    if (matchResult && matchResult.status === 'MATCHED' && matchResult.item) {
+      const match = matchResult.item;
 
       if (seenIds.has(match.id)) {
         warnings.push(`Duplicate entry for "${match.name}" detected in receipt.`);
@@ -437,33 +554,54 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
         name: match.name,
         rawScannedName: item.rawName,
         category: match.category,
-        sku: match.sku,
+        sku: match.sku || item.sku || null,
         currentStock: match.stockLevel,
         systemUnit: match.unit,
         quantity: item.quantity,
         unit: item.unit || match.unit,
-        unitCost: item.unitCost || match.costPrice,
-        totalCost: item.quantity * (item.unitCost || match.costPrice),
+        unitCost: item.unitCost || match.costPrice || 0,
+        totalCost: item.totalCost || (item.quantity * (item.unitCost || match.costPrice || 0)),
         batchNumber: item.batchNumber || null,
         expiryDate: item.expiryDate || null,
-        confidence: fuzzyResult.confidence,
-        status: 'MATCHED'
+        confidence: matchResult.confidence,
+        matchType: matchResult.matchType,
+        status: item.needsReview ? 'NEEDS_REVIEW' : 'MATCHED',
+        needsReview: Boolean(item.needsReview),
+        reviewReason: item.reviewReason || null
       });
     } else {
+      // Unmatched row: could be REVIEW_MATCH (has suggestion), NEW_ITEM, or NEEDS_REVIEW
+      let itemStatus = 'NEW_ITEM';
+      if (item.needsReview) {
+        itemStatus = 'NEEDS_REVIEW';
+      } else if (matchResult && matchResult.status === 'REVIEW_MATCH') {
+        itemStatus = 'REVIEW_MATCH';
+      }
+
       unmatched.push({
         rawName: item.rawName,
         sku: item.sku || null,
         quantity: item.quantity,
         unit: item.unit || 'KG',
         unitCost: item.unitCost || 0,
-        totalCost: item.quantity * (item.unitCost || 0),
+        totalCost: item.totalCost || (item.quantity * (item.unitCost || 0)),
         batchNumber: item.batchNumber || null,
         expiryDate: item.expiryDate || null,
-        confidence: 0,
-        status: 'NEEDS_MATCHING'
+        confidence: matchResult ? matchResult.confidence : 0,
+        matchType: matchResult ? matchResult.matchType : 'NONE',
+        status: itemStatus,
+        suggestedItem: matchResult?.suggestedItem || null,
+        needsReview: Boolean(item.needsReview),
+        reviewReason: item.reviewReason || (itemStatus === 'REVIEW_MATCH' ? `Suggested match: ${matchResult?.suggestedItem?.name}` : null)
       });
     }
   }
+
+  // Count distinct categories
+  const matchedCount = matched.filter(m => m.status === 'MATCHED').length;
+  const reviewMatchCount = unmatched.filter(u => u.status === 'REVIEW_MATCH').length;
+  const newItemsCount = unmatched.filter(u => u.status === 'NEW_ITEM').length;
+  const needsReviewCount = [...matched, ...unmatched].filter(i => i.status === 'NEEDS_REVIEW').length;
 
   return {
     success: true,
@@ -471,14 +609,18 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
     invoiceNumber: extractedInvoiceNumber || `INV-${Math.floor(10000 + Math.random() * 90000)}`,
     receivingDate: extractedDate || new Date().toISOString().split('T')[0],
     supplierName: detectedSupplierName || 'General Supplier / Market Purchase',
+    invoiceTotal: detectedTotal,
     matchedItems: matched,
     unmatchedItems: unmatched,
     warnings,
     summary: {
       totalRows: rawRows.length,
-      matchedCount: matched.length,
-      unmatchedCount: unmatched.length,
-      estimatedTotalCost: matched.reduce((acc, i) => acc + i.totalCost, 0) + unmatched.reduce((acc, i) => acc + i.totalCost, 0),
+      matchedCount,
+      reviewMatchCount,
+      newItemsCount,
+      needsReviewCount,
+      estimatedTotalCost: matched.reduce((acc, i) => acc + (parseFloat(i.totalCost) || 0), 0) +
+                          unmatched.reduce((acc, i) => acc + (parseFloat(i.totalCost) || 0), 0),
     },
   };
 };
@@ -486,4 +628,6 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
 module.exports = {
   parseAndMatchInvoice,
   findBestFuzzyCatalogMatch,
+  hasConflictingVariants,
+  normalizeItemName
 };

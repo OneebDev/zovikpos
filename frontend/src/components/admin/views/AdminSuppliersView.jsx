@@ -15,8 +15,11 @@ import {
   CheckCircle2,
   Edit3,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquare
 } from 'lucide-react';
+import PhoneInput from '../../PhoneInput';
+import { formatPhoneDisplay, getWhatsAppLink } from '../../../utils/phoneUtils';
 
 const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], onRefresh, showToast }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -250,7 +253,22 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                       </td>
 
                       <td className="py-3.5 px-4 font-mono text-[11px] text-[var(--text-muted)]">
-                        <div>{s.phone || '—'}</div>
+                        {s.phone ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-[var(--text-main)]">{formatPhoneDisplay(s.phone)}</span>
+                            <a
+                              href={getWhatsAppLink(s.phone, `Hi ${s.name}, regarding inventory supply order`)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-emerald-400 hover:text-emerald-300 p-0.5 rounded hover:bg-emerald-500/10 transition-colors"
+                              title="Chat on WhatsApp"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+                        ) : (
+                          <div>—</div>
+                        )}
                         {s.email && <div className="text-[10px] text-sky-400">{s.email}</div>}
                       </td>
 
@@ -350,12 +368,9 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
 
                 <div>
                   <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">Phone Number</label>
-                  <input
-                    type="text"
+                  <PhoneInput
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="e.g. 0300-1234567"
-                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono text-[var(--text-main)]"
+                    onChange={(val) => setFormData({ ...formData, phone: val })}
                   />
                 </div>
               </div>

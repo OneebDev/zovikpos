@@ -27,7 +27,7 @@ const DemoRestrictionModal = ({ onLogout }) => {
       if (path.startsWith('/kitchen')) navigate('/kitchen/login');
       else if (path.startsWith('/cashier') || path.startsWith('/vendor')) navigate('/cashier/login');
       else if (path.startsWith('/admin')) navigate('/admin/login');
-      else navigate('/customer/login');
+      else navigate('/customer');
     }
   };
 

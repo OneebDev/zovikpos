@@ -72,10 +72,18 @@ function App() {
     }
   }, []);
 
-  // Protect routes and require explicit login (bypasses auto-login clash)
+  // Protect routes and handle session expiry events
   useEffect(() => {
-    // If not logged in as expected role, protected routes redirect to corresponding login page
-  }, [location.pathname, user.role]);
+    const handleSessionExpired = (e) => {
+      console.warn('Session expired event received:', e?.detail?.message);
+      handleLogout();
+    };
+
+    window.addEventListener('session-expired', handleSessionExpired);
+    return () => {
+      window.removeEventListener('session-expired', handleSessionExpired);
+    };
+  }, [location.pathname]);
 
   const handleLoginSuccess = (loggedInUser, tokens) => {
     const rolePrefix = loggedInUser.role?.toLowerCase() || 'user';
@@ -135,7 +143,7 @@ function App() {
     if (activePath.startsWith('/kitchen')) navigate('/kitchen/login');
     else if (activePath.startsWith('/cashier') || activePath.startsWith('/vendor')) navigate('/cashier/login');
     else if (activePath.startsWith('/admin')) navigate('/admin/login');
-    else navigate('/customer/login');
+    else navigate('/customer');
   };
 
   // Determine if we are on a customer-facing or login route
@@ -224,7 +232,7 @@ function App() {
           <Route path="/kitchen/login" element={<RoleLogin roleType="KITCHEN" onLoginSuccess={handleLoginSuccess} />} />
           <Route path="/cashier/login" element={<RoleLogin roleType="CASHIER" onLoginSuccess={handleLoginSuccess} />} />
           <Route path="/admin/login" element={<RoleLogin roleType="ADMIN" onLoginSuccess={handleLoginSuccess} />} />
-          <Route path="/customer/login" element={<RoleLogin roleType="CUSTOMER" onLoginSuccess={handleLoginSuccess} />} />
+          <Route path="/customer/login" element={<Navigate to="/customer" replace />} />
 
           {/* Redirect aliases */}
           <Route path="/vendor/login" element={<Navigate to="/cashier/login" replace />} />

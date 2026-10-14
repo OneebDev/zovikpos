@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/db');
 
-const ACCESS_SECRET = process.env.JWT_SECRET || 'pos_system_jwt_access_secret_key_2026';
+const getAccessSecret = () => process.env.JWT_SECRET || 'pos_system_jwt_access_secret_key_2026';
 
 const demoGuardMiddleware = require('./demoGuardMiddleware');
 
@@ -41,7 +41,7 @@ const authMiddleware = async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, ACCESS_SECRET);
+    const decoded = jwt.verify(token, getAccessSecret());
     
     // Check if user is still active in database (using fast cached getter)
     if (decoded.id) {
@@ -88,6 +88,7 @@ const authMiddleware = async (req, res, next) => {
     // Run Demo Sandbox Guard to intercept DB mutations for demo users
     return demoGuardMiddleware(req, res, next);
   } catch (error) {
+    console.error('[authMiddleware Error]:', error.message);
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token has expired. Please refresh your session.', code: 'TOKEN_EXPIRED' });
     }

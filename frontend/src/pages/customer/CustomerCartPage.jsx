@@ -4,6 +4,7 @@ import api from '../../services/api';
 import { connectSocket, getSocket } from '../../services/socket';
 import { getETAPrediction } from '../../services/etaService';
 import { OtpInputBoxes } from '../../components/CustomerDashboard';
+import PhoneInput from '../../components/PhoneInput';
 import {
   ArrowLeft,
   ShoppingBag,
@@ -908,12 +909,9 @@ const CustomerCartPage = ({ user }) => {
 
               <div>
                 <label className="text-[11px] font-bold text-gray-600 dark:text-gray-300 block mb-1">Registered Account Mobile #</label>
-                <input
-                  type="text"
+                <PhoneInput
                   value={walletPhone}
-                  onChange={(e) => setWalletPhone(e.target.value)}
-                  placeholder="0300-1234567"
-                  className="w-full bg-gray-50 dark:bg-[#262626] border border-gray-200 dark:border-[#333] rounded-xl px-3.5 py-2.5 text-xs text-gray-900 dark:text-white font-mono focus:outline-none focus:border-orange-600"
+                  onChange={setWalletPhone}
                 />
               </div>
 

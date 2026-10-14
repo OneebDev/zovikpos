@@ -394,6 +394,29 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
     initSession();
   }, [tableIdFromRoute]);
 
+  // ─── Session Expiry Check (every 30 seconds) ────────────────────────────
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    if (!sessionId || sessionExpired) return;
+    
+    const checkSessionHealth = async () => {
+      try {
+        const res = await api.get(`/sessions/${sessionId}`);
+        if (res.data.session?.status === 'EXPIRED' || res.data.session?.status === 'CANCELLED') {
+          setSessionExpired(true);
+        }
+      } catch (err) {
+        if (err.response?.status === 404) {
+          setSessionExpired(true);
+        }
+      }
+    };
+
+    const interval = setInterval(checkSessionHealth, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, [sessionId, sessionExpired]);
+
   const handleTransferTableAndOrders = async () => {
     const curSessionId = sessionId || localStorage.getItem('customer_sessionId');
     if (!curSessionId || !pendingTableToken) return;
@@ -559,6 +582,10 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
         setCart(mapped);
       }
     } catch (e) {
+      if (e.response?.status === 403) {
+        setSessionExpired(true);
+        return;
+      }
       console.warn('Could not sync server cart:', e.message);
     }
   };
@@ -714,6 +741,10 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
           quantity: targetQuantity,
         });
       } catch (err) {
+        if (err.response?.status === 403) {
+          setSessionExpired(true);
+          return;
+        }
         console.warn('Backend cart add warning:', err.message);
       }
     }
@@ -749,6 +780,10 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
           });
         }
       } catch (err) {
+        if (err.response?.status === 403) {
+          setSessionExpired(true);
+          return;
+        }
         console.warn('Backend cart remove warning:', err.message);
       }
     }
@@ -775,6 +810,10 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
       };
     });
 
+    // Close expanded panel immediately so UI response feels instant
+    setExpandedGroup(null);
+    setPendingQty((prev) => ({ ...prev, [item.id]: 1 }));
+
     if (sessionId) {
       try {
         await api.post(`/cart/${sessionId}/items`, {
@@ -782,13 +821,13 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
           quantity: finalQty,
         });
       } catch (err) {
+        if (err.response?.status === 403) {
+          setSessionExpired(true);
+          return;
+        }
         console.warn('Backend cart add warning:', err.message);
       }
     }
-
-    // Close expanded panel; reset THIS variant's qty back to 1 for next open
-    setExpandedGroup(null);
-    setPendingQty((prev) => ({ ...prev, [item.id]: 1 }));
   };
 
   const totalCartQuantity = Object.values(cart).reduce((sum, item) => sum + item.quantity, 0);
@@ -945,6 +984,42 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
 
   return (
     <div className="min-h-screen bg-[#FAF9F7] dark:bg-[#121212] text-[#171717] dark:text-[#E5E5E5] flex flex-col font-sans selection:bg-[#F97316]/20">
+      {sessionExpired && (
+        <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-8 space-y-6 text-center shadow-2xl">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-red-100 text-red-500 mx-auto">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-gray-900">Session Expired</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Your dining session has expired due to inactivity. Please scan the QR code at your table to start a new session.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                // Clear all session data
+                localStorage.removeItem('customer_sessionId');
+                localStorage.removeItem('customer_verifiedSessionId');
+                localStorage.removeItem('customer_tableToken');
+                localStorage.removeItem('customer_tableId');
+                localStorage.removeItem('customer_cart');
+                localStorage.removeItem('customer_checkoutStep');
+                localStorage.removeItem('customer_category');
+                setSessionExpired(false);
+                setSessionId('');
+                setIsSessionVerified(false);
+                setCart({});
+                navigate('/customer', { replace: true });
+              }}
+              className="w-full py-3.5 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-500 hover:to-orange-600 text-white font-extrabold text-sm rounded-xl transition-all shadow-lg cursor-pointer"
+            >
+              Start New Session
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Top Application Header — Premium Redesign ───────────────────────── */}
       <header className="bg-white/80 dark:bg-[#1A1A1A]/80 backdrop-blur-xl border-b border-[#E7E5E4] dark:border-[#333] sticky top-0 z-30 shadow-sm transition-all">
         {/* Row 1: Branding + Actions */}

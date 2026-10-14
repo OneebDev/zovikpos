@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   History,
@@ -11,6 +11,7 @@ import {
   User,
   Clock,
   ChevronRight,
+  ChevronLeft,
   X,
   CheckCircle2,
   Package
@@ -21,37 +22,55 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
   const [actionFilter, setActionFilter] = useState('ALL');
   const [dateFilter, setDateFilter] = useState('ALL');
   const [selectedLogDetails, setSelectedLogDetails] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
-  // Normalize logs & receivings into human-readable activity stream
+  // Reset pagination to page 1 on search or filter change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, actionFilter, dateFilter]);
+
+  // Normalize logs & receivings into human-readable activity stream with total null-safety
   const activities = useMemo(() => {
     const list = [];
+    const safeLogs = Array.isArray(logs) ? logs : [];
+    const safeReceivings = Array.isArray(receivings) ? receivings : [];
 
     // 1. Process Inventory Logs
-    logs.forEach(log => {
-      const createdAt = new Date(log.createdAt || Date.now());
-      const type = (log.type || 'ADJUST').toUpperCase();
-      const userName = log.user?.name || log.userName || 'Staff Member';
-      const itemName = log.inventoryItem?.name || log.itemName || 'Inventory Item';
-      const changeQty = log.changeQty || 0;
-      const unit = log.inventoryItem?.unit || log.unit || 'PCS';
-      const reason = log.reason || '';
+    safeLogs.forEach(log => {
+      if (!log) return;
+      const createdAt = log.createdAt ? new Date(log.createdAt) : new Date();
+      const type = String(log.type || 'ADJUST').toUpperCase();
+      const userName = String(log.user?.name || log.userName || log.user?.email || 'Staff Member');
+      const itemName = String(log.inventoryItem?.name || log.itemName || log.item?.name || 'Inventory Item');
+      const changeQty = log.changeQty ?? log.quantity ?? 0;
+      const unit = String(log.inventoryItem?.unit || log.unit || log.item?.unit || 'PCS');
+      const reason = String(log.reason || log.notes || '');
+      const batchNumber = String(log.batchNumber || log.inventoryItem?.batchNumber || log.batch || '');
+      const sku = String(log.inventoryItem?.sku || log.sku || '');
 
       let actionLabel = 'Stock Adjusted';
       let icon = AlertTriangle;
       let badgeColor = 'text-amber-400 bg-amber-500/10 border-amber-500/20';
 
-      if (type === 'RESTOCK' || type === 'RECEIVING' || reason.toLowerCase().includes('received')) {
+      if (type === 'RESTOCK' || type === 'RECEIVING' || type === 'STOCK_IN' || reason.toLowerCase().includes('received')) {
         actionLabel = 'Stock Received';
         icon = Truck;
         badgeColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-      } else if (type === 'USAGE' || reason.toLowerCase().includes('recipe') || reason.toLowerCase().includes('order')) {
+      } else if (type === 'USAGE' || type === 'DEDUCT' || reason.toLowerCase().includes('recipe') || reason.toLowerCase().includes('order')) {
         actionLabel = 'Stock Deducted';
         icon = Utensils;
         badgeColor = 'text-purple-400 bg-purple-500/10 border-purple-500/20';
       }
 
+      const refStr = log.orderId
+        ? `Order #${log.orderId}`
+        : log.reference
+        ? String(log.reference)
+        : `LOG-${log.id || Math.random().toString(36).substring(7)}`;
+
       list.push({
-        id: `log-${log.id}`,
+        id: `log-${log.id || Math.random()}`,
         timestamp: createdAt,
         dateFormatted: createdAt.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }),
         timeFormatted: createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -61,8 +80,10 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
         itemName,
         changeQty: changeQty > 0 ? `+${changeQty} ${unit}` : `${changeQty} ${unit}`,
         rawChangeQty: changeQty,
-        reference: log.orderId ? `Order #${log.orderId}` : (log.reference || `LOG-${log.id}`),
+        reference: refStr,
         reason: reason || `${actionLabel} for ${itemName}`,
+        batchNumber,
+        sku,
         icon,
         badgeColor,
         rawLog: log
@@ -70,14 +91,16 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
     });
 
     // 2. Process Receivings as Activity Logs if not already in logs
-    receivings.forEach(rcv => {
-      const createdAt = new Date(rcv.createdAt || Date.now());
-      const userName = rcv.receivedBy?.name || rcv.receivedByName || 'Staff Member';
+    safeReceivings.forEach(rcv => {
+      if (!rcv) return;
+      const createdAt = rcv.createdAt ? new Date(rcv.createdAt) : new Date();
+      const userName = String(rcv.receivedBy?.name || rcv.receivedByName || rcv.receivedBy?.email || 'Staff Member');
+      const receivingRef = String(rcv.receivingRef || `RCV-${rcv.id || ''}`);
 
-      const exists = list.some(l => l.reference === rcv.receivingRef);
+      const exists = list.some(l => l.reference === receivingRef);
       if (!exists) {
         list.push({
-          id: `rcv-act-${rcv.id}`,
+          id: `rcv-act-${rcv.id || Math.random()}`,
           timestamp: createdAt,
           dateFormatted: createdAt.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }),
           timeFormatted: createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -87,8 +110,10 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
           itemName: rcv.supplierName ? `Shipment from ${rcv.supplierName}` : `${rcv.items?.length || 0} Items Received`,
           changeQty: `+${rcv.items?.length || 0} Items`,
           rawChangeQty: 1,
-          reference: rcv.receivingRef,
-          reason: `Stock shipment received (${rcv.receivingRef})`,
+          reference: receivingRef,
+          reason: `Stock shipment received (${receivingRef})`,
+          batchNumber: String(rcv.batchNumber || ''),
+          sku: '',
           icon: Truck,
           badgeColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
           rawReceiving: rcv
@@ -117,7 +142,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
     return { todayCount, stockChanges, receivingsCount, adjustmentsCount };
   }, [activities]);
 
-  // Filtered Activities
+  // Filtered Activities with null-safe search matching
   const filteredActivities = useMemo(() => {
     const now = new Date();
     const todayStr = now.toDateString();
@@ -133,13 +158,26 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     return activities.filter(a => {
-      const q = searchQuery.toLowerCase().trim();
+      const q = String(searchQuery || '').toLowerCase().trim();
+
+      const itemNameStr = String(a.itemName || '').toLowerCase();
+      const userNameStr = String(a.userName || '').toLowerCase();
+      const referenceStr = String(a.reference || '').toLowerCase();
+      const actionLabelStr = String(a.actionLabel || '').toLowerCase();
+      const reasonStr = String(a.reason || '').toLowerCase();
+      const batchStr = String(a.batchNumber || '').toLowerCase();
+      const skuStr = String(a.sku || '').toLowerCase();
+      const typeStr = String(a.type || '').toLowerCase();
+
       const matchesSearch = !q ||
-        a.itemName.toLowerCase().includes(q) ||
-        a.userName.toLowerCase().includes(q) ||
-        a.reference.toLowerCase().includes(q) ||
-        a.actionLabel.toLowerCase().includes(q) ||
-        a.reason.toLowerCase().includes(q);
+        itemNameStr.includes(q) ||
+        userNameStr.includes(q) ||
+        referenceStr.includes(q) ||
+        actionLabelStr.includes(q) ||
+        reasonStr.includes(q) ||
+        batchStr.includes(q) ||
+        skuStr.includes(q) ||
+        typeStr.includes(q);
 
       let matchesAction = true;
       if (actionFilter === 'RECEIVED') matchesAction = a.actionLabel === 'Stock Received';
@@ -156,6 +194,13 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
     });
   }, [activities, searchQuery, actionFilter, dateFilter]);
 
+  // Paginated activities
+  const totalPages = Math.ceil(filteredActivities.length / itemsPerPage) || 1;
+  const paginatedActivities = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredActivities.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredActivities, currentPage, itemsPerPage]);
+
   return (
     <div className="space-y-6">
       
@@ -164,10 +209,10 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
             <span className="p-2 rounded-2xl bg-purple-500/10 text-purple-400">📜</span>
-            Activity Logs
+            Inventory &amp; Activity Logs
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            See what changed and when.
+            Complete audit trail of stock movements, receipts, and inventory adjustments.
           </p>
         </div>
       </div>
@@ -189,7 +234,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
         <div className="bg-[var(--card-bg)]/60 border border-[var(--border-color)] p-4 rounded-2xl space-y-1">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] block">Stock Adjustments</span>
           <div className="text-2xl font-black text-amber-400 font-mono">{summary.adjustmentsCount}</div>
-          <div className="text-[10px] text-[var(--text-muted)]">Spoilage & corrections</div>
+          <div className="text-[10px] text-[var(--text-muted)]">Spoilage &amp; corrections</div>
         </div>
 
         <div className="bg-[var(--card-bg)]/60 border border-[var(--border-color)] p-4 rounded-2xl space-y-1">
@@ -206,10 +251,18 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search activity by item, user, ref, action..."
-            className="w-full pl-9 pr-4 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500 font-bold"
+            placeholder="Search by item, user, ref, batch, SKU, action..."
+            className="w-full pl-9 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500 font-bold"
           />
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-[var(--text-muted)]" />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-2.5 text-[var(--text-muted)] hover:text-[var(--text-main)] text-xs font-bold"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs font-bold text-[var(--text-muted)]">
@@ -220,7 +273,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
             <select
               value={actionFilter}
               onChange={(e) => setActionFilter(e.target.value)}
-              className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer"
+              className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer font-bold"
             >
               <option value="ALL">All Actions</option>
               <option value="RECEIVED">Stock Received</option>
@@ -235,7 +288,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
             <select
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
-              className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer"
+              className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer font-bold"
             >
               <option value="ALL">All Time</option>
               <option value="TODAY">Today</option>
@@ -244,6 +297,19 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
               <option value="LAST_30">Last 30 Days</option>
             </select>
           </div>
+
+          {(searchQuery || actionFilter !== 'ALL' || dateFilter !== 'ALL') && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setActionFilter('ALL');
+                setDateFilter('ALL');
+              }}
+              className="px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              Reset Filters
+            </button>
+          )}
         </div>
       </div>
 
@@ -252,11 +318,19 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
         {filteredActivities.length === 0 ? (
           <div className="p-12 text-center text-[var(--text-muted)] text-xs space-y-2">
             <History className="w-8 h-8 mx-auto text-[var(--text-muted)] opacity-50" />
-            <p className="font-bold text-[var(--text-main)] text-sm">No activity yet</p>
-            <p className="text-[var(--text-muted)]">Important inventory and system actions will appear here automatically.</p>
+            <p className="font-bold text-[var(--text-main)] text-sm">
+              {searchQuery || actionFilter !== 'ALL' || dateFilter !== 'ALL'
+                ? 'No matching logs found'
+                : 'No activity logs available'}
+            </p>
+            <p className="text-[var(--text-muted)]">
+              {searchQuery || actionFilter !== 'ALL' || dateFilter !== 'ALL'
+                ? 'Try adjusting your search query or clear the active filters.'
+                : 'Important inventory actions, stock receipts, and deductions will appear here automatically.'}
+            </p>
           </div>
         ) : (
-          filteredActivities.map((act) => {
+          paginatedActivities.map((act) => {
             const IconComp = act.icon;
 
             return (
@@ -283,13 +357,13 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
                       <span className="ml-2 font-mono text-amber-400">{act.changeQty}</span>
                     </div>
 
-                    <div className="flex items-center gap-3 text-[10px] text-[var(--text-muted)] font-mono">
+                    <div className="flex flex-wrap items-center gap-3 text-[10px] text-[var(--text-muted)] font-mono">
                       <span>Ref: <strong>{act.reference}</strong></span>
+                      {act.batchNumber && (
+                        <span>Batch: <strong className="text-orange-400">{act.batchNumber}</strong></span>
+                      )}
                       {act.reason && (
-                        <>
-                          <span>•</span>
-                          <span>Reason: <strong>{act.reason}</strong></span>
-                        </>
+                        <span>Reason: <strong>{act.reason}</strong></span>
                       )}
                     </div>
                   </div>
@@ -306,6 +380,36 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
             );
           })
         )}
+
+        {/* Pagination Controls */}
+        {filteredActivities.length > itemsPerPage && (
+          <div className="flex items-center justify-between pt-4 border-t border-[var(--border-color)] text-xs text-[var(--text-muted)]">
+            <span>
+              Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredActivities.length)} of {filteredActivities.length} logs
+            </span>
+            <div className="flex items-center space-x-2">
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:text-[var(--text-main)] font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Prev</span>
+              </button>
+              <span className="font-mono font-bold text-[var(--text-main)] px-2">
+                Page {currentPage} / {totalPages}
+              </span>
+              <button
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="px-3 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:text-[var(--text-main)] font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Log Activity Details Modal via Portal */}
@@ -317,7 +421,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
                 <h3 className="text-base font-black text-[var(--text-main)]">{selectedLogDetails.actionLabel}</h3>
                 <span className="text-[10px] text-purple-400 font-bold uppercase">{selectedLogDetails.dateFormatted} at {selectedLogDetails.timeFormatted}</span>
               </div>
-              <button onClick={() => setSelectedLogDetails(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)]">
+              <button onClick={() => setSelectedLogDetails(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -339,6 +443,12 @@ const AdminActivityLogsView = ({ logs = [], receivings = [] }) => {
                 <span className="text-[var(--text-muted)]">Reference Number:</span>
                 <strong className="text-orange-400">{selectedLogDetails.reference}</strong>
               </div>
+              {selectedLogDetails.batchNumber && (
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Batch Number:</span>
+                  <strong className="text-orange-400">{selectedLogDetails.batchNumber}</strong>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-[var(--text-muted)]">Explanation / Reason:</span>
                 <strong className="text-[var(--text-main)]">{selectedLogDetails.reason}</strong>

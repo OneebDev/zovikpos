@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Truck,
   Plus,
@@ -88,14 +89,18 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   const [subTab, setSubTab] = useState('NEW_RECEIVING'); // NEW_RECEIVING | HISTORY
   const [receivingMethod, setReceivingMethod] = useState('MANUAL'); // MANUAL | EXCEL | INVOICE
   const [loading, setLoading] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [receivingsList, setReceivingsList] = useState([]);
+  const [editingDraftId, setEditingDraftId] = useState(null);
   
   // Header Form State
   // Internal Reference starts BLANK -- user must click icon to generate
   const [receivingRef, setReceivingRef] = useState(''); // RCV-YYYYMMDD-XXX
   const [supplierId, setSupplierId] = useState('');
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState(''); // External Supplier Invoice # (e.g. INV-45892)
-  const [branchId, setBranchId] = useState('1');
+  const [batchNumber, setBatchNumber] = useState(''); // Shipment level Batch Number (same for all receiving items)
+  const [branchId, setBranchId] = useState('');
+  const [branchesList, setBranchesList] = useState([]);
   const [receivingDate, setReceivingDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   
@@ -129,9 +134,75 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     }
   ]);
 
+  // Local inventory mirror (keeps updated immediately when items are saved to catalog)
+  const [localInventory, setLocalInventory] = useState(inventory || []);
+  useEffect(() => {
+    if (inventory && Array.isArray(inventory)) {
+      setLocalInventory(inventory);
+    }
+  }, [inventory]);
+
+  // Save to Catalog (Single Item) Modal State
+  const [catalogModalOpen, setCatalogModalOpen] = useState(false);
+  const [catalogModalRowIndex, setCatalogModalRowIndex] = useState(null);
+  const [catalogModalData, setCatalogModalData] = useState({
+    name: '',
+    unit: 'KG',
+    category: 'General',
+    sku: '',
+    costPrice: 0,
+    minThreshold: 10,
+    maxThreshold: 100,
+    supplierId: '',
+    branchId: ''
+  });
+  const [savingCatalogItem, setSavingCatalogItem] = useState(false);
+  const [catalogModalError, setCatalogModalError] = useState('');
+  const [catalogModalDuplicateItem, setCatalogModalDuplicateItem] = useState(null);
+
+  // Bulk Save to Catalog State
+  const [bulkSavingCatalog, setBulkSavingCatalog] = useState(false);
+
   // Selected Receiving for Details Modal
   const [selectedReceiving, setSelectedReceiving] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+
+  // Computed Item Counts: Total, Matched, Suggested, New, Needs Review
+  const totalItemsCount = receivingRows.length;
+  const matchedItemsCount = receivingRows.filter(r => Boolean(r.inventoryItemId)).length;
+  const reviewMatchCount = receivingRows.filter(r => !r.inventoryItemId && r.suggestedItem).length;
+  const newItemsCount = receivingRows.filter(r => !r.inventoryItemId).length;
+  const needsReviewCount = receivingRows.filter(r => Boolean(r.needsReview)).length;
+
+  const CATALOG_CATEGORIES = [
+    'General',
+    'Vegetables',
+    'Meat & Protein',
+    'Dairy & Fats',
+    'Dry Goods',
+    'Spices',
+    'Bakery',
+    'Beverages',
+    'Sauces & Condiments',
+    'Packaging',
+    'Kitchen Supplies',
+    'Desserts',
+    'Other'
+  ];
+
+  const STANDARD_UNITS = [
+    'KG',
+    'G',
+    'L',
+    'ML',
+    'PCS',
+    'DOZEN',
+    'BOX',
+    'PACK',
+    'BOTTLE',
+    'BAG',
+    'ROLL'
+  ];
 
   // CSV / EXCEL Upload & Processing State
   const [parsingCsv, setParsingCsv] = useState(false);
@@ -140,6 +211,10 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   const [showOcrModal, setShowOcrModal] = useState(false);
   const [ocrFile, setOcrFile] = useState(null);
   const [extractingOcr, setExtractingOcr] = useState(false);
+  const [uploadedInvoiceDataUrl, setUploadedInvoiceDataUrl] = useState(null);
+  const [uploadedInvoiceFileName, setUploadedInvoiceFileName] = useState('');
+  const [uploadedInvoiceMimeType, setUploadedInvoiceMimeType] = useState('');
+  const [showInvoicePreviewModal, setShowInvoicePreviewModal] = useState(false);
 
   // History Filters
   const [historySearch, setHistorySearch] = useState('');
@@ -187,6 +262,101 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       setLoading(false);
     }
   };
+
+  const loadDraftIntoForm = (draft) => {
+    if (!draft) return;
+    setEditingDraftId(draft.id);
+    try {
+      localStorage.setItem('zovikpos_active_draft_id', String(draft.id));
+    } catch (_) {}
+    setReceivingRef(draft.receivingNumber || '');
+    setSupplierId(draft.supplierId ? String(draft.supplierId) : '');
+    setSupplierInvoiceNumber(draft.invoiceNumber || '');
+    setBatchNumber(draft.batchNumber || '');
+    if (draft.branchId) setBranchId(String(draft.branchId));
+    if (draft.receivingDate) {
+      const d = new Date(draft.receivingDate);
+      if (!isNaN(d.getTime())) {
+        setReceivingDate(d.toISOString().split('T')[0]);
+      }
+    }
+    setNotes(draft.notes || '');
+
+    if (draft.items && draft.items.length > 0) {
+      const rows = draft.items.map(item => ({
+        inventoryItemId: item.inventoryItemId ? String(item.inventoryItemId) : '',
+        searchTerm: item.inventoryItem?.name || '',
+        showSearchDropdown: false,
+        quantity: item.quantity != null ? item.quantity : 1,
+        unit: item.unit || item.inventoryItem?.unit || 'KG',
+        unitCost: item.unitCost != null ? item.unitCost : 0,
+        batchNumber: item.batchNumber || '',
+        expiryDate: item.expiryDate ? new Date(item.expiryDate).toISOString().split('T')[0] : '',
+        notes: item.notes || '',
+        showMoreDetails: false,
+        isAiDetected: false,
+        confidence: 1.0,
+        isUnmatched: false
+      }));
+      setReceivingRows(rows);
+    } else {
+      setReceivingRows([
+        {
+          inventoryItemId: '',
+          searchTerm: '',
+          showSearchDropdown: false,
+          quantity: 1,
+          unit: 'KG',
+          unitCost: 0,
+          batchNumber: '',
+          expiryDate: '',
+          notes: '',
+          showMoreDetails: false,
+          isAiDetected: false,
+          confidence: 1.0,
+          isUnmatched: false
+        }
+      ]);
+    }
+    setSubTab('NEW_RECEIVING');
+    setCompletedReceiving(null);
+  };
+
+  useEffect(() => {
+    const checkPersistedDraft = async () => {
+      try {
+        const activeDraftId = localStorage.getItem('zovikpos_active_draft_id');
+        if (activeDraftId) {
+          const res = await api.get(`/inventory/receivings/${activeDraftId}`);
+          if (res.data?.receiving && res.data.receiving.status === 'DRAFT') {
+            loadDraftIntoForm(res.data.receiving);
+          } else {
+            localStorage.removeItem('zovikpos_active_draft_id');
+          }
+        }
+      } catch (_) {
+        try {
+          localStorage.removeItem('zovikpos_active_draft_id');
+        } catch (_) {}
+      }
+    };
+    checkPersistedDraft();
+  }, []);
+
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const res = await api.get('/admin/branches');
+        if (res.data?.branches && res.data.branches.length > 0) {
+          setBranchesList(res.data.branches);
+          setBranchId(String(res.data.branches[0].id));
+        }
+      } catch (_) {
+        // Fallback handled smoothly
+      }
+    };
+    fetchBranches();
+  }, []);
 
   useEffect(() => {
     if (subTab === 'HISTORY') {
@@ -326,9 +496,11 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         inventoryItemId: String(invItem.id),
         searchTerm: invItem.name,
         showSearchDropdown: false,
-        unit: invItem.unit || 'KG',
+        unit: invItem.unit || updated[index].unit || 'KG',
         unitCost: updated[index].unitCost || invItem.costPrice || 0, // keep existing cost if already set
-        isUnmatched: false  // clear unmatched flag once user selects catalog item
+        isUnmatched: false, // clear unmatched flag once user selects catalog item
+        suggestedItem: null,
+        status: 'MATCHED'
       };
       return updated;
     });
@@ -341,6 +513,243 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       updated[index][field] = value;
       return updated;
     });
+  };
+
+  // Open Single Item "Save in Catalog" modal
+  const handleOpenSaveCatalogModal = (index) => {
+    const row = receivingRows[index];
+    if (!row) return;
+
+    const initialName = (row.searchTerm || '').trim();
+    const initialUnit = normalizeUnit(row.unit || 'KG');
+    const initialCost = parseFloat(row.unitCost) || 0;
+
+    // Check if an existing catalog item matches name
+    const existingSameName = localInventory.find(i => 
+      i.name.toLowerCase().trim() === initialName.toLowerCase()
+    );
+
+    setCatalogModalRowIndex(index);
+    setCatalogModalData({
+      name: initialName,
+      unit: initialUnit,
+      category: 'General',
+      sku: '',
+      costPrice: initialCost,
+      minThreshold: 10,
+      maxThreshold: 100,
+      supplierId: supplierId || '',
+      branchId: branchId || (branchesList[0]?.id ? String(branchesList[0].id) : '')
+    });
+    setCatalogModalError('');
+    setCatalogModalDuplicateItem(existingSameName || null);
+    setCatalogModalOpen(true);
+  };
+
+  // Link row to existing item (avoids duplicate creation)
+  const handleLinkExistingItem = (existingItem) => {
+    if (catalogModalRowIndex === null || !existingItem) return;
+    const index = catalogModalRowIndex;
+
+    setReceivingRows(prev => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        inventoryItemId: String(existingItem.id),
+        searchTerm: existingItem.name,
+        unit: existingItem.unit || updated[index].unit,
+        isUnmatched: false,
+        showSearchDropdown: false
+      };
+      return updated;
+    });
+
+    if (showToast) showToast(`Linked row #${index + 1} to existing catalog item "${existingItem.name}".`, 'success');
+    setCatalogModalOpen(false);
+    setCatalogModalRowIndex(null);
+    setCatalogModalDuplicateItem(null);
+  };
+
+  // Save single new item in catalog
+  const handleSaveItemToCatalog = async (e) => {
+    if (e) e.preventDefault();
+    if (!catalogModalData.name || !catalogModalData.name.trim()) {
+      setCatalogModalError('Item name is required.');
+      return;
+    }
+    if (!catalogModalData.unit) {
+      setCatalogModalError('Unit is required.');
+      return;
+    }
+
+    setSavingCatalogItem(true);
+    setCatalogModalError('');
+
+    try {
+      const payload = {
+        name: catalogModalData.name.trim(),
+        unit: catalogModalData.unit.trim().toUpperCase(),
+        category: catalogModalData.category || 'General',
+        sku: catalogModalData.sku ? catalogModalData.sku.trim() : null,
+        costPrice: parseFloat(catalogModalData.costPrice) || 0.0,
+        minThreshold: parseFloat(catalogModalData.minThreshold) || 10.0,
+        maxThreshold: parseFloat(catalogModalData.maxThreshold) || 100.0,
+        stockLevel: 0.0, // Strictly 0.0 initial stock! Catalog creation must NOT increase stock!
+        branchId: catalogModalData.branchId ? parseInt(catalogModalData.branchId, 10) : undefined,
+        supplierId: catalogModalData.supplierId ? parseInt(catalogModalData.supplierId, 10) : undefined
+      };
+
+      const res = await api.post('/inventory', payload);
+      const createdItem = res.data?.item;
+
+      if (createdItem) {
+        // 1. Add to local inventory state
+        setLocalInventory(prev => [...prev, createdItem]);
+
+        // 2. Link the corresponding receiving row
+        if (catalogModalRowIndex !== null) {
+          const index = catalogModalRowIndex;
+          setReceivingRows(prev => {
+            const updated = [...prev];
+            updated[index] = {
+              ...updated[index],
+              inventoryItemId: String(createdItem.id),
+              searchTerm: createdItem.name,
+              unit: createdItem.unit,
+              isUnmatched: false,
+              justSavedToCatalog: true,
+              showSearchDropdown: false
+            };
+            return updated;
+          });
+        }
+
+        // 3. Trigger parent dashboard refresh
+        if (onRefresh) onRefresh();
+
+        if (showToast) showToast(`"${createdItem.name}" saved in catalog and linked.`, 'success');
+        setCatalogModalOpen(false);
+        setCatalogModalRowIndex(null);
+        setCatalogModalDuplicateItem(null);
+      }
+    } catch (err) {
+      console.error('Save item to catalog error:', err);
+      const errorMsg = err.response?.data?.error || 'Failed to save item in catalog.';
+      setCatalogModalError(errorMsg);
+      if (err.response?.data?.existingItem) {
+        setCatalogModalDuplicateItem(err.response.data.existingItem);
+      }
+    } finally {
+      setSavingCatalogItem(false);
+    }
+  };
+
+  // Bulk save all new items in catalog
+  const handleSaveAllNewItemsInCatalog = async () => {
+    if (bulkSavingCatalog) return;
+
+    // 1. Gather all unsaved new items
+    const newItemsToSave = [];
+    const validationErrors = [];
+
+    receivingRows.forEach((row, idx) => {
+      if (!row.inventoryItemId) {
+        const name = (row.searchTerm || '').trim();
+        const unit = normalizeUnit(row.unit || 'KG');
+        if (!name) {
+          validationErrors.push(`Item #${idx + 1} is missing an item name.`);
+        } else {
+          newItemsToSave.push({
+            rowIndex: idx,
+            name,
+            unit,
+            category: 'General',
+            sku: null,
+            costPrice: parseFloat(row.unitCost) || 0.0,
+            minThreshold: 10.0,
+            maxThreshold: 100.0,
+            supplierId: supplierId ? parseInt(supplierId, 10) : null,
+            expiryDate: row.expiryDate || null
+          });
+        }
+      }
+    });
+
+    if (validationErrors.length > 0) {
+      if (showToast) showToast(`Please correct errors: ${validationErrors[0]}`, 'error');
+      return;
+    }
+
+    if (newItemsToSave.length === 0) {
+      if (showToast) showToast('All items are already saved in the catalog.', 'info');
+      return;
+    }
+
+    setBulkSavingCatalog(true);
+
+    try {
+      const payload = {
+        branchId: branchId ? parseInt(branchId, 10) : undefined,
+        items: newItemsToSave
+      };
+
+      const res = await api.post('/inventory/bulk', payload);
+      const results = res.data?.results || [];
+      const summary = res.data?.summary || { total: newItemsToSave.length, savedCount: 0, failedCount: 0 };
+
+      const newlyCreatedItems = [];
+      const updatedRows = [...receivingRows];
+
+      results.forEach(r => {
+        if (r.success && r.item) {
+          newlyCreatedItems.push(r.item);
+          const targetIdx = r.index;
+          if (targetIdx !== undefined && updatedRows[targetIdx]) {
+            updatedRows[targetIdx] = {
+              ...updatedRows[targetIdx],
+              inventoryItemId: String(r.item.id),
+              searchTerm: r.item.name,
+              unit: r.item.unit || updatedRows[targetIdx].unit,
+              isUnmatched: false,
+              justSavedToCatalog: true,
+              showSearchDropdown: false
+            };
+          }
+        }
+      });
+
+      setReceivingRows(updatedRows);
+
+      if (newlyCreatedItems.length > 0) {
+        setLocalInventory(prev => {
+          const ids = new Set(prev.map(i => i.id));
+          const toAdd = newlyCreatedItems.filter(i => !ids.has(i.id));
+          return [...prev, ...toAdd];
+        });
+        if (onRefresh) onRefresh();
+      }
+
+      if (summary.failedCount === 0) {
+        if (showToast) {
+          showToast(
+            `All ${summary.savedCount} new items saved to catalog successfully!`,
+            'success'
+          );
+        }
+      } else {
+        if (showToast) {
+          showToast(
+            `${summary.total} new items processed: ${summary.savedCount} saved successfully, ${summary.failedCount} need correction.`,
+            summary.savedCount > 0 ? 'warning' : 'error'
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Bulk save catalog error:', err);
+      if (showToast) showToast(err.response?.data?.error || 'Failed to bulk save items to catalog.', 'error');
+    } finally {
+      setBulkSavingCatalog(false);
+    }
   };
 
   // Process Excel/CSV Upload directly & populate Review Stock rows
@@ -462,111 +871,128 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     }
   };
 
-  // --- AI / OCR Invoice Upload & Field Extraction ---
+  // --- AI / OCR Invoice Extraction Core ---
+  const runOcrExtraction = async (dataUrl, fileName) => {
+    setExtractingOcr(true);
+    try {
+      const selectedSup = suppliers.find(s => String(s.id) === String(supplierId));
+      const res = await api.post('/inventory/receivings/ocr-preview', {
+        fileBase64: dataUrl,
+        fileName: fileName,
+        supplierName: selectedSup ? selectedSup.name : ''
+      });
+
+      if (res.data) {
+        // Extract metadata
+        if (res.data.supplierName) {
+          setAiDetectedSupplier(res.data.supplierName);
+          const matchedSup = suppliers.find(s => 
+            s.name.toLowerCase().includes(res.data.supplierName.toLowerCase()) ||
+            res.data.supplierName.toLowerCase().includes(s.name.toLowerCase())
+          );
+          if (matchedSup) {
+            setSupplierId(String(matchedSup.id));
+          }
+        }
+
+        if (res.data.invoiceNumber) {
+          setSupplierInvoiceNumber(res.data.invoiceNumber);
+          setAiDetectedInvoiceNumber(res.data.invoiceNumber);
+        }
+
+        if (res.data.summary?.estimatedTotalCost) {
+          setAiDetectedInvoiceTotal(res.data.summary.estimatedTotalCost);
+        }
+
+        // Extract item rows with AI badges
+        const newRows = [];
+        const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+
+        const processOcrItem = (item, isMatched) => {
+          let expiryStr = '';
+          if (item.expiryDate) {
+            try { expiryStr = new Date(item.expiryDate).toISOString().split('T')[0]; }
+            catch (_) { expiryStr = String(item.expiryDate); }
+          }
+          const rowRand = Math.floor(1000 + Math.random() * 9000);
+          const autoBatch = (item.batchNumber && String(item.batchNumber).trim() !== '')
+            ? String(item.batchNumber).trim()
+            : `BATCH-${dateStr}-${rowRand}`;
+
+          newRows.push({
+            inventoryItemId: item.inventoryItemId ? String(item.inventoryItemId) : '',
+            searchTerm: item.matchedName || item.name || item.rawName || item.rawScannedName || '',
+            rawScannedName: item.rawScannedName || item.rawName || '',
+            showSearchDropdown: false,
+            quantity: parseFloat(item.quantity) || 1,
+            unit: normalizeUnit(item.unit || item.systemUnit),
+            unitCost: parseFloat(item.unitCost) || 0,
+            batchNumber: autoBatch,
+            expiryDate: expiryStr,
+            notes: '',
+            showMoreDetails: true,
+            isAiDetected: true,
+            confidence: item.confidence || 0.85,
+            isUnmatched: !isMatched,
+            status: item.status || (isMatched ? 'MATCHED' : 'NEW_ITEM'),
+            suggestedItem: item.suggestedItem || null,
+            needsReview: Boolean(item.needsReview),
+            reviewReason: item.reviewReason || null
+          });
+        };
+
+        const rawMatched = res.data.matchedItems || res.data.matched || [];
+        const rawUnmatched = res.data.unmatchedItems || res.data.unmatched || [];
+
+        rawMatched.forEach(m => processOcrItem(m, true));
+        rawUnmatched.forEach(u => processOcrItem(u, false));
+
+        if (newRows.length > 0) {
+          setReceivingRows(newRows);
+          setShowOcrModal(false);
+          setReceivingMethod('MANUAL'); // Direct to unified Review Stock
+
+          // Auto-generate Header Reference & Supplier Invoice Number if empty
+          if (!receivingRef) {
+            const randRef = Math.floor(1000 + Math.random() * 9000);
+            setReceivingRef(`RCV-${dateStr}-${randRef}`);
+          }
+          if (!supplierInvoiceNumber) {
+            const ms = String(Date.now()).slice(-6);
+            setSupplierInvoiceNumber(`INV-${dateStr}-${ms}`);
+          }
+          const matchedCount = res.data.summary?.matchedCount ?? rawMatched.length;
+          const reviewCount = res.data.summary?.needsReviewCount ?? newRows.filter(r => r.needsReview).length;
+          const newCount = res.data.summary?.newItemsCount ?? rawUnmatched.length;
+
+          if (showToast) {
+            const msg = `AI extracted ${newRows.length} items: ${matchedCount} matched ✓, ${newCount} new items${reviewCount > 0 ? `, ${reviewCount} need review ⚠️` : ''}.`;
+            showToast(msg, reviewCount > 0 ? 'warning' : 'success');
+          }
+        } else {
+          if (showToast) showToast('AI could not extract any items from this invoice. Please try a clearer image.', 'error');
+        }
+      }
+    } catch (err) {
+      console.error('Invoice OCR error:', err);
+      if (showToast) showToast('Failed to process invoice OCR with AI.', 'error');
+    } finally {
+      setExtractingOcr(false);
+    }
+  };
+
   const handleOcrFileSelect = async (file) => {
     if (!file) return;
     setOcrFile(file);
-    setExtractingOcr(true);
+    setUploadedInvoiceFileName(file.name);
+    setUploadedInvoiceMimeType(file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'));
 
     try {
       const reader = new FileReader();
       reader.onload = async (e) => {
-        try {
-          const selectedSup = suppliers.find(s => String(s.id) === String(supplierId));
-          const res = await api.post('/inventory/receivings/ocr-preview', {
-            fileBase64: e.target.result,
-            fileName: file.name,
-            supplierName: selectedSup ? selectedSup.name : ''
-          });
-
-          if (res.data) {
-            // Extract metadata
-            if (res.data.supplierName) {
-              setAiDetectedSupplier(res.data.supplierName);
-              const matchedSup = suppliers.find(s => 
-                s.name.toLowerCase().includes(res.data.supplierName.toLowerCase()) ||
-                res.data.supplierName.toLowerCase().includes(s.name.toLowerCase())
-              );
-              if (matchedSup) {
-                setSupplierId(String(matchedSup.id));
-              }
-            }
-
-            if (res.data.invoiceNumber) {
-              setSupplierInvoiceNumber(res.data.invoiceNumber);
-              setAiDetectedInvoiceNumber(res.data.invoiceNumber);
-            }
-
-            if (res.data.summary?.estimatedTotalCost) {
-              setAiDetectedInvoiceTotal(res.data.summary.estimatedTotalCost);
-            }
-
-            // Extract item rows with AI badges
-            const newRows = [];
-            const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
-
-            const processOcrItem = (item, isMatched) => {
-              let expiryStr = '';
-              if (item.expiryDate) {
-                try { expiryStr = new Date(item.expiryDate).toISOString().split('T')[0]; }
-                catch (_) { expiryStr = String(item.expiryDate); }
-              }
-              const rowRand = Math.floor(1000 + Math.random() * 9000);
-              const autoBatch = (item.batchNumber && String(item.batchNumber).trim() !== '')
-                ? String(item.batchNumber).trim()
-                : `BATCH-${dateStr}-${rowRand}`;
-
-              newRows.push({
-                inventoryItemId: item.inventoryItemId ? String(item.inventoryItemId) : '',
-                searchTerm: item.matchedName || item.name || item.rawName || item.rawScannedName || '',
-                showSearchDropdown: false,
-                quantity: parseFloat(item.quantity) || 1,
-                unit: normalizeUnit(item.unit || item.systemUnit),
-                unitCost: parseFloat(item.unitCost) || 0,
-                batchNumber: autoBatch,
-                expiryDate: expiryStr,
-                notes: '',
-                showMoreDetails: true,
-                isAiDetected: true,
-                confidence: item.confidence || 0.85,
-                isUnmatched: !isMatched
-              });
-            };
-
-            rawMatched.forEach(m => processOcrItem(m, true));
-            rawUnmatched.forEach(u => processOcrItem(u, false));
-
-            if (newRows.length > 0) {
-              setReceivingRows(newRows);
-              setShowOcrModal(false);
-              setReceivingMethod('MANUAL'); // Direct to unified Review Stock
-
-              // Auto-generate Header Reference & Supplier Invoice Number if empty
-              if (!receivingRef) {
-                const randRef = Math.floor(1000 + Math.random() * 9000);
-                setReceivingRef(`RCV-${dateStr}-${randRef}`);
-              }
-              if (!supplierInvoiceNumber) {
-                const ms = String(Date.now()).slice(-6);
-                setSupplierInvoiceNumber(`INV-${dateStr}-${ms}`);
-              }
-              const matchedCount = rawMatched.length;
-              const unmatchedCount = rawUnmatched.length;
-              if (showToast) {
-                const msg = unmatchedCount > 0
-                  ? `AI extracted ${newRows.length} items: ${matchedCount} matched, ${unmatchedCount} need manual catalog selection.`
-                  : `AI extracted all ${newRows.length} items. Review and confirm below.`;
-                showToast(msg, unmatchedCount > 0 ? 'warning' : 'success');
-              }
-            } else {
-              if (showToast) showToast('AI could not extract any items from this invoice. Please try a clearer image.', 'error');
-            }
-          }
-        } catch (err) {
-          if (showToast) showToast('Failed to process invoice OCR with AI.', 'error');
-        } finally {
-          setExtractingOcr(false);
-        }
+        const dataUrl = e.target.result;
+        setUploadedInvoiceDataUrl(dataUrl);
+        await runOcrExtraction(dataUrl, file.name);
       };
       reader.readAsDataURL(file);
     } catch (err) {
@@ -575,8 +1001,26 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     }
   };
 
+  const handleRetryOcr = async () => {
+    if (!uploadedInvoiceDataUrl || extractingOcr) return;
+    await runOcrExtraction(uploadedInvoiceDataUrl, uploadedInvoiceFileName || 'invoice');
+  };
+
   // Initiate Stock Receive
   const handleInitiateSubmit = (targetStatus) => {
+    if (loading || savingDraft) return;
+
+    if (targetStatus === 'DRAFT') {
+      const validRows = receivingRows.filter(r => r.inventoryItemId && parseFloat(r.quantity) > 0);
+      if (validRows.length === 0) {
+        if (showToast) showToast('Please select at least one catalog item with a quantity to save as draft.', 'warning');
+        return;
+      }
+      executeSubmitReceiving('DRAFT', validRows);
+      return;
+    }
+
+    // For RECEIVED (Confirm & Receive Stock)
     if (receivingRows.length === 0) {
       if (showToast) showToast('Please select at least one item to receive.', 'error');
       return;
@@ -585,7 +1029,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     for (let i = 0; i < receivingRows.length; i++) {
       const r = receivingRows[i];
       if (!r.inventoryItemId) {
-        if (showToast) showToast(`Item #${i + 1} ("${r.searchTerm}") is not matched to catalog. Please choose an item.`, 'error');
+        if (showToast) showToast(`Item #${i + 1} ("${r.searchTerm || 'Unnamed'}") is not matched to catalog. Please choose an item.`, 'error');
         return;
       }
       if (!r.quantity || parseFloat(r.quantity) <= 0) {
@@ -594,65 +1038,100 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       }
     }
 
-    if (targetStatus === 'RECEIVED') {
-      setShowConfirmModal(true);
-    } else {
-      executeSubmitReceiving('DRAFT');
-    }
+    setShowConfirmModal(true);
   };
 
   // Final Submit Action
-  const executeSubmitReceiving = async (targetStatus) => {
+  const executeSubmitReceiving = async (targetStatus, rowsOverride = null) => {
+    if (loading || savingDraft) return;
     setShowConfirmModal(false);
     setLoading(true);
+    if (targetStatus === 'DRAFT') {
+      setSavingDraft(true);
+    }
 
     try {
+      const rowsToSubmit = rowsOverride || receivingRows.filter(r => r.inventoryItemId && parseFloat(r.quantity) > 0);
+      const docBatchNumber = batchNumber.trim() || null;
       const payload = {
         supplierId: supplierId ? parseInt(supplierId, 10) : null,
-        branchId: branchId ? parseInt(branchId, 10) : 1,
+        branchId: branchId ? parseInt(branchId, 10) : null,
         receivingRef: receivingRef.trim(), // Internal RCV-20261006-001
         invoiceNumber: supplierInvoiceNumber.trim() || null, // External Supplier INV #
+        batchNumber: docBatchNumber,
         receivingDate,
         notes: notes ? String(notes).trim() : null,
         status: targetStatus,
-        items: receivingRows.map(r => ({
+        items: rowsToSubmit.map(r => ({
           inventoryItemId: parseInt(r.inventoryItemId, 10),
           quantity: parseFloat(r.quantity),
           unit: r.unit,
           unitCost: parseFloat(r.unitCost) || 0,
-          batchNumber: r.batchNumber ? String(r.batchNumber).trim() : null,
+          batchNumber: docBatchNumber || (r.batchNumber ? String(r.batchNumber).trim() : null),
           expiryDate: r.expiryDate || null,
           notes: r.notes ? String(r.notes).trim() : null
         }))
       };
 
-      const res = await api.post('/inventory/receivings', payload);
-      
-      const record = {
-        receivingRef,
-        supplierName: suppliers.find(s => String(s.id) === String(supplierId))?.name || 'Local Market / Not Provided',
-        invoiceNumber: supplierInvoiceNumber || 'Not Provided',
-        itemCount: validItemsCount,
-        totalCost: calculatedGrandTotal
-      };
-
-      setCompletedReceiving(record);
-
-      if (showToast) {
-        showToast(res.data?.message || 'Stock received successfully and inventory updated!');
+      let res;
+      if (editingDraftId) {
+        res = await api.put(`/inventory/receivings/${editingDraftId}`, payload);
+      } else {
+        res = await api.post('/inventory/receivings', payload);
       }
+      
+      const savedRec = res.data?.receiving;
 
-      if (onRefresh) onRefresh();
+      if (targetStatus === 'DRAFT') {
+        const newDraftId = savedRec?.id || editingDraftId;
+        if (newDraftId) {
+          setEditingDraftId(newDraftId);
+          try {
+            localStorage.setItem('zovikpos_active_draft_id', String(newDraftId));
+          } catch (_) {}
+        }
+        if (showToast) {
+          showToast('Draft has been saved successfully.', 'success');
+        }
+        setSubTab('HISTORY');
+        setCompletedReceiving(null);
+      } else {
+        setEditingDraftId(null);
+        try {
+          localStorage.removeItem('zovikpos_active_draft_id');
+        } catch (_) {}
+
+        const record = {
+          receivingRef: savedRec?.receivingNumber || receivingRef,
+          supplierName: suppliers.find(s => String(s.id) === String(supplierId))?.name || 'Local Market / Not Provided',
+          invoiceNumber: supplierInvoiceNumber || 'Not Provided',
+          itemCount: rowsToSubmit.length,
+          totalCost: calculatedGrandTotal
+        };
+
+        setCompletedReceiving(record);
+
+        if (showToast) {
+          showToast('Stock has been updated successfully.', 'success');
+        }
+
+        if (onRefresh) onRefresh();
+      }
     } catch (err) {
       console.error('Submit receiving error:', err);
       if (showToast) showToast(err.response?.data?.error || 'Something went wrong. Please try again.', 'error');
     } finally {
       setLoading(false);
+      setSavingDraft(false);
     }
   };
 
   // Reset receiving form for next receiving
   const handleResetForNewReceiving = () => {
+    setEditingDraftId(null);
+    try {
+      localStorage.removeItem('zovikpos_active_draft_id');
+    } catch (_) {}
     setCompletedReceiving(null);
     setSupplierInvoiceNumber('');
     setAiDetectedSupplier('');
@@ -682,10 +1161,17 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
   // Confirm existing Draft from History
   const handleConfirmDraft = async (receivingId) => {
+    if (loading || savingDraft) return;
     setLoading(true);
     try {
       const res = await api.post(`/inventory/receivings/${receivingId}/receive`);
-      if (showToast) showToast(res.data?.message || 'Draft confirmed and stock updated!');
+      if (showToast) showToast('Stock has been updated successfully.', 'success');
+      if (String(editingDraftId) === String(receivingId)) {
+        setEditingDraftId(null);
+        try {
+          localStorage.removeItem('zovikpos_active_draft_id');
+        } catch (_) {}
+      }
       fetchReceivings();
       if (onRefresh) onRefresh();
     } catch (err) {
@@ -806,6 +1292,32 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             </div>
           ) : (
             <div className="space-y-6">
+
+              {/* Active Draft Banner */}
+              {editingDraftId && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-scale-up">
+                  <div className="flex items-center space-x-3.5">
+                    <span className="p-2.5 bg-amber-500/20 text-amber-400 rounded-2xl flex-shrink-0">
+                      <FileText className="w-5 h-5" />
+                    </span>
+                    <div>
+                      <p className="text-xs sm:text-sm font-black text-amber-300">
+                        Editing Draft #{editingDraftId} {receivingRef ? `(${receivingRef})` : ''}
+                      </p>
+                      <p className="text-[11px] text-amber-200/70 mt-0.5">
+                        Working on an existing draft. Click &quot;Save Draft&quot; to keep updating or &quot;Confirm &amp; Receive Stock&quot; to finalize.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResetForNewReceiving}
+                    className="px-4 py-2 rounded-2xl bg-[var(--bg-color)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-muted)] hover:text-red-400 hover:border-red-500/30 transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    Discard &amp; Start Blank
+                  </button>
+                </div>
+              )}
 
               {/* Section 1: Receiving Method Cards */}
               <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl p-4 sm:p-5 space-y-3">
@@ -979,6 +1491,42 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     </div>
                   </div>
 
+                  {/* Shipment Batch Number (Applies to all receiving items) */}
+                  <div>
+                    <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
+                      <span>Shipment Batch Number</span>
+                      <span className="text-[10px] text-orange-400 font-normal lowercase">All Items Same Batch</span>
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        value={batchNumber}
+                        onChange={(e) => {
+                          const newBatch = e.target.value;
+                          setBatchNumber(newBatch);
+                          setReceivingRows((prev) => prev.map((r) => ({ ...r, batchNumber: newBatch })));
+                        }}
+                        placeholder="e.g. BATCH-001"
+                        className="w-full pl-3.5 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+                          const rand = Math.floor(1000 + Math.random() * 9000);
+                          const newBatch = `BATCH-${dateStr}-${rand}`;
+                          setBatchNumber(newBatch);
+                          setReceivingRows((prev) => prev.map((r) => ({ ...r, batchNumber: newBatch })));
+                          if (showToast) showToast(`Shipment Batch # Generated: ${newBatch}`, 'info');
+                        }}
+                        title="Generate auto batch number for all receiving items"
+                        className="absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Supplier Dropdown */}
                   <div>
                     <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
@@ -1038,8 +1586,15 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       onChange={(e) => setBranchId(e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                     >
-                      <option value="1">Main Campus Canteen Branch</option>
-                      <option value="2">Block B Extension Branch</option>
+                      {branchesList.length > 0 ? (
+                        branchesList.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">Default Branch</option>
+                      )}
                     </select>
                   </div>
 
@@ -1102,16 +1657,114 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   </button>
                 </div>
 
-                {/* Unmatched items warning banner */}
-                {receivingRows.some(r => r.isUnmatched && !r.inventoryItemId) && (
+                {/* Top Summary Bar: Total Items | Matched Items | Suggested | New Items | Needs Review */}
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-[var(--bg-color)]/80 border border-[var(--border-color)]">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0"></span>
+                      <span className="text-xs font-black text-[var(--text-main)]">
+                        {totalItemsCount} Total Items
+                      </span>
+                    </div>
+                    <span className="text-[var(--text-muted)] text-xs">|</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
+                      <span className="text-xs font-black text-emerald-400">
+                        {matchedItemsCount} Matched Items
+                      </span>
+                    </div>
+                    {reviewMatchCount > 0 && (
+                      <>
+                        <span className="text-[var(--text-muted)] text-xs">|</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shrink-0"></span>
+                          <span className="text-xs font-black text-purple-400">
+                            {reviewMatchCount} Suggested
+                          </span>
+                        </div>
+                      </>
+                    )}
+                    <span className="text-[var(--text-muted)] text-xs">|</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
+                      <span className="text-xs font-black text-amber-400">
+                        {newItemsCount} New Items
+                      </span>
+                    </div>
+                    {needsReviewCount > 0 && (
+                      <>
+                        <span className="text-[var(--text-muted)] text-xs">|</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0"></span>
+                          <span className="text-xs font-black text-rose-400">
+                            {needsReviewCount} Needs Review
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* View Original Uploaded Invoice Button */}
+                    {uploadedInvoiceDataUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setShowInvoicePreviewModal(true)}
+                        className="px-3 py-1.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                        title="View the original uploaded invoice image or PDF"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>View Invoice</span>
+                      </button>
+                    )}
+
+                    {/* Re-scan / Retry Extraction Button */}
+                    {uploadedInvoiceDataUrl && (
+                      <button
+                        type="button"
+                        onClick={handleRetryOcr}
+                        disabled={extractingOcr || bulkSavingCatalog || loading || savingDraft}
+                        className="px-3 py-1.5 rounded-xl bg-[var(--card-bg)] hover:bg-[var(--border-color)]/30 text-[var(--text-main)] border border-[var(--border-color)] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Re-run AI OCR on the current invoice without duplicate rows"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 text-purple-400 ${extractingOcr ? 'animate-spin' : ''}`} />
+                        <span>{extractingOcr ? 'Re-scanning...' : 'Re-scan'}</span>
+                      </button>
+                    )}
+
+                    {newItemsCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleSaveAllNewItemsInCatalog}
+                        disabled={bulkSavingCatalog || loading || savingDraft}
+                        className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-black shadow-sm transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+                      >
+                        {bulkSavingCatalog ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Saving {newItemsCount} New Items...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Save All New Items in Catalog</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Unmatched / New Items Warning Banner */}
+                {newItemsCount > 0 && (
                   <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30">
                     <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                     <div className="text-xs">
                       <span className="font-black text-amber-400">
-                        {receivingRows.filter(r => r.isUnmatched && !r.inventoryItemId).length} item(s) need catalog selection.
+                        {newItemsCount} item(s) are new and not yet in your inventory catalog.
                       </span>
                       <span className="text-[var(--text-muted)] ml-1">
-                        These were not automatically matched. Click the search field and select the correct catalog item.
+                        Save them individually using the "Save in Catalog" button on each row, or click "Save All New Items in Catalog" below.
                       </span>
                     </div>
                   </div>
@@ -1120,7 +1773,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 {/* List of Stacked Item Cards */}
                 <div className="space-y-4">
                   {receivingRows.map((row, index) => {
-                    const selectedInvItem = inventory.find(i => String(i.id) === String(row.inventoryItemId));
+                    const selectedInvItem = localInventory.find(i => String(i.id) === String(row.inventoryItemId));
                     const lineSubtotal = (parseFloat(row.quantity) || 0) * (parseFloat(row.unitCost) || 0);
                     const costDifference = selectedInvItem && row.unitCost > 0 && selectedInvItem.costPrice !== row.unitCost;
 
@@ -1128,7 +1781,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       <div
                         key={index}
                         className={`p-4 sm:p-5 rounded-2xl bg-[var(--bg-color)]/60 border space-y-4 relative transition-all ${
-                          row.isUnmatched
+                          row.needsReview
+                            ? 'border-rose-500/50 bg-rose-500/5'
+                            : row.isUnmatched
                             ? 'border-amber-500/60 bg-amber-500/5'
                             : row.isAiDetected
                             ? 'border-purple-500/40 bg-purple-500/5'
@@ -1158,16 +1813,19 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                   handleRowChange(index, 'searchTerm', val);
                                   handleRowChange(index, 'inventoryItemId', ''); // clear match when typing
                                   handleRowChange(index, 'isUnmatched', true);
+                                  handleRowChange(index, 'suggestedItem', null);
                                   handleRowChange(index, 'showSearchDropdown', true);
 
-                                  const exactMatch = inventory.find(i => i.name.toLowerCase().trim() === val.toLowerCase().trim());
+                                  const exactMatch = localInventory.find(i => i.name.toLowerCase().trim() === val.toLowerCase().trim());
                                   if (exactMatch) {
                                     handleSelectItem(index, exactMatch);
                                   }
                                 }}
-                                placeholder={row.isUnmatched && row.searchTerm ? `"${row.searchTerm}" – select catalog item...` : 'Search or select catalog item...'}
+                                placeholder={!row.inventoryItemId && row.searchTerm ? `"${row.searchTerm}" – click "Save in Catalog" or match...` : 'Search or select catalog item...'}
                                 className={`w-full pl-8 pr-3 py-2 bg-[var(--card-bg)] border rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none ${
-                                  row.isUnmatched && !row.inventoryItemId
+                                  row.needsReview
+                                    ? 'border-rose-500/60 focus:border-rose-500'
+                                    : !row.inventoryItemId
                                     ? 'border-amber-500/60 focus:border-amber-500'
                                     : 'border-[var(--border-color)] focus:border-orange-500'
                                 }`}
@@ -1179,7 +1837,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                 <div className="absolute z-50 left-0 right-0 mt-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl max-h-48 overflow-y-auto divide-y divide-[var(--border-color)]">
                                   {(() => {
                                     const q = (row.searchTerm || '').toLowerCase().trim();
-                                    const matches = inventory.filter(i => {
+                                    const matches = localInventory.filter(i => {
                                       if (!q) return true;
                                       const nameMatch = i.name.toLowerCase().includes(q);
                                       const catMatch = i.category?.toLowerCase().includes(q);
@@ -1222,24 +1880,84 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                   })()}
                                 </div>
                               )}
+
+                              {/* Scanned vs Matched Name Context */}
+                              {row.rawScannedName && row.rawScannedName.toLowerCase().trim() !== (row.searchTerm || '').toLowerCase().trim() && (
+                                <div className="text-[10px] text-[var(--text-muted)] mt-0.5 truncate" title={`Scanned: "${row.rawScannedName}"`}>
+                                  Scanned as: <span className="text-[var(--text-main)] font-semibold font-mono">"{row.rawScannedName}"</span>
+                                </div>
+                              )}
                             </div>
                           </div>
 
-                          {/* Badges: AI Detected / Needs Matching / Ready */}
-                          <div className="flex items-center space-x-2 self-end sm:self-auto">
+                          {/* Badges & Actions: AI Detected / 4 Distinct Statuses / Save in Catalog */}
+                          <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
                             {row.isAiDetected && (
                               <span className="px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-400 text-[9px] font-black uppercase tracking-wider border border-purple-500/30 flex items-center gap-1">
                                 <Sparkles className="w-3 h-3" /> AI Detected
                               </span>
                             )}
 
-                            {row.isUnmatched ? (
-                              <span className="px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-400 text-[10px] font-black uppercase tracking-wider border border-amber-500/30 flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3" /> Needs Matching
+                            {/* Status 4: Needs Review / Ambiguous */}
+                            {row.needsReview && (
+                              <span
+                                className="px-2 py-0.5 rounded-lg bg-rose-500/20 text-rose-400 text-[9px] font-bold border border-rose-500/30 flex items-center gap-1"
+                                title={row.reviewReason || 'Unclear text or digits detected'}
+                              >
+                                <AlertTriangle className="w-3 h-3 text-rose-400" />
+                                <span>Needs Review{row.reviewReason ? `: ${row.reviewReason}` : ''}</span>
                               </span>
-                            ) : selectedInvItem ? (
+                            )}
+
+                            {/* Status 2: Suggested Match (Needs Admin Confirmation) */}
+                            {!row.inventoryItemId && row.suggestedItem ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="px-2.5 py-1 rounded-xl bg-purple-500/15 text-purple-300 text-[10px] font-bold border border-purple-500/30 flex items-center gap-1">
+                                  <Search className="w-3 h-3 text-purple-400" />
+                                  <span>Suggested: <strong className="text-white font-extrabold">{row.suggestedItem.name}</strong> ({Math.round((row.confidence || 0.7) * 100)}%)</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectItem(index, row.suggestedItem)}
+                                  className="px-2 py-1 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-black shadow-sm transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                                  title={`Accept suggestion "${row.suggestedItem.name}"`}
+                                >
+                                  <Check className="w-3 h-3" />
+                                  <span>Accept Suggestion</span>
+                                </button>
+                              </div>
+                            ) : null}
+
+                            {/* Status 3: New Item (Not in Catalog) */}
+                            {!row.inventoryItemId && !row.suggestedItem ? (
+                              <>
+                                <span className="px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-400 text-[10px] font-black uppercase tracking-wider border border-amber-500/30 flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3" /> New Item
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSaveCatalogModal(index)}
+                                  className="px-2.5 py-1 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-[11px] font-black shadow-sm transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                                  title="Save this new item into Inventory Catalog"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>Save in Catalog</span>
+                                </button>
+                              </>
+                            ) : null}
+
+                            {/* Status 1: Confident Catalog Match */}
+                            {row.inventoryItemId && row.justSavedToCatalog ? (
+                              <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Added to Catalog
+                              </span>
+                            ) : row.inventoryItemId && selectedInvItem ? (
                               <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/20 flex items-center gap-1">
-                                <Check className="w-3 h-3" /> Ready ({selectedInvItem.category || 'General'})
+                                <Check className="w-3 h-3" /> Matched ({selectedInvItem.category || 'General'})
+                              </span>
+                            ) : row.inventoryItemId ? (
+                              <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/20 flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Matched
                               </span>
                             ) : null}
 
@@ -1383,6 +2101,42 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <span>Add Another Item</span>
                   </button>
                 </div>
+
+                {/* Bulk Save in Catalog Callout at the bottom of preview */}
+                {newItemsCount > 0 && (
+                  <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row justify-between items-center gap-4 mt-3">
+                    <div className="space-y-1 text-center sm:text-left">
+                      <div className="flex items-center justify-center sm:justify-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                        <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider">
+                          {newItemsCount} New Item(s) Not In Catalog
+                        </h4>
+                      </div>
+                      <p className="text-[11px] text-[var(--text-muted)]">
+                        Save all valid new items to your catalog in one click. Catalog items are created with 0 initial stock until you confirm stock receiving.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveAllNewItemsInCatalog}
+                      disabled={bulkSavingCatalog || loading || savingDraft}
+                      className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-black shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+                    >
+                      {bulkSavingCatalog ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Saving All {newItemsCount} Items to Catalog...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-4 h-4" />
+                          <span>Save All New Items in Catalog ({newItemsCount})</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Section 4: Notes Card */}
@@ -1419,20 +2173,36 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   <button
                     type="button"
                     onClick={() => handleInitiateSubmit('DRAFT')}
-                    disabled={loading}
-                    className="flex-1 sm:flex-initial px-5 py-3 rounded-2xl bg-[var(--bg-color)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                    disabled={loading || savingDraft}
+                    className="flex-1 sm:flex-initial px-5 py-3 rounded-2xl bg-[var(--bg-color)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    Save Draft
+                    {savingDraft ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-orange-400" />
+                        <span>Saving Draft...</span>
+                      </>
+                    ) : (
+                      <span>Save Draft</span>
+                    )}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => handleInitiateSubmit('RECEIVED')}
-                    disabled={loading}
-                    className="flex-1 sm:flex-initial px-7 py-3 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black shadow-lg shadow-orange-600/20 transition-all cursor-pointer flex items-center justify-center space-x-2"
+                    disabled={loading || savingDraft}
+                    className="flex-1 sm:flex-initial px-7 py-3 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black shadow-lg shadow-orange-600/20 transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Confirm & Receive Stock</span>
+                    {loading && !savingDraft ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Processing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Confirm & Receive Stock</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -1441,13 +2211,234 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         </div>
       )}
 
-      {/* Confirmation Modal â€” Confirm Stock Receiving? */}
-      {showConfirmModal && (
+      {/* Save New Item in Catalog Modal */}
+      {catalogModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
+              <div>
+                <h3 className="text-base font-black text-[var(--text-main)] font-display flex items-center gap-2">
+                  <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">📦</span>
+                  Save New Item in Catalog
+                </h3>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                  Add this extracted item to your store inventory catalog (initial stock will be 0).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCatalogModalOpen(false);
+                  setCatalogModalRowIndex(null);
+                  setCatalogModalDuplicateItem(null);
+                }}
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Duplicate / Existing Item Alert if detected */}
+            {catalogModalDuplicateItem && (
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    <span className="font-black text-amber-400 block">
+                      Similar Catalog Item Already Exists
+                    </span>
+                    <span className="text-[var(--text-muted)]">
+                      "{catalogModalDuplicateItem.name}" ({catalogModalDuplicateItem.category || 'General'}, Unit: {catalogModalDuplicateItem.unit}) is already in your catalog.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleLinkExistingItem(catalogModalDuplicateItem)}
+                  className="w-full py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-black transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-amber-500/30"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Link to Existing Item "{catalogModalDuplicateItem.name}"</span>
+                </button>
+              </div>
+            )}
+
+            {/* Error message */}
+            {catalogModalError && (
+              <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-bold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{catalogModalError}</span>
+              </div>
+            )}
+
+            {/* Form Fields */}
+            <form onSubmit={handleSaveItemToCatalog} className="space-y-4">
+              {/* Item Name */}
+              <div>
+                <label className="block text-[10px] font-black uppercase text-[var(--text-main)] mb-1 tracking-wider">
+                  Item Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={catalogModalData.name}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCatalogModalData(prev => ({ ...prev, name: val }));
+                    const match = localInventory.find(i => i.name.toLowerCase().trim() === val.toLowerCase().trim());
+                    setCatalogModalDuplicateItem(match || null);
+                  }}
+                  placeholder="e.g. Fresh Tomatoes"
+                  className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                />
+              </div>
+
+              {/* Category & Unit Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-[var(--text-main)] mb-1 tracking-wider">
+                    Category *
+                  </label>
+                  <select
+                    value={catalogModalData.category}
+                    onChange={(e) => setCatalogModalData(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                  >
+                    {CATALOG_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-[var(--text-main)] mb-1 tracking-wider">
+                    Unit of Measure *
+                  </label>
+                  <select
+                    value={catalogModalData.unit}
+                    onChange={(e) => setCatalogModalData(prev => ({ ...prev, unit: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                  >
+                    {STANDARD_UNITS.map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* SKU & Cost Price Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-[var(--text-main)] mb-1 tracking-wider">
+                    SKU / Code (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={catalogModalData.sku}
+                    onChange={(e) => setCatalogModalData(prev => ({ ...prev, sku: e.target.value }))}
+                    placeholder="e.g. SKU-TOM-01"
+                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-[var(--text-main)] mb-1 tracking-wider">
+                    Cost Price (Rs.)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={catalogModalData.costPrice}
+                    onChange={(e) => setCatalogModalData(prev => ({ ...prev, costPrice: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+              </div>
+
+              {/* Min & Max Thresholds */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-[var(--text-main)] mb-1 tracking-wider">
+                    Min Stock Alert
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={catalogModalData.minThreshold}
+                    onChange={(e) => setCatalogModalData(prev => ({ ...prev, minThreshold: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-[var(--text-main)] mb-1 tracking-wider">
+                    Max Stock Capacity
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={catalogModalData.maxThreshold}
+                    onChange={(e) => setCatalogModalData(prev => ({ ...prev, maxThreshold: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+              </div>
+
+              {/* Informational note about stock separation */}
+              <div className="p-3 rounded-2xl bg-[var(--bg-color)]/70 border border-[var(--border-color)] text-[11px] text-[var(--text-muted)]">
+                ℹ️ <strong>Catalog Separation:</strong> This creates the catalog definition with 0 stock. Actual received quantity will only be added to stock when you click <strong>Confirm &amp; Receive Stock</strong>.
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border-color)]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCatalogModalOpen(false);
+                    setCatalogModalRowIndex(null);
+                    setCatalogModalDuplicateItem(null);
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-xs font-bold text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={savingCatalogItem}
+                  className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black shadow-lg shadow-orange-600/20 transition-all cursor-pointer flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {savingCatalogItem ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving to Catalog...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Save to Catalog</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Confirmation Modal — Confirm Stock Receiving? */}
+      {showConfirmModal && createPortal(
         <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-scale-up">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <h3 className="text-base font-black text-[var(--text-main)] font-display flex items-center gap-2">
-                <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">ðŸ“¦</span>
+                <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">📦</span>
                 Confirm Stock Receiving
               </h3>
               <button onClick={() => setShowConfirmModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)]">
@@ -1497,13 +2488,22 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <button
                 type="button"
                 onClick={() => executeSubmitReceiving('RECEIVED')}
-                className="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black text-xs shadow-md cursor-pointer"
+                disabled={loading}
+                className="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black text-xs shadow-md cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Confirm & Receive Stock
+                {loading ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Confirming...</span>
+                  </>
+                ) : (
+                  <span>Confirm & Receive Stock</span>
+                )}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* History SubTab */}
@@ -1605,13 +2605,26 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                             <Eye className="w-4 h-4" />
                           </button>
                           {rec.status === 'DRAFT' && (
-                            <button
-                              type="button"
-                              onClick={() => handleConfirmDraft(rec.id)}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px]"
-                            >
-                              Confirm
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => loadDraftIntoForm(rec)}
+                                className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30 font-bold text-[10px] transition-colors cursor-pointer"
+                                title="Resume and edit this draft"
+                              >
+                                Resume
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmDraft(rec.id)}
+                                disabled={loading}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] shadow-sm transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1"
+                                title="Confirm and update stock now"
+                              >
+                                {loading && <RefreshCw className="w-3 h-3 animate-spin" />}
+                                <span>Confirm</span>
+                              </button>
+                            </>
                           )}
                         </td>
                       </tr>
@@ -1625,7 +2638,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       )}
 
       {/* AI OCR Invoice Modal */}
-      {showOcrModal && (
+      {showOcrModal && createPortal(
         <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
@@ -1660,11 +2673,12 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Receiving Details Modal */}
-      {showDetailsModal && selectedReceiving && (
+      {showDetailsModal && selectedReceiving && createPortal(
         <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
@@ -1723,7 +2737,65 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Uploaded Invoice Document Modal */}
+      {showInvoicePreviewModal && uploadedInvoiceDataUrl && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-4xl w-full p-6 space-y-4 shadow-2xl flex flex-col max-h-[92vh]">
+            <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <FileText className="w-5 h-5 text-purple-400" />
+                <div>
+                  <h3 className="text-base font-black text-[var(--text-main)]">
+                    Original Uploaded Invoice
+                  </h3>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    {uploadedInvoiceFileName || 'Uploaded Invoice Document'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRetryOcr}
+                  disabled={extractingOcr}
+                  className="px-3 py-1.5 rounded-xl bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-500/30 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  title="Re-run AI extraction"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${extractingOcr ? 'animate-spin' : ''}`} />
+                  <span>{extractingOcr ? 'Re-scanning...' : 'Re-scan'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowInvoicePreviewModal(false)}
+                  className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto bg-[var(--bg-color)]/50 rounded-2xl p-2 border border-[var(--border-color)] flex items-center justify-center min-h-[350px]">
+              {uploadedInvoiceMimeType.includes('pdf') || uploadedInvoiceFileName.toLowerCase().endsWith('.pdf') ? (
+                <iframe
+                  src={uploadedInvoiceDataUrl}
+                  title="PDF Invoice Preview"
+                  className="w-full h-full min-h-[500px] rounded-xl border-0"
+                />
+              ) : (
+                <img
+                  src={uploadedInvoiceDataUrl}
+                  alt="Invoice Preview"
+                  className="max-h-[70vh] w-auto max-w-full object-contain rounded-xl shadow-md"
+                />
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
     </div>

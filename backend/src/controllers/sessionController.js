@@ -50,7 +50,7 @@ const startSession = async (req, res) => {
 
     // Create a new distinct session UUID for this customer visit
     const sessionId = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4 hours active window
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes inactivity window
 
     const session = await prisma.session.create({
       data: {
@@ -134,11 +134,27 @@ const getSession = async (req, res) => {
 
     // Auto-expire check
     if (session.status === 'ACTIVE' && new Date() > new Date(session.expiresAt)) {
-      const updated = await prisma.session.update({
-        where: { id: sessionId },
-        data: { status: 'EXPIRED' },
+      // Check if session has active orders before expiring
+      const activeOrderCount = await prisma.order.count({
+        where: {
+          sessionId: sessionId,
+          status: { in: ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY'] },
+        },
       });
-      session.status = updated.status;
+
+      if (activeOrderCount > 0) {
+        // Extend session - active orders prevent expiry
+        await prisma.session.update({
+          where: { id: sessionId },
+          data: { expiresAt: new Date(Date.now() + 10 * 60 * 1000) },
+        });
+      } else {
+        const updated = await prisma.session.update({
+          where: { id: sessionId },
+          data: { status: 'EXPIRED' },
+        });
+        session.status = updated.status;
+      }
     }
 
     return res.json({ session });

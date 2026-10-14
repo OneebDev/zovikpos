@@ -9,8 +9,11 @@ const {
 } = require('../controllers/orderController');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
+const sessionActivityMiddleware = require('../middleware/sessionActivityMiddleware');
 
 const router = express.Router();
+
+router.use(sessionActivityMiddleware);
 
 // Public Order Tracking via Dynamic QR token
 router.get('/track/:token', getOrderByTrackingToken);

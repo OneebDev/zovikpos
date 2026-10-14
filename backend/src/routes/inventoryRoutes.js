@@ -4,6 +4,7 @@ const {
   getSmartAIInsights,
   getInventoryItems,
   addInventoryItem,
+  bulkAddInventoryItems,
   updateInventoryItem,
   deleteInventoryItem,
   stockIn,
@@ -28,6 +29,7 @@ const {
   createReceiving,
   confirmReceiving,
   cancelReceiving,
+  updateReceiving,
   previewImportCSV,
   previewAiOcrInvoice,
   suggestRecipeForMenuItem,
@@ -44,6 +46,8 @@ router.use(roleMiddleware(['ADMIN', 'VENDOR', 'KITCHEN'])); // Accessible to sta
 // Summary & Catalog
 router.get('/summary', getInventorySummary);
 router.get('/', getInventoryItems);
+router.post('/bulk', roleMiddleware(['ADMIN', 'VENDOR']), bulkAddInventoryItems);
+router.post('/items/bulk', roleMiddleware(['ADMIN', 'VENDOR']), bulkAddInventoryItems);
 router.post('/', roleMiddleware(['ADMIN', 'VENDOR']), addInventoryItem);
 router.put('/:id', roleMiddleware(['ADMIN', 'VENDOR']), updateInventoryItem);
 router.delete('/:id', roleMiddleware(['ADMIN', 'VENDOR']), deleteInventoryItem);
@@ -53,6 +57,7 @@ router.get('/receivings', getReceivings);
 router.get('/receivings/next-ref', generateReceivingRef);
 router.get('/receivings/:id', getReceivingById);
 router.post('/receivings', roleMiddleware(['ADMIN', 'VENDOR']), createReceiving);
+router.put('/receivings/:id', roleMiddleware(['ADMIN', 'VENDOR']), updateReceiving);
 router.post('/receivings/:id/receive', roleMiddleware(['ADMIN', 'VENDOR']), confirmReceiving);
 router.post('/receivings/:id/cancel', roleMiddleware(['ADMIN', 'VENDOR']), cancelReceiving);
 router.post('/receivings/import/preview', roleMiddleware(['ADMIN', 'VENDOR']), previewImportCSV);

@@ -9,6 +9,8 @@ import {
   X,
 } from 'lucide-react';
 import api from '../../../services/api';
+import PhoneInput from '../../PhoneInput';
+import { formatPhoneDisplay } from '../../../utils/phoneUtils';
 
 const AdminBranchesView = ({ showToast }) => {
   const [branches, setBranches] = useState([]);
@@ -96,7 +98,7 @@ const AdminBranchesView = ({ showToast }) => {
                 </div>
                 <div className="flex items-center space-x-2">
                   <Phone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>{b.phone || '+92 300 1234567'}</span>
+                  <span>{b.phone ? formatPhoneDisplay(b.phone) : '+92 300 1234567'}</span>
                 </div>
               </div>
 
@@ -159,12 +161,9 @@ const AdminBranchesView = ({ showToast }) => {
 
               <div>
                 <label className="block font-bold text-[var(--text-muted)] uppercase mb-1">Contact Phone</label>
-                <input
-                  type="text"
+                <PhoneInput
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="+92 300 0000000"
-                  className="w-full px-4 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                  onChange={(val) => setFormData({ ...formData, phone: val })}
                 />
               </div>
 

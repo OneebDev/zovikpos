@@ -270,7 +270,22 @@ api.interceptors.response.use(
         } catch (refreshErr) {
           processQueue(refreshErr, null);
           isRefreshing = false;
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('session-expired', {
+                detail: { message: 'Your session has expired. Please log in again.' },
+              })
+            );
+          }
           return Promise.reject(refreshErr);
+        }
+      } else {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('session-expired', {
+              detail: { message: 'Your session has expired. Please log in again.' },
+            })
+          );
         }
       }
     }

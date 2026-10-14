@@ -9,6 +9,9 @@ const {
 
 const router = express.Router();
 
+const sessionActivityMiddleware = require('../middleware/sessionActivityMiddleware');
+router.use(sessionActivityMiddleware);
+
 router.get('/:sessionId', getCart);
 router.post('/:sessionId/items', addItemToCart);
 router.put('/:sessionId/items/:itemId', updateCartItem);
