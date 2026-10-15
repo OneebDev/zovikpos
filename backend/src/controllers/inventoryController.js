@@ -5,8 +5,14 @@ const { emitToAdmin, emitToVendor } = require('../sockets/socket');
 const { convertUnit } = require('../utils/unitConverter');
 const { parseAndMatchInvoice } = require('../services/aiOcrService');
 const { logAudit } = require('../middleware/auditMiddleware');
+const { inferCategoryFromItemName } = require('../utils/categoryHelper');
+const { saveLearnedAlias, getLearnedAliases } = require('../services/aliasService');
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour TTL for cached ML forecasts
+const roundReceivingMoney = (value) => {
+  const numericValue = Number(value ?? 0);
+  return Number.isFinite(numericValue) ? Math.round((numericValue + Number.EPSILON) * 100) / 100 : Number.NaN;
+};
 
 /**
  * Get cached forecast from DB or invoke ML prediction and persist result
@@ -248,7 +254,7 @@ const addInventoryItem = async (req, res) => {
         unit,
         minThreshold: minThreshold ? parseFloat(minThreshold) : 10.0,
         maxThreshold: maxThreshold ? parseFloat(maxThreshold) : 100.0,
-        category: category || 'General',
+        category: (category && category !== 'General') ? category : inferCategoryFromItemName(name),
         sku: sku || null,
         costPrice: costPrice ? parseFloat(costPrice) : 0.0,
         expiryDate: expiryDate ? new Date(expiryDate) : null,
@@ -373,6 +379,44 @@ const deleteInventoryItem = async (req, res) => {
   }
 };
 
+const bulkDeleteInventoryItems = async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Please select inventory items to delete.' });
+  }
+
+  try {
+    const itemIds = ids.map((id) => parseInt(id, 10)).filter(Boolean);
+    let deletedCount = 0;
+
+    for (const invId of itemIds) {
+      const existing = await prisma.inventoryItem.findUnique({ where: { id: invId } });
+      if (!existing) continue;
+
+      await prisma.$transaction(async (tx) => {
+        await tx.recipeItem.deleteMany({ where: { inventoryItemId: invId } });
+        await tx.inventoryLog.deleteMany({ where: { inventoryItemId: invId } });
+        await tx.inventoryReceivingItem.deleteMany({ where: { inventoryItemId: invId } });
+        await tx.inventoryItem.delete({ where: { id: invId } });
+      });
+
+      emitToAdmin('inventory:delete', { id: invId });
+      emitToVendor('inventory:delete', { id: invId });
+      deletedCount++;
+    }
+
+    logAudit(req.user?.id || 1, 'BULK_DELETE_ITEMS', 'InventoryItem', null, { count: deletedCount });
+
+    return res.json({
+      message: `Successfully deleted ${deletedCount} inventory item(s).`,
+      count: deletedCount,
+    });
+  } catch (error) {
+    console.error('Bulk delete inventory items error:', error);
+    return res.status(500).json({ error: 'Failed to bulk delete inventory items.' });
+  }
+};
+
 /**
  * Perform Stock In (Purchase/Delivery receiving)
  */
@@ -396,13 +440,26 @@ const stockIn = async (req, res) => {
       const addQty = parseFloat(quantity);
       const qtyBefore = item.stockLevel;
       const qtyAfter = qtyBefore + addQty;
-      const newCost = unitCost !== undefined && parseFloat(unitCost) > 0 ? parseFloat(unitCost) : item.costPrice;
+      const purchaseUnitCost = unitCost !== undefined && parseFloat(unitCost) > 0 ? parseFloat(unitCost) : (item.costPrice || 0);
+
+      // Weighted-Average Costing calculation
+      let calculatedCostPrice = item.costPrice || 0;
+      if (qtyAfter > 0) {
+        if (qtyBefore <= 0) {
+          calculatedCostPrice = purchaseUnitCost;
+        } else {
+          const prevTotalValue = qtyBefore * (item.costPrice || 0);
+          const purchaseTotalValue = addQty * purchaseUnitCost;
+          calculatedCostPrice = (prevTotalValue + purchaseTotalValue) / qtyAfter;
+          calculatedCostPrice = Math.round(calculatedCostPrice * 10000) / 10000;
+        }
+      }
 
       const updated = await tx.inventoryItem.update({
         where: { id: item.id },
         data: {
           stockLevel: qtyAfter,
-          costPrice: newCost,
+          costPrice: calculatedCostPrice,
           ...(expiryDate ? { expiryDate: new Date(expiryDate) } : {}),
           ...(supplierId ? { supplierId: parseInt(supplierId, 10) } : {})
         },
@@ -606,6 +663,66 @@ const saveRecipeForMenuItem = async (req, res) => {
   } catch (error) {
     console.error('Save recipe error:', error);
     return res.status(500).json({ error: error.message || 'Failed to save recipe.' });
+  }
+};
+
+/**
+ * Delete a recipe mapped to a menu item (clears all recipeItems)
+ */
+const deleteRecipeForMenuItem = async (req, res) => {
+  const { menuItemId } = req.params;
+  const staffUserId = req.user?.id;
+
+  try {
+    const mId = parseInt(menuItemId, 10);
+    const menuItem = await prisma.menuItem.findUnique({
+      where: { id: mId },
+      include: { recipeItems: true }
+    });
+
+    if (!menuItem) {
+      return res.status(404).json({ error: 'Menu item not found.' });
+    }
+
+    const { count } = await prisma.recipeItem.deleteMany({
+      where: { menuItemId: mId }
+    });
+
+    return res.json({
+      message: `Recipe for "${menuItem.name}" deleted successfully (${count} ingredients removed).`,
+      count
+    });
+  } catch (error) {
+    console.error('Delete recipe error:', error);
+    return res.status(500).json({ error: 'Failed to delete recipe.' });
+  }
+};
+
+/**
+ * Bulk delete recipes for multiple menu items
+ */
+const bulkDeleteRecipes = async (req, res) => {
+  const { menuItemIds = [] } = req.body;
+  const staffUserId = req.user?.id;
+
+  if (!Array.isArray(menuItemIds) || menuItemIds.length === 0) {
+    return res.status(400).json({ error: 'Array of menuItemIds is required.' });
+  }
+
+  try {
+    const ids = menuItemIds.map(i => parseInt(i, 10)).filter(i => !isNaN(i));
+    const { count } = await prisma.recipeItem.deleteMany({
+      where: { menuItemId: { in: ids } }
+    });
+
+    return res.json({
+      message: `Successfully cleared recipes for ${ids.length} menu items (${count} ingredient links removed).`,
+      clearedMenuItemsCount: ids.length,
+      ingredientsRemovedCount: count
+    });
+  } catch (error) {
+    console.error('Bulk delete recipes error:', error);
+    return res.status(500).json({ error: 'Failed to bulk delete recipes.' });
   }
 };
 
@@ -914,6 +1031,48 @@ const deleteSupplier = async (req, res) => {
   }
 };
 
+const bulkDeleteSuppliers = async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Please select suppliers to delete.' });
+  }
+
+  try {
+    const supplierIds = ids.map((id) => parseInt(id, 10)).filter(Boolean);
+    let deletedCount = 0;
+    let skippedCount = 0;
+
+    for (const supId of supplierIds) {
+      const existing = await prisma.supplier.findUnique({
+        where: { id: supId },
+        include: { _count: { select: { receivings: true, inventoryItems: true } } },
+      });
+      if (!existing) continue;
+
+      const totalHistory = (existing._count?.receivings || 0) + (existing._count?.inventoryItems || 0);
+      if (totalHistory > 0) {
+        skippedCount++;
+        continue;
+      }
+
+      await prisma.supplier.delete({ where: { id: supId } });
+      deletedCount++;
+    }
+
+    logAudit(req.user?.id || 1, 'BULK_DELETE_SUPPLIERS', 'Supplier', null, { deletedCount, skippedCount });
+
+    return res.json({
+      message: `Deleted ${deletedCount} supplier(s). ${skippedCount > 0 ? `${skippedCount} supplier(s) were preserved due to existing receiving/inventory links.` : ''}`,
+      deletedCount,
+      skippedCount,
+      count: deletedCount,
+    });
+  } catch (error) {
+    console.error('Bulk delete suppliers error:', error);
+    return res.status(500).json({ error: 'Failed to bulk delete suppliers.' });
+  }
+};
+
 /**
  * Get inventory transaction history logs with filters
  */
@@ -934,16 +1093,111 @@ const getInventoryLogs = async (req, res) => {
       include: {
         inventoryItem: true,
         user: { select: { id: true, name: true, email: true } },
-        supplier: true
+        supplier: true,
+        receivingItem: {
+          include: {
+            receiving: {
+              include: {
+                supplier: true
+              }
+            }
+          }
+        },
+        receiving: {
+          include: {
+            supplier: true,
+            receivedBy: { select: { id: true, name: true, email: true } },
+            items: {
+              include: {
+                inventoryItem: true
+              }
+            }
+          }
+        }
       },
       orderBy: { createdAt: 'desc' },
-      take: 100
+      take: 250
     });
+
+    // Enrich logs with order and ordered items details where orderId is present
+    const orderIds = [...new Set(logs.map(l => l.orderId).filter(Boolean))];
+    if (orderIds.length > 0) {
+      const orders = await prisma.order.findMany({
+        where: { id: { in: orderIds } },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          orderItems: {
+            select: {
+              id: true,
+              menuItemId: true,
+              nameSnapshot: true,
+              priceSnapshot: true,
+              quantity: true,
+              subtotal: true
+            }
+          }
+        }
+      });
+      const orderMap = new Map(orders.map(o => [o.id, o]));
+      logs.forEach(l => {
+        if (l.orderId && orderMap.has(l.orderId)) {
+          l.order = orderMap.get(l.orderId);
+        }
+      });
+    }
 
     return res.json({ logs });
   } catch (error) {
     console.error('Fetch inventory logs error:', error);
     return res.status(500).json({ error: 'Failed to retrieve inventory logs.' });
+  }
+};
+
+/**
+ * Delete a single inventory log entry
+ */
+const deleteInventoryLog = async (req, res) => {
+  const { id } = req.params;
+  const staffUserId = req.user?.id;
+
+  try {
+    const logId = parseInt(id, 10);
+    const existing = await prisma.inventoryLog.findUnique({ where: { id: logId } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Inventory log entry not found.' });
+    }
+
+    await prisma.inventoryLog.delete({ where: { id: logId } });
+
+    return res.json({ message: 'Inventory log entry deleted successfully.' });
+  } catch (error) {
+    console.error('Delete inventory log error:', error);
+    return res.status(500).json({ error: 'Failed to delete inventory log entry.' });
+  }
+};
+
+/**
+ * Bulk delete inventory logs
+ */
+const bulkDeleteInventoryLogs = async (req, res) => {
+  const { ids = [], beforeDate } = req.body;
+
+  try {
+    const where = {};
+    if (Array.isArray(ids) && ids.length > 0) {
+      where.id = { in: ids.map(i => parseInt(i, 10)).filter(i => !isNaN(i)) };
+    } else if (beforeDate) {
+      where.createdAt = { lte: new Date(beforeDate) };
+    } else {
+      return res.status(400).json({ error: 'Provide either an array of log ids or a beforeDate cutoff.' });
+    }
+
+    const { count } = await prisma.inventoryLog.deleteMany({ where });
+
+    return res.json({ message: `Successfully deleted ${count} inventory log records.`, count });
+  } catch (error) {
+    console.error('Bulk delete inventory logs error:', error);
+    return res.status(500).json({ error: 'Failed to bulk delete inventory logs.' });
   }
 };
 
@@ -1328,7 +1582,23 @@ const getReceivings = async (req, res) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    return res.json({ receivings });
+    const receivingsWithDraftLines = receivings.map((receiving) => {
+      const marker = '__DRAFT_ITEMS__:';
+      const markerIndex = String(receiving.notes || '').indexOf(marker);
+      let draftItems = [];
+      if (markerIndex >= 0) {
+        try {
+          const serialized = String(receiving.notes).slice(markerIndex + marker.length).split('\n')[0].trim();
+          const parsed = JSON.parse(serialized);
+          if (Array.isArray(parsed)) draftItems = parsed;
+        } catch (error) {
+          console.warn(`Receiving draft lines could not be decoded for record ${receiving.id}.`);
+        }
+      }
+      return { ...receiving, draftItems, itemCount: (receiving.items?.length || 0) + draftItems.length };
+    });
+
+    return res.json({ receivings: receivingsWithDraftLines });
   } catch (error) {
     console.error('Fetch receivings error:', error);
     return res.status(500).json({ error: 'Failed to retrieve stock receiving records.' });
@@ -1371,14 +1641,40 @@ const getReceivingById = async (req, res) => {
  * Create new stock receiving transaction (DRAFT or CONFIRMED RECEIVED)
  */
 const createReceiving = async (req, res) => {
-  const { supplierId, invoiceNumber, receivingRef, branchId, receivingDate, notes, items, status } = req.body;
-
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'At least one inventory item is required for stock receiving.' });
+  const { supplierId, invoiceNumber, receivingRef, branchId, receivingDate, notes, items, status, draftNewItems } = req.body;
+  const requestedDiscountPercent = req.body.discountPercent == null ? null : Number(req.body.discountPercent);
+  let discountAmount = roundReceivingMoney(Number(req.body.discount ?? 0));
+  if (!Number.isFinite(discountAmount) || discountAmount < 0 || (requestedDiscountPercent !== null && (!Number.isFinite(requestedDiscountPercent) || requestedDiscountPercent < 0 || requestedDiscountPercent > 100))) {
+    return res.status(400).json({ error: 'Discount must be a valid non-negative amount.' });
   }
 
   const isConfirmed = status && status.toUpperCase() === 'RECEIVED';
   const targetStatus = isConfirmed ? 'RECEIVED' : 'DRAFT';
+
+  // For RECEIVED status, items are required. For DRAFT, at least items OR draftNewItems must be present
+  const hasKnownItems = Array.isArray(items) && items.length > 0;
+  const hasDraftNewItems = Array.isArray(draftNewItems) && draftNewItems.length > 0;
+
+  if (!hasKnownItems && !hasDraftNewItems) {
+    return res.status(400).json({ error: 'At least one inventory item is required for stock receiving.' });
+  }
+
+  if (isConfirmed && !hasKnownItems) {
+    return res.status(400).json({ error: 'All receiving items must specify a valid inventory item and positive quantity.' });
+  }
+  if (isConfirmed && hasDraftNewItems) {
+    return res.status(400).json({ error: 'New catalog items must be reviewed in a draft before stock can be received.' });
+  }
+  if (hasDraftNewItems) {
+    const invalidDraftItem = draftNewItems.find((item) => {
+      const quantity = Number(item?.quantity ?? item?.stockLevel);
+      const cost = Number(item?.unitCost ?? item?.costPrice ?? 0);
+      return !String(item?.name || '').trim() || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(cost) || cost < 0;
+    });
+    if (invalidDraftItem) {
+      return res.status(400).json({ error: `Draft item "${String(invalidDraftItem.name || 'Unnamed').trim()}" needs a name, a positive quantity, and a valid non-negative cost.` });
+    }
+  }
 
   try {
     let receivingNumber = receivingRef ? String(receivingRef).trim() : null;
@@ -1392,14 +1688,21 @@ const createReceiving = async (req, res) => {
     const candidateBranchId = branchId ? parseInt(branchId, 10) : (req.user?.branchId || null);
     const candidateSupplierId = supplierId ? parseInt(supplierId, 10) : null;
 
-    const [existingRec, branchCheck, supplierCheck] = await Promise.all([
-      prisma.inventoryReceiving.findUnique({ where: { receivingNumber }, select: { id: true } }),
+    const [initialExistingRec, branchCheck, supplierCheck] = await Promise.all([
+      prisma.inventoryReceiving.findUnique({ where: { receivingNumber }, select: {
+        id: true, status: true, supplierId: true, branchId: true, receivingNumber: true,
+        invoiceNumber: true, receivingDate: true, notes: true, subtotal: true, discount: true, discountPercent: true,
+        items: { select: { inventoryItemId: true, quantity: true, unit: true, unitCost: true, totalCost: true, batchNumber: true, expiryDate: true, notes: true } }
+      } }),
       candidateBranchId ? prisma.branch.findUnique({ where: { id: candidateBranchId }, select: { id: true } }) : null,
       candidateSupplierId ? prisma.supplier.findUnique({ where: { id: candidateSupplierId }, select: { id: true } }) : null
     ]);
 
-    if (existingRec) {
-      receivingNumber = `${receivingNumber}-${Math.floor(100 + Math.random() * 900)}`;
+    if (candidateSupplierId && !supplierCheck) {
+      return res.status(400).json({ error: 'Selected supplier was not found. Choose a valid supplier before saving this receiving.' });
+    }
+    if (candidateBranchId && !branchCheck) {
+      return res.status(400).json({ error: 'Selected branch was not found. Choose a valid branch before saving this receiving.' });
     }
 
     let resolvedBranchId = branchCheck ? branchCheck.id : null;
@@ -1409,23 +1712,71 @@ const createReceiving = async (req, res) => {
     }
 
     let resolvedSupplierId = supplierCheck ? supplierCheck.id : null;
+    let existingRec = initialExistingRec;
+    let existingDraftForRetry = false;
+
+    // Receiving references are globally unique in the existing schema. Give the same
+    // human-entered reference a stable supplier suffix so different suppliers stay separate.
+    if (existingRec && targetStatus === 'DRAFT' && existingRec.status === 'DRAFT' &&
+        existingRec.supplierId !== resolvedSupplierId) {
+      receivingNumber = `${receivingNumber}-SUP-${resolvedSupplierId || 'LOCAL'}`;
+      existingRec = await prisma.inventoryReceiving.findUnique({
+        where: { receivingNumber },
+        select: {
+          id: true, status: true, supplierId: true, branchId: true, receivingNumber: true,
+          invoiceNumber: true, receivingDate: true, notes: true, subtotal: true, discount: true, discountPercent: true,
+          items: { select: { inventoryItemId: true, quantity: true, unit: true, unitCost: true, totalCost: true, batchNumber: true, expiryDate: true, notes: true } }
+        }
+      });
+    }
+
+    // A retry of the same draft reference for the same supplier is idempotent.
+    // Never silently attach a retry to another supplier's draft or create a random duplicate.
+    if (existingRec) {
+      if (targetStatus === 'DRAFT' && existingRec.status === 'DRAFT' &&
+          existingRec.supplierId === resolvedSupplierId && existingRec.branchId === resolvedBranchId) {
+        existingDraftForRetry = true;
+      } else {
+        return res.status(409).json({ error: `Receiving reference "${receivingNumber}" is already in use. Use a unique reference for this supplier delivery.` });
+      }
+    }
+
+    // Prevent duplicate invoice imports
+    const cleanInv = invoiceNumber ? String(invoiceNumber).trim() : null;
+    const isPlaceholder = !cleanInv || /^INV-\d{8}-\d{6}$/i.test(cleanInv) || ['not provided', 'n/a', 'none', 'null'].includes(cleanInv.toLowerCase());
+    if (cleanInv && !isPlaceholder && resolvedSupplierId && targetStatus === 'RECEIVED') {
+      const duplicateInv = await prisma.inventoryReceiving.findFirst({
+        where: {
+          supplierId: resolvedSupplierId,
+          invoiceNumber: { equals: cleanInv, mode: 'insensitive' },
+          status: 'RECEIVED'
+        },
+        select: { id: true, receivingNumber: true, invoiceNumber: true, createdAt: true }
+      });
+      if (duplicateInv) {
+        return res.status(409).json({
+          error: `Duplicate invoice detected! Invoice #${cleanInv} from this supplier was already received and posted in transaction #${duplicateInv.receivingNumber} on ${new Date(duplicateInv.createdAt).toLocaleDateString()}. Duplicate imports are blocked to prevent double-counting stock.`,
+          duplicateReceiving: duplicateInv
+        });
+      }
+    }
 
     const resolvedDate = receivingDate ? new Date(receivingDate) : new Date();
 
     const preparedItems = [];
     let calculatedTotalCost = 0.0;
 
-    for (const item of items) {
+    for (const item of (items || [])) {
       const invId = parseInt(item.inventoryItemId, 10);
       const qty = parseFloat(item.quantity);
       const cost = item.unitCost !== undefined && item.unitCost !== '' ? parseFloat(item.unitCost) : 0.0;
 
-      if (isNaN(invId) || isNaN(qty) || qty <= 0) {
+      if (!Number.isInteger(invId) || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(cost) || cost < 0) {
         return res.status(400).json({ error: 'All receiving items must specify a valid inventory item and positive quantity.' });
       }
 
-      const itemTotal = qty * cost;
-      calculatedTotalCost += itemTotal;
+      const itemTotal = roundReceivingMoney(qty * cost);
+      calculatedTotalCost = roundReceivingMoney(calculatedTotalCost + itemTotal);
 
       preparedItems.push({
         inventoryItemId: invId,
@@ -1439,6 +1790,65 @@ const createReceiving = async (req, res) => {
       });
     }
 
+    if (preparedItems.length > 0) {
+      const requestedIds = [...new Set(preparedItems.map(item => item.inventoryItemId))];
+      const existingCatalogItems = await prisma.inventoryItem.findMany({
+        where: { id: { in: requestedIds } },
+        select: { id: true }
+      });
+      const existingIds = new Set(existingCatalogItems.map(item => item.id));
+      const missingIds = requestedIds.filter(id => !existingIds.has(id));
+      if (missingIds.length) {
+        return res.status(400).json({ error: `Some selected inventory items no longer exist (IDs: ${missingIds.join(', ')}). Refresh the catalog and select those items again.` });
+      }
+    }
+
+    // Include known and new lines in mixed drafts; saving a draft never posts stock.
+    if (hasDraftNewItems) {
+      draftNewItems.forEach(ni => {
+        const niCost = parseFloat(ni.unitCost || ni.costPrice) || 0;
+        const niQty = parseFloat(ni.quantity || ni.stockLevel) || 0;
+        calculatedTotalCost = roundReceivingMoney(calculatedTotalCost + roundReceivingMoney(niQty * niCost));
+      });
+    }
+    if (requestedDiscountPercent !== null) {
+      discountAmount = roundReceivingMoney(calculatedTotalCost * requestedDiscountPercent / 100);
+    }
+
+    // Build notes: embed draftNewItems as JSON for later processing at confirm time
+    let notesValue = notes ? String(notes).trim() : null;
+    if (hasDraftNewItems) {
+      const draftJson = JSON.stringify(draftNewItems);
+      notesValue = notesValue
+        ? `${notesValue}
+__DRAFT_ITEMS__:${draftJson}`
+        : `__DRAFT_ITEMS__:${draftJson}`;
+    }
+
+    if (existingDraftForRetry) {
+      const canonicalItems = (list) => (list || []).map((item) => ({
+        inventoryItemId: Number(item.inventoryItemId), quantity: Number(item.quantity), unit: item.unit || 'PCS',
+        unitCost: Number(item.unitCost || 0), totalCost: Number(item.totalCost || 0),
+        batchNumber: item.batchNumber || null,
+        expiryDate: item.expiryDate ? new Date(item.expiryDate).toISOString() : null,
+        notes: item.notes || null
+      })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+      const existingDate = existingRec.receivingDate ? new Date(existingRec.receivingDate).toISOString() : null;
+      const samePayload = (existingRec.invoiceNumber || null) === (invoiceNumber ? String(invoiceNumber).trim() : null) &&
+        Number(existingRec.discount || 0) === discountAmount &&
+        Number(existingRec.discountPercent ?? -1) === (requestedDiscountPercent ?? -1) &&
+        existingDate === resolvedDate.toISOString() && existingRec.notes === notesValue &&
+        JSON.stringify(canonicalItems(existingRec.items)) === JSON.stringify(canonicalItems(preparedItems));
+      if (!samePayload) {
+        return res.status(409).json({ error: 'This reference already has a draft with different contents. Resume and edit the saved draft, or use a new receiving reference.' });
+      }
+      const savedDraft = await prisma.inventoryReceiving.findUnique({
+        where: { id: existingRec.id },
+        include: { supplier: true, branch: true, receivedBy: { select: { id: true, name: true, email: true } }, items: { include: { inventoryItem: true } } }
+      });
+      return res.status(200).json({ message: 'This draft was already saved.', receiving: savedDraft, alreadySaved: true });
+    }
+
     let receiving;
     if (targetStatus === 'DRAFT') {
       receiving = await prisma.inventoryReceiving.create({
@@ -1449,9 +1859,12 @@ const createReceiving = async (req, res) => {
           branchId: resolvedBranchId,
           receivingDate: resolvedDate,
           receivedById: req.user?.id || null,
-          notes: notes ? String(notes).trim() : null,
+          notes: notesValue,
           status: 'DRAFT',
-          totalCost: calculatedTotalCost,
+          subtotal: calculatedTotalCost,
+          discount: discountAmount,
+          discountPercent: requestedDiscountPercent,
+          totalCost: roundReceivingMoney(Math.max(0, calculatedTotalCost - discountAmount)),
           items: {
             create: preparedItems,
           },
@@ -1475,7 +1888,10 @@ const createReceiving = async (req, res) => {
             receivedById: req.user?.id || null,
             notes: notes ? String(notes).trim() : null,
             status: targetStatus,
-            totalCost: calculatedTotalCost,
+            subtotal: calculatedTotalCost,
+            discount: discountAmount,
+            discountPercent: requestedDiscountPercent,
+            totalCost: roundReceivingMoney(Math.max(0, calculatedTotalCost - discountAmount)),
             items: {
               create: preparedItems,
             },
@@ -1504,12 +1920,28 @@ const createReceiving = async (req, res) => {
 
           const qtyBefore = existingItem.stockLevel;
           const qtyAfter = qtyBefore + item.quantity;
-          const newCost = item.unitCost > 0 ? item.unitCost : existingItem.costPrice;
+          const purchaseQty = item.quantity;
+          const purchaseUnitCost = item.unitCost > 0 ? item.unitCost : (existingItem.costPrice || 0);
+
+          // Weighted-Average Costing: ((qtyBefore * oldCost) + (purchaseQty * purchaseCost)) / qtyAfter
+          let calculatedCostPrice = existingItem.costPrice || 0;
+          if (qtyAfter > 0) {
+            if (qtyBefore <= 0) {
+              calculatedCostPrice = purchaseUnitCost;
+            } else {
+              const prevTotalValue = qtyBefore * (existingItem.costPrice || 0);
+              const purchaseTotalValue = purchaseQty * purchaseUnitCost;
+              calculatedCostPrice = (prevTotalValue + purchaseTotalValue) / qtyAfter;
+              calculatedCostPrice = Math.round(calculatedCostPrice * 10000) / 10000;
+            }
+          }
+
           existingItem.stockLevel = qtyAfter;
+          existingItem.costPrice = calculatedCostPrice;
 
           const updateData = {
             stockLevel: qtyAfter,
-            costPrice: newCost,
+            costPrice: calculatedCostPrice,
           };
           if (item.expiryDate) {
             updateData.expiryDate = item.expiryDate;
@@ -1569,7 +2001,7 @@ const createReceiving = async (req, res) => {
       receiving
     });
   } catch (error) {
-    console.error('Create receiving error:', error.message);
+      console.error('Create receiving error:', String(error.message || 'Unknown error').replace(/gsk_[A-Za-z0-9_-]+/g, '[redacted]'));
     return res.status(500).json({ error: error.message || 'Failed to create stock receiving record.' });
   }
 };
@@ -1599,7 +2031,11 @@ const confirmReceiving = async (req, res) => {
     }
 
     if (!existingReceiving.items || existingReceiving.items.length === 0) {
-      return res.status(400).json({ error: 'Cannot confirm a receiving record with no items.' });
+      // Check if there are draft new items stored in notes
+      const hasPendingDraftItems = existingReceiving.notes && existingReceiving.notes.includes('__DRAFT_ITEMS__:');
+      if (!hasPendingDraftItems) {
+        return res.status(400).json({ error: 'Cannot confirm a receiving record with no items.' });
+      }
     }
 
     const updatedReceiving = await prisma.$transaction(async (tx) => {
@@ -1609,14 +2045,89 @@ const confirmReceiving = async (req, res) => {
         if (!supExists) resolvedSupplierId = null;
       }
 
-      const itemIds = [...new Set(existingReceiving.items.map(i => i.inventoryItemId))];
+      // ── Parse & materialise draftNewItems stored in notes ──
+      let allReceivingItems = [...(existingReceiving.items || [])];
+      let cleanedNotes = existingReceiving.notes || null;
+
+      if (existingReceiving.notes && existingReceiving.notes.includes('__DRAFT_ITEMS__:')) {
+        try {
+          const marker = '__DRAFT_ITEMS__:';
+          const markerIdx = existingReceiving.notes.indexOf(marker);
+          const jsonStr = existingReceiving.notes.slice(markerIdx + marker.length).split('\n')[0].trim();
+          const draftNewItems = JSON.parse(jsonStr);
+
+          // Strip __DRAFT_ITEMS__ from notes so final record is clean
+          cleanedNotes = existingReceiving.notes.slice(0, markerIdx).trim() || null;
+
+          // Resolve branchId for new items
+          let branchIdForNew = existingReceiving.branchId;
+          if (!branchIdForNew) {
+            const defaultBranch = await tx.branch.findFirst({ select: { id: true } });
+            branchIdForNew = defaultBranch?.id || null;
+          }
+
+          for (const ni of draftNewItems) {
+            const niName = (ni.name || '').trim();
+            const niQty = parseFloat(ni.quantity ?? ni.stockLevel);
+            const niCost = parseFloat(ni.costPrice ?? ni.unitCost) || 0;
+            if (!niName || !Number.isFinite(niQty) || niQty <= 0 || !Number.isFinite(niCost) || niCost < 0) {
+              throw new Error('A saved draft item has invalid name, quantity, or cost. No stock was posted.');
+            }
+
+            // Upsert: create if doesn't exist, leave stockLevel=0 (stock added below)
+            let catalogItem = await tx.inventoryItem.findFirst({
+              where: { name: { equals: niName, mode: 'insensitive' }, branchId: branchIdForNew }
+            });
+
+            if (!catalogItem) {
+              catalogItem = await tx.inventoryItem.create({
+                data: {
+                  name: niName,
+                  unit: ni.unit || 'KG',
+                  category: ni.category || 'General',
+                  costPrice: parseFloat(ni.costPrice || ni.unitCost) || 0,
+                  stockLevel: 0, // stock will be added below via STOCK_IN
+                  minThreshold: parseFloat(ni.minThreshold) || 10,
+                  maxThreshold: parseFloat(ni.maxThreshold) || 100,
+                  supplierId: resolvedSupplierId || null,
+                  branchId: branchIdForNew,
+                  expiryDate: ni.expiryDate ? new Date(ni.expiryDate) : null,
+                }
+              });
+            }
+
+            // Create the receiving line for this new item
+            {
+              const newLine = await tx.inventoryReceivingItem.create({
+                data: {
+                  receivingId: existingReceiving.id,
+                  inventoryItemId: catalogItem.id,
+                  quantity: niQty,
+                  unit: ni.unit || 'KG',
+                  unitCost: niCost,
+                  totalCost: roundReceivingMoney(niQty * niCost),
+                  batchNumber: ni.batchNumber ? String(ni.batchNumber).trim() : null,
+                  expiryDate: ni.expiryDate ? new Date(ni.expiryDate) : null,
+                  notes: null,
+                },
+                include: { inventoryItem: true }
+              });
+              allReceivingItems.push(newLine);
+            }
+          }
+        } catch (parseErr) {
+          throw new Error(`Saved draft items could not be read safely: ${parseErr.message}`);
+        }
+      }
+
+      const itemIds = [...new Set(allReceivingItems.map(i => i.inventoryItemId))];
       const existingItems = await tx.inventoryItem.findMany({
         where: { id: { in: itemIds } }
       });
       const itemsMap = new Map(existingItems.map(i => [i.id, i]));
       const logsToCreate = [];
 
-      for (const item of existingReceiving.items) {
+      for (const item of allReceivingItems) {
         const existingItem = itemsMap.get(item.inventoryItemId);
 
         if (!existingItem) {
@@ -1625,12 +2136,28 @@ const confirmReceiving = async (req, res) => {
 
         const qtyBefore = existingItem.stockLevel;
         const qtyAfter = qtyBefore + item.quantity;
-        const newCost = item.unitCost > 0 ? item.unitCost : existingItem.costPrice;
+        const purchaseQty = item.quantity;
+        const purchaseUnitCost = item.unitCost > 0 ? item.unitCost : (existingItem.costPrice || 0);
+
+        // Weighted-Average Costing: ((qtyBefore * oldCost) + (purchaseQty * purchaseCost)) / qtyAfter
+        let calculatedCostPrice = existingItem.costPrice || 0;
+        if (qtyAfter > 0) {
+          if (qtyBefore <= 0) {
+            calculatedCostPrice = purchaseUnitCost;
+          } else {
+            const prevTotalValue = qtyBefore * (existingItem.costPrice || 0);
+            const purchaseTotalValue = purchaseQty * purchaseUnitCost;
+            calculatedCostPrice = (prevTotalValue + purchaseTotalValue) / qtyAfter;
+            calculatedCostPrice = Math.round(calculatedCostPrice * 10000) / 10000;
+          }
+        }
+
         existingItem.stockLevel = qtyAfter;
+        existingItem.costPrice = calculatedCostPrice;
 
         const updateData = {
           stockLevel: qtyAfter,
-          costPrice: newCost,
+          costPrice: calculatedCostPrice,
         };
         if (item.expiryDate) {
           updateData.expiryDate = item.expiryDate;
@@ -1669,6 +2196,7 @@ const confirmReceiving = async (req, res) => {
         data: {
           status: 'RECEIVED',
           receivedById: req.user?.id || existingReceiving.receivedById,
+          notes: cleanedNotes,
         },
         include: {
           supplier: true,
@@ -1747,11 +2275,126 @@ const cancelReceiving = async (req, res) => {
 };
 
 /**
+ * Delete a draft or cancelled stock receiving record safely
+ * Hard deletion permitted for DRAFT or CANCELLED records where stock has NOT been received.
+ */
+const deleteReceiving = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const recId = parseInt(id, 10);
+    const receiving = await prisma.inventoryReceiving.findUnique({
+      where: { id: recId },
+      include: { items: true, logs: true }
+    });
+
+    if (!receiving) {
+      return res.status(404).json({ error: 'Stock receiving record not found.' });
+    }
+
+    if (receiving.status === 'RECEIVED') {
+      return res.status(400).json({
+        error: 'Completed and confirmed stock receiving records cannot be deleted as they represent immutable inventory ledger movements. You can review or adjust inventory via stock adjustments.'
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.inventoryReceivingItem.deleteMany({ where: { receivingId: recId } });
+      await tx.inventoryReceiving.delete({ where: { id: recId } });
+    });
+
+    await logAudit({
+      userId: req.user?.id || 1,
+      action: 'STOCK_RECEIVING_DELETED',
+      entity: 'InventoryReceiving',
+      entityId: String(recId),
+      oldValue: { receivingNumber: receiving.receivingNumber, status: receiving.status },
+      req
+    });
+
+    emitToAdmin('inventory:update', { receivingDeletedId: recId });
+    emitToVendor('inventory:update', { receivingDeletedId: recId });
+
+    return res.json({ message: `Stock receiving record #${receiving.receivingNumber} deleted successfully.` });
+  } catch (error) {
+    console.error('Delete receiving error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to delete receiving record.' });
+  }
+};
+
+/**
+ * Bulk delete draft/cancelled receiving records within a specific branch or scope
+ */
+const bulkDeleteReceivings = async (req, res) => {
+  const { ids, branchId, status = 'DRAFT' } = req.body;
+
+  try {
+    const where = {};
+    if (Array.isArray(ids)) {
+      const parsedIds = [...new Set(ids.map(id => Number.parseInt(id, 10)).filter(Number.isInteger))];
+      if (!parsedIds.length) return res.status(400).json({ error: 'Select at least one valid receiving record.' });
+      where.id = { in: parsedIds };
+      // Bulk deletion is restricted to drafts and cancelled records even if a client
+      // includes protected received record IDs in its request.
+      where.status = { in: ['DRAFT', 'CANCELLED'] };
+    } else if (status === 'DRAFT' || status === 'CANCELLED') {
+      where.status = status;
+    } else {
+      where.status = { in: ['DRAFT', 'CANCELLED'] };
+    }
+
+    if (branchId && branchId !== 'all') {
+      where.branchId = parseInt(branchId, 10);
+    }
+
+    const targets = await prisma.inventoryReceiving.findMany({
+      where,
+      select: { id: true, receivingNumber: true, status: true }
+    });
+
+    if (targets.length === 0) {
+      return res.json({ message: 'No eligible draft or cancelled receiving records found for deletion.', count: 0 });
+    }
+
+    const targetIds = targets.map(t => t.id);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.inventoryReceivingItem.deleteMany({
+        where: { receivingId: { in: targetIds } }
+      });
+      await tx.inventoryReceiving.deleteMany({
+        where: { id: { in: targetIds } }
+      });
+    });
+
+    await logAudit({
+      userId: req.user?.id || 1,
+      action: 'BULK_STOCK_RECEIVING_DELETED',
+      entity: 'InventoryReceiving',
+      entityId: `bulk_${targetIds.length}`,
+      oldValue: { count: targetIds.length, targetIds },
+      req
+    });
+
+    emitToAdmin('inventory:update', { bulkDeletedReceivings: targetIds });
+    emitToVendor('inventory:update', { bulkDeletedReceivings: targetIds });
+
+    return res.json({
+      message: `Successfully deleted ${targetIds.length} draft/cancelled receiving records.`,
+      count: targetIds.length
+    });
+  } catch (error) {
+    console.error('Bulk delete receivings error:', error);
+    return res.status(500).json({ error: 'Failed to perform bulk deletion of receiving records.' });
+  }
+};
+
+/**
  * Update an existing draft stock receiving transaction
  */
 const updateReceiving = async (req, res) => {
   const { id } = req.params;
-  const { supplierId, invoiceNumber, receivingRef, branchId, receivingDate, notes, items, status, batchNumber: docBatch } = req.body;
+  const { supplierId, invoiceNumber, receivingRef, branchId, receivingDate, notes, items, status, batchNumber: docBatch, draftNewItems } = req.body;
 
   try {
     const recId = parseInt(id, 10);
@@ -1770,6 +2413,22 @@ const updateReceiving = async (req, res) => {
 
     const isConfirmed = status && status.toUpperCase() === 'RECEIVED';
     const targetStatus = isConfirmed ? 'RECEIVED' : 'DRAFT';
+    const requestedDiscountPercent = req.body.discountPercent !== undefined
+      ? (req.body.discountPercent == null ? null : Number(req.body.discountPercent))
+      : (existing.discountPercent ?? null);
+    let discountAmount = roundReceivingMoney(Number(req.body.discount ?? existing.discount ?? 0));
+    if (!Number.isFinite(discountAmount) || discountAmount < 0 || (requestedDiscountPercent !== null && (!Number.isFinite(requestedDiscountPercent) || requestedDiscountPercent < 0 || requestedDiscountPercent > 100))) {
+      return res.status(400).json({ error: 'Discount must be a valid non-negative amount.' });
+    }
+    const newDraftLines = targetStatus === 'DRAFT' && Array.isArray(draftNewItems) ? draftNewItems : [];
+    const invalidDraftLine = newDraftLines.find(item => {
+      const quantity = Number(item?.quantity ?? item?.stockLevel);
+      const cost = Number(item?.unitCost ?? item?.costPrice ?? 0);
+      return !String(item?.name || '').trim() || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(cost) || cost < 0;
+    });
+    if (invalidDraftLine) {
+      return res.status(400).json({ error: `Draft item "${String(invalidDraftLine.name || 'Unnamed').trim()}" needs a name, a positive quantity, and a valid non-negative cost.` });
+    }
 
     const candidateBranchId = branchId !== undefined ? (branchId ? parseInt(branchId, 10) : null) : existing.branchId;
     const candidateSupplierId = supplierId !== undefined ? (supplierId ? parseInt(supplierId, 10) : null) : existing.supplierId;
@@ -1794,12 +2453,12 @@ const updateReceiving = async (req, res) => {
         const qty = parseFloat(item.quantity);
         const cost = item.unitCost !== undefined && item.unitCost !== '' ? parseFloat(item.unitCost) : 0.0;
 
-        if (isNaN(invId) || isNaN(qty) || qty <= 0) {
+        if (!Number.isInteger(invId) || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(cost) || cost < 0) {
           return res.status(400).json({ error: 'All receiving items must specify a valid inventory item and positive quantity.' });
         }
 
-        const itemTotal = qty * cost;
-        calculatedTotalCost += itemTotal;
+        const itemTotal = roundReceivingMoney(qty * cost);
+        calculatedTotalCost = roundReceivingMoney(calculatedTotalCost + itemTotal);
 
         preparedItems.push({
           inventoryItemId: invId,
@@ -1814,8 +2473,30 @@ const updateReceiving = async (req, res) => {
       }
     }
 
+    if (preparedItems.length > 0) {
+      const requestedIds = [...new Set(preparedItems.map(item => item.inventoryItemId))];
+      const existingCatalogItems = await prisma.inventoryItem.findMany({ where: { id: { in: requestedIds } }, select: { id: true } });
+      const existingIds = new Set(existingCatalogItems.map(item => item.id));
+      const missingIds = requestedIds.filter(itemId => !existingIds.has(itemId));
+      if (missingIds.length) {
+        return res.status(400).json({ error: `Some selected inventory items no longer exist (IDs: ${missingIds.join(', ')}). Refresh the catalog and select those items again.` });
+      }
+    }
+
+    for (const item of newDraftLines) {
+      calculatedTotalCost = roundReceivingMoney(calculatedTotalCost + roundReceivingMoney(Number(item.quantity ?? item.stockLevel) * Number(item.unitCost ?? item.costPrice ?? 0)));
+    }
+    if (requestedDiscountPercent !== null) {
+      discountAmount = roundReceivingMoney(calculatedTotalCost * requestedDiscountPercent / 100);
+    }
+    let notesValue = notes !== undefined ? (notes ? String(notes).trim() : null) : existing.notes;
+    if (newDraftLines.length) {
+      const draftJson = JSON.stringify(newDraftLines);
+      notesValue = notesValue ? `${notesValue}\n__DRAFT_ITEMS__:${draftJson}` : `__DRAFT_ITEMS__:${draftJson}`;
+    }
+
     const updatedReceiving = await prisma.$transaction(async (tx) => {
-      if (preparedItems.length > 0) {
+      if (Array.isArray(items)) {
         await tx.inventoryReceivingItem.deleteMany({
           where: { receivingId: recId }
         });
@@ -1830,9 +2511,14 @@ const updateReceiving = async (req, res) => {
           branchId: resolvedBranchId,
           receivingDate: resolvedDate,
           receivedById: req.user?.id || existing.receivedById,
-          notes: notes ? String(notes).trim() : existing.notes,
+          notes: notesValue,
           status: targetStatus,
-          ...(preparedItems.length > 0 ? { totalCost: calculatedTotalCost } : {}),
+          ...(Array.isArray(items) || newDraftLines.length || req.body.discount !== undefined || req.body.discountPercent !== undefined ? {
+            subtotal: calculatedTotalCost,
+            discount: discountAmount,
+            discountPercent: requestedDiscountPercent,
+            totalCost: roundReceivingMoney(Math.max(0, calculatedTotalCost - discountAmount))
+          } : {}),
           ...(preparedItems.length > 0 ? {
             items: {
               create: preparedItems
@@ -1847,7 +2533,8 @@ const updateReceiving = async (req, res) => {
         }
       });
 
-      if (targetStatus === 'RECEIVED') {
+      // Idempotency: only apply stock increments if transitioning from non-RECEIVED to RECEIVED
+      if (existing.status !== 'RECEIVED' && targetStatus === 'RECEIVED') {
         const itemIds = [...new Set(updated.items.map(i => i.inventoryItemId))];
         const existingItems = await tx.inventoryItem.findMany({
           where: { id: { in: itemIds } }
@@ -1864,12 +2551,28 @@ const updateReceiving = async (req, res) => {
 
           const qtyBefore = existingItem.stockLevel;
           const qtyAfter = qtyBefore + item.quantity;
-          const newCost = item.unitCost > 0 ? item.unitCost : existingItem.costPrice;
+          const purchaseQty = item.quantity;
+          const purchaseUnitCost = item.unitCost > 0 ? item.unitCost : (existingItem.costPrice || 0);
+
+          // Weighted-Average Costing: ((qtyBefore * oldCost) + (purchaseQty * purchaseCost)) / qtyAfter
+          let calculatedCostPrice = existingItem.costPrice || 0;
+          if (qtyAfter > 0) {
+            if (qtyBefore <= 0) {
+              calculatedCostPrice = purchaseUnitCost;
+            } else {
+              const prevTotalValue = qtyBefore * (existingItem.costPrice || 0);
+              const purchaseTotalValue = purchaseQty * purchaseUnitCost;
+              calculatedCostPrice = (prevTotalValue + purchaseTotalValue) / qtyAfter;
+              calculatedCostPrice = Math.round(calculatedCostPrice * 10000) / 10000;
+            }
+          }
+
           existingItem.stockLevel = qtyAfter;
+          existingItem.costPrice = calculatedCostPrice;
 
           const updateData = {
             stockLevel: qtyAfter,
-            costPrice: newCost,
+            costPrice: calculatedCostPrice,
           };
           if (item.expiryDate) {
             updateData.expiryDate = item.expiryDate;
@@ -2293,6 +2996,7 @@ const suggestRecipeForMenuItem = async (req, res) => {
     });
 
     let suggestions = [];
+    let aiAvailable = false;
 
     try {
       const prompt = `You are a professional chef & inventory system manager.
@@ -2321,10 +3025,11 @@ Return ONLY a raw JSON array of objects with keys:
       const cleanJson = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanJson);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        suggestions = parsed;
+        suggestions = parsed.filter(s => Number.isInteger(Number(s.inventoryItemId)) && Number.isFinite(Number(s.quantity)) && Number(s.quantity) > 0);
+        aiAvailable = suggestions.length > 0;
       }
     } catch (aiErr) {
-      console.warn('Groq AI recipe suggestion API error, switching to rule-based fallback:', aiErr.message);
+      console.warn('Groq AI recipe suggestion API error, switching to rule-based fallback:', String(aiErr.message || 'AI request failed').replace(/gsk_[A-Za-z0-9_-]+/g, '[redacted]').replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [redacted]'));
     }
 
     if (!suggestions || suggestions.length === 0) {
@@ -2354,13 +3059,13 @@ Return ONLY a raw JSON array of objects with keys:
           inventoryUnit: inv.unit,
           quantity: parseFloat(s.quantity) || 1,
           costPrice: inv.costPrice,
-          isAiSuggested: true,
-          reason: s.reason || 'AI Match'
+          isAiSuggested: aiAvailable,
+          reason: s.reason || (aiAvailable ? 'AI Match' : 'Catalog match')
         };
       })
       .filter(Boolean);
 
-    return res.json({ suggestions: result });
+    return res.json({ suggestions: result, aiAvailable, source: aiAvailable ? 'groq' : 'catalog-fallback' });
   } catch (error) {
     console.error('Suggest recipe error:', error);
     return res.status(500).json({ error: 'Failed to generate AI recipe suggestions.' });
@@ -2577,6 +3282,146 @@ const updateBatchExpiry = async (req, res) => {
 };
 
 /**
+ * Clear expiry date for a single batch receiving item or catalog item
+ */
+const clearBatchExpiry = async (req, res) => {
+  const { source, receivingItemId, inventoryItemId } = req.body;
+
+  try {
+    if (source === 'BATCH' || receivingItemId) {
+      const recItemId = parseInt(receivingItemId, 10);
+      if (isNaN(recItemId)) {
+        return res.status(400).json({ error: 'Valid receivingItemId is required.' });
+      }
+
+      const existing = await prisma.inventoryReceivingItem.findUnique({
+        where: { id: recItemId },
+        include: { inventoryItem: true }
+      });
+
+      if (!existing) {
+        return res.status(404).json({ error: 'Batch receiving item not found.' });
+      }
+
+      await prisma.inventoryReceivingItem.update({
+        where: { id: recItemId },
+        data: { expiryDate: null }
+      });
+
+      emitToAdmin('inventory:update', { type: 'BATCH_EXPIRY_CLEARED', receivingItemId: recItemId });
+      emitToVendor('inventory:update', { type: 'BATCH_EXPIRY_CLEARED', receivingItemId: recItemId });
+
+      await logAudit({
+        userId: req.user?.id || 1,
+        action: 'CLEAR_BATCH_EXPIRY',
+        entity: 'InventoryReceivingItem',
+        entityId: recItemId,
+        newValue: { expiryDate: null },
+        req
+      });
+
+      return res.json({ message: 'Batch expiry date removed successfully.' });
+    } else if (inventoryItemId || source === 'ITEM') {
+      const invId = parseInt(inventoryItemId, 10);
+      if (isNaN(invId)) {
+        return res.status(400).json({ error: 'Valid inventoryItemId is required.' });
+      }
+
+      const existing = await prisma.inventoryItem.findUnique({
+        where: { id: invId }
+      });
+
+      if (!existing) {
+        return res.status(404).json({ error: 'Inventory item not found.' });
+      }
+
+      await prisma.inventoryItem.update({
+        where: { id: invId },
+        data: { expiryDate: null }
+      });
+
+      emitToAdmin('inventory:update', { type: 'ITEM_EXPIRY_CLEARED', inventoryItemId: invId });
+      emitToVendor('inventory:update', { type: 'ITEM_EXPIRY_CLEARED', inventoryItemId: invId });
+
+      await logAudit({
+        userId: req.user?.id || 1,
+        action: 'CLEAR_ITEM_EXPIRY',
+        entity: 'InventoryItem',
+        entityId: invId,
+        newValue: { expiryDate: null },
+        req
+      });
+
+      return res.json({ message: 'Item expiry date removed successfully.' });
+    } else {
+      return res.status(400).json({ error: 'Missing receivingItemId or inventoryItemId.' });
+    }
+  } catch (error) {
+    console.error('Clear batch expiry error:', error);
+    return res.status(500).json({ error: 'Failed to clear expiry date.' });
+  }
+};
+
+/**
+ * Bulk clear expiry date for multiple batch items / catalog items
+ */
+const bulkClearBatchExpiry = async (req, res) => {
+  const { items = [] } = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Array of items is required.' });
+  }
+
+  try {
+    let clearedCount = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const item of items) {
+        if (item.source === 'BATCH' || item.receivingItemId) {
+          const recItemId = parseInt(item.receivingItemId, 10);
+          if (!isNaN(recItemId)) {
+            await tx.inventoryReceivingItem.update({
+              where: { id: recItemId },
+              data: { expiryDate: null }
+            }).catch(() => null);
+            clearedCount++;
+          }
+        } else if (item.inventoryItemId || item.source === 'ITEM') {
+          const invId = parseInt(item.inventoryItemId, 10);
+          if (!isNaN(invId)) {
+            await tx.inventoryItem.update({
+              where: { id: invId },
+              data: { expiryDate: null }
+            }).catch(() => null);
+            clearedCount++;
+          }
+        }
+      }
+    });
+
+    emitToAdmin('inventory:update', { type: 'BULK_EXPIRY_CLEARED', count: clearedCount });
+    emitToVendor('inventory:update', { type: 'BULK_EXPIRY_CLEARED', count: clearedCount });
+
+    await logAudit({
+      userId: req.user?.id || 1,
+      action: 'BULK_CLEAR_EXPIRY',
+      entity: 'InventoryReceivingItem',
+      entityId: 'BULK',
+      newValue: { clearedCount },
+      req
+    });
+
+    return res.json({
+      message: `Successfully cleared expiry dates for ${clearedCount} batch / item records.`,
+      clearedCount
+    });
+  } catch (error) {
+    console.error('Bulk clear expiry error:', error);
+    return res.status(500).json({ error: 'Failed to bulk clear expiry dates.' });
+  }
+};
+
+/**
  * Bulk add new inventory items to catalog (without stock increment)
  */
 const bulkAddInventoryItems = async (req, res) => {
@@ -2600,7 +3445,8 @@ const bulkAddInventoryItems = async (req, res) => {
     }
 
     const results = [];
-    let savedCount = 0;
+    let importedCount = 0;
+    let duplicateCount = 0;
     let failedCount = 0;
 
     for (let i = 0; i < items.length; i++) {
@@ -2657,10 +3503,11 @@ const bulkAddInventoryItems = async (req, res) => {
           name: trimmedName,
           success: true,
           alreadyExists: true,
+          duplicate: true,
           item: existing,
           message: 'Item already exists in catalog; linked existing item.'
         });
-        savedCount++;
+        duplicateCount++;
         continue;
       }
 
@@ -2693,7 +3540,7 @@ const bulkAddInventoryItems = async (req, res) => {
             unit: trimmedUnit,
             minThreshold: minThreshold ? parseFloat(minThreshold) : 10.0,
             maxThreshold: maxThreshold ? parseFloat(maxThreshold) : 100.0,
-            category: category || 'General',
+            category: (category && category !== 'General') ? category : inferCategoryFromItemName(trimmedName),
             sku: sku ? String(sku).trim() : null,
             costPrice: costPrice ? parseFloat(costPrice) : 0.0,
             expiryDate: expiryDate ? new Date(expiryDate) : null,
@@ -2712,7 +3559,7 @@ const bulkAddInventoryItems = async (req, res) => {
           success: true,
           item: newItem
         });
-        savedCount++;
+        importedCount++;
       } catch (itemErr) {
         console.error(`Bulk add catalog item "${trimmedName}" error:`, itemErr);
         results.push({
@@ -2726,10 +3573,15 @@ const bulkAddInventoryItems = async (req, res) => {
     }
 
     return res.status(200).json({
-      message: `${items.length} new items processed: ${savedCount} saved successfully, ${failedCount} need correction.`,
+      message: `${items.length} items processed: ${importedCount} imported, ${duplicateCount} duplicates skipped, ${failedCount} failed.`,
       summary: {
         total: items.length,
-        savedCount,
+        imported: importedCount,
+        skipped: duplicateCount,
+        duplicates: duplicateCount,
+        failed: failedCount,
+        // Keep these aliases for existing clients.
+        savedCount: importedCount + duplicateCount,
         failedCount
       },
       results
@@ -2737,6 +3589,47 @@ const bulkAddInventoryItems = async (req, res) => {
   } catch (error) {
     console.error('Bulk add inventory items error:', error);
     return res.status(500).json({ error: 'Failed to process bulk catalog saving.' });
+  }
+};
+
+/**
+ * Confirm and save a user-validated alias for intelligent item matching
+ */
+const confirmItemAlias = async (req, res) => {
+  const { rawName, confirmedName, inventoryItemId } = req.body;
+
+  if (!rawName || !confirmedName) {
+    return res.status(400).json({ error: 'Both rawName and confirmedName are required to learn an alias.' });
+  }
+
+  try {
+    const success = saveLearnedAlias(rawName, confirmedName, inventoryItemId);
+    if (!success) {
+      return res.status(400).json({ error: 'Failed to save alias. Please provide valid item names.' });
+    }
+
+    return res.json({
+      message: `Alias learned successfully: "${rawName}" will now automatically match "${confirmedName}".`,
+      rawName,
+      confirmedName,
+      inventoryItemId: inventoryItemId ? parseInt(inventoryItemId, 10) : null
+    });
+  } catch (error) {
+    console.error('Confirm alias error:', error);
+    return res.status(500).json({ error: 'Internal server error while saving alias.' });
+  }
+};
+
+/**
+ * Get all learned aliases
+ */
+const getLearnedAliasesController = async (req, res) => {
+  try {
+    const aliases = getLearnedAliases();
+    return res.json({ aliases });
+  } catch (error) {
+    console.error('Get aliases error:', error);
+    return res.status(500).json({ error: 'Failed to retrieve learned aliases.' });
   }
 };
 
@@ -2748,19 +3641,27 @@ module.exports = {
   bulkAddInventoryItems,
   updateInventoryItem,
   deleteInventoryItem,
+  bulkDeleteInventoryItems,
   stockIn,
   adjustStock,
   restockItem,
   getRecipeForMenuItem,
   saveRecipeForMenuItem,
+  deleteRecipeForMenuItem,
+  bulkDeleteRecipes,
   getRecipeMargins,
   getExpiringItems,
   updateBatchExpiry,
+  clearBatchExpiry,
+  bulkClearBatchExpiry,
   getSuppliers,
   createSupplier,
   updateSupplier,
   deleteSupplier,
+  bulkDeleteSuppliers,
   getInventoryLogs,
+  deleteInventoryLog,
+  bulkDeleteInventoryLogs,
   getForecast,
   getInventoryAlerts,
   recalculateInventoryForecasts,
@@ -2770,9 +3671,13 @@ module.exports = {
   createReceiving,
   confirmReceiving,
   cancelReceiving,
+  deleteReceiving,
+  bulkDeleteReceivings,
   updateReceiving,
   previewImportCSV,
   previewAiOcrInvoice,
   suggestRecipeForMenuItem,
   bulkImportPresetRecipes,
+  confirmItemAlias,
+  getLearnedAliasesController
 };

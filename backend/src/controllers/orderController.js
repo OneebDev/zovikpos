@@ -39,6 +39,16 @@ const createOrder = async (req, res) => {
   } = req.body;
 
   const userId = req.user.id;
+  const requestedMethod = String(paymentMethod || 'COD').trim().toUpperCase();
+  const canonicalPaymentMethod = {
+    COD: 'COD',
+    EASYPAISA: 'Easypaisa',
+    JAZZCASH: 'JazzCash',
+  }[requestedMethod];
+
+  if (!canonicalPaymentMethod) {
+    return res.status(400).json({ error: 'Supported payment methods are COD, Easypaisa, and JazzCash.' });
+  }
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Order must contain at least one menu item.' });
@@ -53,7 +63,6 @@ const createOrder = async (req, res) => {
       });
     }
 
-    const requestedMethod = String(paymentMethod || 'COD').toUpperCase();
     const isOnlineMethod = requestedMethod !== 'COD';
 
     if (!settings.codEnabled && !settings.onlineEnabled) {
@@ -200,7 +209,7 @@ const createOrder = async (req, res) => {
       const total = subtotal + tax - discount;
 
       const orderNumber = generateOrderNumber();
-      const initialStatus = paymentMethod === 'COD' ? 'PENDING' : (paymentStatus === 'PENDING_VERIFICATION' ? 'PAYMENT_PENDING' : 'PENDING');
+      const initialStatus = requestedMethod === 'COD' ? 'PENDING' : (paymentStatus === 'PENDING_VERIFICATION' ? 'PAYMENT_PENDING' : 'PENDING');
 
       const newOrder = await tx.order.create({
         data: {
@@ -216,8 +225,8 @@ const createOrder = async (req, res) => {
           tax,
           discount,
           total,
-          paymentStatus: paymentStatus || (paymentMethod === 'COD' ? 'UNPAID' : 'PENDING_VERIFICATION'),
-          paymentMethod,
+          paymentStatus: paymentStatus || (requestedMethod === 'COD' ? 'UNPAID' : 'PENDING_VERIFICATION'),
+          paymentMethod: canonicalPaymentMethod,
           paymentTxId: paymentTxId || null,
           userId,
           orderItems: {
@@ -249,7 +258,7 @@ const createOrder = async (req, res) => {
           previousStatus: null,
           newStatus: initialStatus,
           changedByUserId: userId,
-          note: `Order placed via ${paymentMethod}`,
+          note: `Order placed via ${canonicalPaymentMethod}`,
         },
       });
 
@@ -710,6 +719,125 @@ const transferSingleOrderTable = async (req, res) => {
   }
 };
 
+/** Permanently delete an order and its directly linked records. */
+const deleteOrder = async (req, res) => {
+  const { id } = req.params;
+  const staffUserId = req.user?.id;
+
+  try {
+    const orderId = parseInt(id, 10);
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payment: true, orderItems: true, statusHistory: true }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    // Remove dependent database records in one transaction; the audit event is retained separately.
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete dependent relations with onDelete cascade or manual cleanup
+      await tx.orderStatusHistory.deleteMany({ where: { orderId } });
+      await tx.eTAPrediction.deleteMany({ where: { orderId } });
+      if (order.payment) {
+        await tx.payment.deleteMany({ where: { orderId } });
+      }
+      await tx.orderItem.deleteMany({ where: { orderId } });
+      await tx.order.delete({ where: { id: orderId } });
+    });
+
+    await logAudit({
+      userId: staffUserId,
+      action: 'ORDER_DELETED',
+      entity: 'Order',
+      entityId: String(orderId),
+      oldValue: { orderNumber: order.orderNumber, total: order.total, status: order.status },
+      req
+    });
+
+    emitToAdmin('order:update', { orderDeletedId: orderId });
+    emitToVendor('order:update', { orderDeletedId: orderId });
+    emitToKitchen('order:update', { orderDeletedId: orderId });
+
+    return res.json({ message: `Order #${order.orderNumber} deleted successfully.` });
+  } catch (error) {
+    console.error('Delete order error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to delete order.' });
+  }
+};
+
+/** Bulk delete selected orders, or use the existing status-scoped cleanup action. */
+const bulkDeleteOrders = async (req, res) => {
+  const { scope = 'CANCELLED', branchId, ids } = req.body;
+  const staffUserId = req.user?.id;
+
+  try {
+    const where = {};
+
+    if (Array.isArray(ids) && ids.length > 0) {
+      const numericIds = ids.map(i => parseInt(i, 10)).filter(i => !isNaN(i));
+      where.id = { in: numericIds };
+    } else {
+      if (scope === 'CANCELLED') {
+        where.status = 'CANCELLED';
+      } else if (scope === 'PAYMENT_FAILED') {
+        where.status = { in: ['PAYMENT_FAILED', 'CANCELLED'] };
+      } else if (scope === 'UNPAID_PENDING') {
+        where.status = 'PENDING';
+        where.paymentStatus = 'UNPAID';
+      } else {
+        return res.status(400).json({
+          error: 'Invalid bulk delete scope. Use a valid status scope or select order IDs to delete.'
+        });
+      }
+    }
+
+    if (branchId && branchId !== 'all') {
+      where.branchId = parseInt(branchId, 10);
+    }
+
+    const eligibleOrders = await prisma.order.findMany({
+      where,
+      select: { id: true, orderNumber: true }
+    });
+
+    if (eligibleOrders.length === 0) {
+      return res.json({ message: 'No eligible orders found matching the deletion scope.', count: 0 });
+    }
+
+    const orderIds = eligibleOrders.map(o => o.id);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.orderStatusHistory.deleteMany({ where: { orderId: { in: orderIds } } });
+      await tx.eTAPrediction.deleteMany({ where: { orderId: { in: orderIds } } });
+      await tx.payment.deleteMany({ where: { orderId: { in: orderIds } } });
+      await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+      await tx.order.deleteMany({ where: { id: { in: orderIds } } });
+    });
+
+    await logAudit({
+      userId: staffUserId,
+      action: 'BULK_ORDERS_DELETED',
+      entity: 'Order',
+      entityId: `bulk_${orderIds.length}`,
+      oldValue: { scope, count: orderIds.length, orderIds },
+      req
+    });
+
+    emitToAdmin('order:update', { bulkDeletedOrderIds: orderIds });
+    emitToVendor('order:update', { bulkDeletedOrderIds: orderIds });
+
+    return res.json({
+      message: `Successfully deleted ${orderIds.length} orders within "${scope}" scope.`,
+      count: orderIds.length
+    });
+  } catch (error) {
+    console.error('Bulk delete orders error:', error);
+    return res.status(500).json({ error: 'Failed to bulk delete orders.' });
+  }
+};
+
 module.exports = {
   createOrder,
   updateOrderStatus,
@@ -717,4 +845,6 @@ module.exports = {
   getOrderById,
   getOrderByTrackingToken,
   transferSingleOrderTable,
+  deleteOrder,
+  bulkDeleteOrders,
 };

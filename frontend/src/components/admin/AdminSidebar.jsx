@@ -19,7 +19,6 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  Sparkles,
 } from 'lucide-react';
 
 const navGroups = [
@@ -93,9 +92,7 @@ const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isM
         {/* Sidebar Header Brand */}
         <div className="h-16 px-4 flex items-center justify-between border-b border-[var(--border-color)] shrink-0">
           <div className="flex items-center space-x-3 overflow-hidden">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-600 to-orange-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-orange-600/30">
-              <Sparkles className="w-5 h-5" />
-            </div>
+            <img src="/favicon.svg" alt="ZovikPOS logo" className="w-10 h-10 rounded-xl shrink-0 shadow-lg shadow-orange-600/30" />
             {!collapsed && (
               <div className="animate-fade-in truncate">
                 <h1 className="font-extrabold text-sm text-[var(--text-main)] tracking-tight font-display">ZOVIKPOS</h1>

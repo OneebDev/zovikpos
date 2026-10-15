@@ -17,6 +17,8 @@ import {
   Layers,
 } from 'lucide-react';
 import api from '../../../services/api';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 
 const PRESET_UNITS = [
   '250 gm',
@@ -71,6 +73,10 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'AVAILABLE', 'LOW_STOCK', 'DISABLED'
   const [showItemModal, setShowItemModal] = useState(false);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
+  const [selectedMenuItemIds, setSelectedMenuItemIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const fileInputRef = useRef(null);
@@ -111,6 +117,8 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
       return matchesCat && matchesSearch && matchesStatus;
     });
   }, [inventory, selectedCategory, searchTerm, statusFilter]);
+
+  const allFilteredMenuItemsSelected = filteredItems.length > 0 && filteredItems.every((item) => selectedMenuItemIds.has(item.id));
 
   // All available category options for selection in Add/Edit form: master list + custom categories in inventory
   const categoryOptions = useMemo(() => {
@@ -443,16 +451,59 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
     }
   };
 
-  const handleDeleteItem = async () => {
-    if (!deleteConfirmItem) return;
+  const toggleSelectMenuItem = (id) => {
+    setSelectedMenuItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectGroup = (variants) => {
+    setSelectedMenuItemIds((prev) => {
+      const next = new Set(prev);
+      const allSelected = variants.every((v) => next.has(v.id));
+      variants.forEach((v) => {
+        if (allSelected) next.delete(v.id);
+        else next.add(v.id);
+      });
+      return next;
+    });
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedMenuItemIds.size === 0) return;
+    setIsBulkDeleting(true);
+    setDeleteConfirmItem(null);
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedMenuItemIds(new Set());
+    setSelectionMode((active) => !active);
+  };
+
+  const handleConfirmDelete = async () => {
+    setDeleteLoading(true);
     try {
-      await api.delete(`/menu/${deleteConfirmItem.id}`);
-      if (showToast) showToast(`Menu item "${deleteConfirmItem.name}" deleted successfully!`);
-      setDeleteConfirmItem(null);
+      if (isBulkDeleting) {
+        const res = await api.delete('/menu/bulk', {
+          data: { ids: Array.from(selectedMenuItemIds) },
+        });
+        if (showToast) showToast(res.data?.message || 'Menu items processed.');
+        setSelectedMenuItemIds(new Set());
+        setIsBulkDeleting(false);
+      } else if (deleteConfirmItem) {
+        await api.delete(`/menu/${deleteConfirmItem.id}`);
+        if (showToast) showToast(`Menu item "${deleteConfirmItem.name}" deleted successfully!`);
+        setDeleteConfirmItem(null);
+      }
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error('Delete menu item error:', err);
       if (showToast) showToast(err.response?.data?.error || 'Failed to delete menu item.', 'error');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -465,13 +516,42 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
           <p className="text-xs text-[var(--text-muted)] mt-0.5">Control pricing, dish images, preparation times, categories, and customer availability.</p>
         </div>
 
-        <button
-          onClick={() => handleOpenAdd()}
-          className="px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-2 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add New Menu Item</span>
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedMenuItemIds.size} />
+          {selectionMode && <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] text-xs font-bold cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={allFilteredMenuItemsSelected}
+              disabled={filteredItems.length === 0}
+              onChange={() => setSelectedMenuItemIds((current) => {
+                const next = new Set(current);
+                if (allFilteredMenuItemsSelected) filteredItems.forEach((item) => next.delete(item.id));
+                else filteredItems.forEach((item) => next.add(item.id));
+                return next;
+              })}
+              className="accent-orange-500"
+              aria-label="Select all visible menu items"
+            />
+            <span>{allFilteredMenuItemsSelected ? 'Clear visible selection' : `Select visible (${filteredItems.length})`}</span>
+          </label>}
+          {selectionMode && selectedMenuItemIds.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Delete Selected ({selectedMenuItemIds.size})</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => handleOpenAdd()}
+            className="px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-md flex items-center space-x-2 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add New Menu Item</span>
+          </button>
+        </div>
       </div>
 
       {/* SEARCH BAR & CATEGORY / STOCK FILTERS STRIP */}
@@ -652,8 +732,14 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                             : 'bg-rose-500/5 border-rose-500/20 opacity-70'
                         }`}
                       >
-                        {/* Left: Unit + Price */}
+                        {/* Left: Checkbox + Unit + Price */}
                         <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+                          {selectionMode && <input
+                            type="checkbox"
+                            checked={selectedMenuItemIds.has(v.id)}
+                            onChange={() => toggleSelectMenuItem(v.id)}
+                            className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500 cursor-pointer"
+                          />}
                           <span className="px-2 py-0.5 bg-orange-500/20 text-orange-500 dark:text-orange-400 border border-orange-500/30 rounded-md text-[10px] font-bold shrink-0">
                             {v.unit || '1 No.'}
                           </span>
@@ -1044,37 +1130,30 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
         document.body
       )}
 
-      {/* Delete Confirmation Modal — Portal to document.body */}
-      {deleteConfirmItem && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-scale-up text-center my-auto">
-            <div className="w-12 h-12 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center mx-auto">
-              <Trash2 className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-lg font-extrabold text-[var(--text-main)] font-display">Delete Menu Item?</h3>
-              <p className="text-xs text-[var(--text-muted)] mt-1.5 leading-relaxed">
-                Are you sure you want to delete <strong className="text-[var(--text-main)]">{deleteConfirmItem.name} ({deleteConfirmItem.unit})</strong>? This action cannot be undone.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[var(--border-color)]">
-              <button
-                onClick={() => setDeleteConfirmItem(null)}
-                className="py-2.5 bg-[var(--bg-color)] hover:bg-[var(--border-color)] text-[var(--text-muted)] font-bold text-xs rounded-xl transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteItem}
-                className="py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      {/* Global Delete Confirmation Modal */}
+      <GlobalDeleteModal
+        isOpen={Boolean(deleteConfirmItem || isBulkDeleting)}
+        onClose={() => {
+          setDeleteConfirmItem(null);
+          setIsBulkDeleting(false);
+        }}
+        onConfirm={handleConfirmDelete}
+        title={isBulkDeleting ? `Delete ${selectedMenuItemIds.size} Selected Menu Items` : `Delete Menu Item (${deleteConfirmItem?.name || ''})`}
+        message={
+          isBulkDeleting
+            ? `Are you sure you want to delete ${selectedMenuItemIds.size} selected menu items? Items with historical sales references will be safely deactivated to protect order ledgers.`
+            : `Are you sure you want to delete "${deleteConfirmItem?.name} (${deleteConfirmItem?.unit})"? If this item appears in past orders, it will be safely deactivated to preserve historical accuracy.`
+        }
+        itemCount={isBulkDeleting ? selectedMenuItemIds.size : 1}
+        itemName={deleteConfirmItem ? `${deleteConfirmItem.name} (${deleteConfirmItem.unit})` : ''}
+        isBulk={isBulkDeleting}
+        confirmButtonText={isBulkDeleting ? 'Delete Selected' : 'Delete Menu Item'}
+        loading={deleteLoading}
+        warningNotes={[
+          'Items with no sales history are permanently purged from catalog and disk storage.',
+          'Items referenced in past customer orders are soft-deactivated to preserve revenue reports.',
+        ]}
+      />
     </div>
   );
 };

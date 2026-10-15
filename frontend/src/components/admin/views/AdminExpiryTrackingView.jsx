@@ -6,7 +6,6 @@ import {
   Search,
   AlertTriangle,
   CheckCircle2,
-  Calendar,
   Package,
   SlidersHorizontal,
   X,
@@ -17,8 +16,11 @@ import {
   Tag,
   Building2,
   Coins,
-  RefreshCw
+  RefreshCw,
+  Trash2,
 } from 'lucide-react';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 
 const AdminExpiryTrackingView = ({
   inventory = [],
@@ -38,6 +40,58 @@ const AdminExpiryTrackingView = ({
   const [editReceivingRef, setEditReceivingRef] = useState('');
   const [editInvoiceNumber, setEditInvoiceNumber] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedExpiryIds, setSelectedExpiryIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [isDeletingExpiry, setIsDeletingExpiry] = useState(false);
+
+  const toggleExpirySelection = (id) => {
+    setSelectedExpiryIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedExpiryIds(new Set());
+    setSelectionMode((active) => !active);
+  };
+
+  const handleConfirmClearExpiry = async () => {
+    const records = deleteTarget ? [deleteTarget] : selectedExpiryRecords;
+    if (records.length === 0) return;
+    setIsDeletingExpiry(true);
+    try {
+      if (deleteTarget) {
+        await api.delete(`/inventory/expiring/${deleteTarget.id}`, {
+          data: {
+            source: deleteTarget.source,
+            receivingItemId: deleteTarget.receivingItemId,
+            inventoryItemId: deleteTarget.inventoryItemId,
+          },
+        });
+      } else {
+        await api.delete('/inventory/expiring/bulk', {
+          data: {
+            items: records.map(({ source, receivingItemId, inventoryItemId }) => ({ source, receivingItemId, inventoryItemId })),
+          },
+        });
+      }
+      showToast?.(records.length === 1 ? 'Expiry date removed.' : `Expiry dates removed from ${records.length} records.`, 'success');
+      setSelectedExpiryIds(new Set());
+      setDeleteTarget(null);
+      setDeleteModalOpen(false);
+      await onRefresh?.();
+    } catch (error) {
+      console.error('Failed to clear expiry dates:', error);
+      showToast?.(error.response?.data?.error || 'Failed to remove expiry date(s).', 'error');
+    } finally {
+      setIsDeletingExpiry(false);
+    }
+  };
 
   // Auto-generator helpers
   const generateAutoBatch = () => {
@@ -284,6 +338,10 @@ const AdminExpiryTrackingView = ({
     });
   }, [expiryRecords, searchQuery, selectedCategory, statusFilter]);
 
+  const selectableExpiryRecords = filteredRecords.filter((record) => record.hasExpiry);
+  const selectedExpiryRecords = expiryRecords.filter((record) => selectedExpiryIds.has(record.id) && record.hasExpiry);
+  const allVisibleExpirySelected = selectableExpiryRecords.length > 0 && selectableExpiryRecords.every((record) => selectedExpiryIds.has(record.id));
+
   return (
     <div className="space-y-6">
       
@@ -295,9 +353,10 @@ const AdminExpiryTrackingView = ({
             Expiry Tracking
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            View and manage batch-by-batch expiry dates recorded during stock receivings.
+            View, schedule, and manage batch-by-batch expiry dates recorded during stock receivings.
           </p>
         </div>
+
       </div>
 
       {/* KPI Summary Cards */}
@@ -382,6 +441,33 @@ const AdminExpiryTrackingView = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs font-bold text-[var(--text-muted)]">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedExpiryRecords.length} />
+          {selectionMode && <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={allVisibleExpirySelected}
+              disabled={selectableExpiryRecords.length === 0}
+              onChange={() => setSelectedExpiryIds((current) => {
+                const next = new Set(current);
+                if (allVisibleExpirySelected) selectableExpiryRecords.forEach((record) => next.delete(record.id));
+                else selectableExpiryRecords.forEach((record) => next.add(record.id));
+                return next;
+              })}
+              className="accent-orange-500"
+              aria-label="Select all visible records with expiry dates"
+            />
+            <span>Select visible</span>
+          </label>}
+          {selectionMode && selectedExpiryRecords.length > 0 && (
+            <button
+              type="button"
+              onClick={() => { setDeleteTarget(null); setDeleteModalOpen(true); }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Remove expiry ({selectedExpiryRecords.length})
+            </button>
+          )}
           {/* Status Filter Dropdown */}
           <div className="flex items-center gap-1.5">
             <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -495,7 +581,19 @@ const AdminExpiryTrackingView = ({
                     <tr key={r.id} className="hover:bg-[var(--bg-color)]/50 transition-colors">
                       <td className="py-3 px-4">
                         <div>
-                          <strong className="text-[var(--text-main)] block">{r.name}</strong>
+                          <div className="flex items-center gap-2">
+                            {selectionMode && r.hasExpiry && (
+                              <input
+                                type="checkbox"
+                                checked={selectedExpiryIds.has(r.id)}
+                                onChange={() => toggleExpirySelection(r.id)}
+                                onClick={(event) => event.stopPropagation()}
+                                className="accent-orange-500"
+                                aria-label={`Select expiry date for ${r.name}`}
+                              />
+                            )}
+                            <strong className="text-[var(--text-main)] block">{r.name}</strong>
+                          </div>
                           <span className="text-[10px] text-[var(--text-muted)]">{r.category}</span>
                         </div>
                       </td>
@@ -545,6 +643,17 @@ const AdminExpiryTrackingView = ({
                       </td>
 
                       <td className="py-3 px-4 text-right space-x-1.5">
+                        {r.hasExpiry && (
+                          <button
+                            type="button"
+                            onClick={() => { setDeleteTarget(r); setDeleteModalOpen(true); }}
+                            title="Remove expiry date"
+                            aria-label={`Remove expiry date for ${r.name}`}
+                            className="inline-flex items-center justify-center p-2 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleOpenViewModal(r)}
                           className="px-3 py-1.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-main)] border border-[var(--border-color)] font-bold text-[11px] transition-colors cursor-pointer"
@@ -823,6 +932,21 @@ const AdminExpiryTrackingView = ({
         </div>,
         document.body
       )}
+
+      <GlobalDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={() => { setDeleteModalOpen(false); setDeleteTarget(null); }}
+        onConfirm={handleConfirmClearExpiry}
+        title={deleteTarget ? 'Remove Expiry Date' : `Remove ${selectedExpiryRecords.length} Expiry Dates`}
+        message="This removes expiry tracking from the selected record(s). Inventory items, received quantities, and batch records will remain unchanged."
+        itemName={deleteTarget?.name}
+        itemCount={deleteTarget ? 1 : selectedExpiryRecords.length}
+        isBulk={!deleteTarget && selectedExpiryRecords.length > 1}
+        confirmButtonText={deleteTarget ? 'Remove Expiry Date' : `Remove ${selectedExpiryRecords.length} Expiry Dates`}
+        loading={isDeletingExpiry}
+        dangerLevel="warning"
+        warningNotes={['The item or stock batch will not be deleted; only its expiry date will be cleared.']}
+      />
 
     </div>
   );

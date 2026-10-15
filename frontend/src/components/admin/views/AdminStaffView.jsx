@@ -16,8 +16,11 @@ import {
   Mail,
   UserCheck,
   UserX,
+  Trash2,
 } from 'lucide-react';
 import api from '../../../services/api';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 
 const ROLE_CONFIG = {
   ADMIN: {
@@ -79,6 +82,67 @@ const AdminStaffView = ({ showToast }) => {
   const [resetPasswordInput, setResetPasswordInput] = useState('');
   const [newRole, setNewRole] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Global Delete State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [staffToDelete, setStaffToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [selectedStaffIds, setSelectedStaffIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  const toggleSelectStaff = (id) => {
+    setSelectedStaffIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllStaff = (filtered) => {
+    if (selectedStaffIds.size === filtered.length) {
+      setSelectedStaffIds(new Set());
+    } else {
+      setSelectedStaffIds(new Set(filtered.map((s) => s.id)));
+    }
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedStaffIds(new Set());
+    setSelectionMode((active) => !active);
+  };
+
+  const handleBulkDeleteStaff = () => {
+    if (selectedStaffIds.size === 0) return;
+    setIsBulkDeleting(true);
+    setStaffToDelete(null);
+    setDeleteModalOpen(true);
+  };
+
+  const handleDeleteStaff = async () => {
+    setDeleteLoading(true);
+    try {
+      if (isBulkDeleting) {
+        const res = await api.delete('/admin/staff/bulk', {
+          data: { ids: Array.from(selectedStaffIds) },
+        });
+        if (showToast) showToast(res.data?.message || 'Staff members processed.');
+        setSelectedStaffIds(new Set());
+      } else if (staffToDelete) {
+        const res = await api.delete(`/admin/staff/${staffToDelete.id}`);
+        if (showToast) showToast(res.data?.message || 'Staff member removed.');
+      }
+      setDeleteModalOpen(false);
+      setStaffToDelete(null);
+      fetchStaff();
+    } catch (err) {
+      console.error('Delete staff error:', err);
+      if (showToast) showToast(err.response?.data?.error || 'Failed to delete staff account', 'error');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const fetchStaff = async () => {
     setLoading(true);
@@ -190,6 +254,16 @@ const AdminStaffView = ({ showToast }) => {
           </p>
         </div>
         <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedStaffIds.size} />
+          {selectionMode && selectedStaffIds.size > 0 && (
+            <button
+              onClick={handleBulkDeleteStaff}
+              className="px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Delete Selected ({selectedStaffIds.size})</span>
+            </button>
+          )}
           <button
             onClick={fetchStaff}
             className="p-2.5 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] hover:border-orange-400 transition-all cursor-pointer shadow-sm"
@@ -243,6 +317,14 @@ const AdminStaffView = ({ showToast }) => {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/70 text-[11px] font-semibold text-[var(--text-muted)] tracking-wide">
+                  {selectionMode && <th className="py-3.5 px-4 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredStaff.length > 0 && selectedStaffIds.size === filteredStaff.length}
+                      onChange={() => toggleSelectAllStaff(filteredStaff)}
+                      className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500 cursor-pointer"
+                    />
+                  </th>}
                   <th className="py-3.5 px-5">Staff Member</th>
                   <th className="py-3.5 px-5">Email Address</th>
                   <th className="py-3.5 px-5">Account Type</th>
@@ -261,9 +343,18 @@ const AdminStaffView = ({ showToast }) => {
                     iconColor: 'text-slate-500',
                   };
                   const RoleIcon = roleConfig.icon;
+                  const isChecked = selectedStaffIds.has(staff.id);
 
                   return (
-                    <tr key={staff.id} className="hover:bg-[var(--bg-color)]/50 transition-colors group">
+                    <tr key={staff.id} className={`hover:bg-[var(--bg-color)]/50 transition-colors group ${isChecked ? 'bg-orange-500/5' : ''}`}>
+                      {selectionMode && <td className="py-4 px-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleSelectStaff(staff.id)}
+                          className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500 cursor-pointer"
+                        />
+                      </td>}
                       {/* Name + Avatar */}
                       <td className="py-4 px-5">
                         <div className="flex items-center gap-3">
@@ -382,6 +473,18 @@ const AdminStaffView = ({ showToast }) => {
                               </>
                             )}
                           </button>
+
+                          {/* Delete Account */}
+                          <button
+                            onClick={() => {
+                              setStaffToDelete(staff);
+                              setDeleteModalOpen(true);
+                            }}
+                            className="p-1.5 rounded-lg border border-transparent hover:border-rose-500/20 text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            title="Delete Staff Member"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -392,6 +495,32 @@ const AdminStaffView = ({ showToast }) => {
           </div>
         )}
       </div>
+
+      {/* Global Delete Confirmation Modal */}
+      <GlobalDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setStaffToDelete(null);
+        }}
+        onConfirm={handleDeleteStaff}
+        title={isBulkDeleting ? `Delete ${selectedStaffIds.size} Selected Staff Accounts` : `Delete Staff Account (${staffToDelete?.name || ''})`}
+        message={
+          isBulkDeleting
+            ? `Are you sure you want to remove ${selectedStaffIds.size} selected staff accounts? Staff with historical order, inventory, or audit transactions will be safely deactivated and archived.`
+            : `Are you sure you want to remove staff member ${staffToDelete?.name}? If this staff member has created orders or logs, they will be safely deactivated and archived to preserve history.`
+        }
+        itemCount={isBulkDeleting ? selectedStaffIds.size : 1}
+        itemName={staffToDelete ? `${staffToDelete.name} (${staffToDelete.email} - ${staffToDelete.role})` : ''}
+        isBulk={isBulkDeleting}
+        confirmButtonText={isBulkDeleting ? 'Delete Selected' : 'Delete Staff Account'}
+        loading={deleteLoading}
+        warningNotes={[
+          'If the staff account has zero historical transactions, it is permanently deleted.',
+          'If audit, inventory, or order records are tied to this user, the account is safely archived & deactivated.',
+          'Your currently active logged-in Admin account is protected and cannot be deleted.',
+        ]}
+      />
 
       {/* ══════════════════════════════════════════════════════════════════════
           MODAL: Add Staff

@@ -149,7 +149,7 @@ const OrderTrackingPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FAF9F7] dark:bg-[#121212] flex items-center justify-center p-4">
+      <div className="responsive-shell min-h-screen bg-[#FAF9F7] dark:bg-[#121212] flex items-center justify-center p-4">
         <div className="text-center space-y-4">
           <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
             <div className="absolute inset-0 rounded-full border-4 border-[#E85D2A]/20 animate-ping" />
@@ -163,7 +163,7 @@ const OrderTrackingPage = () => {
 
   if (error || !order) {
     return (
-      <div className="min-h-screen bg-[#FAF9F7] dark:bg-[#121212] flex items-center justify-center p-4">
+      <div className="responsive-shell min-h-screen bg-[#FAF9F7] dark:bg-[#121212] flex items-center justify-center p-4">
         <div className="bg-white dark:bg-[#1E1E1E] border border-[#E7E5E4] dark:border-[#333] rounded-[32px] p-8 max-w-md w-full text-center space-y-4 shadow-2xl">
           <div className="w-16 h-16 bg-rose-100 dark:bg-rose-950/50 text-rose-600 rounded-full flex items-center justify-center mx-auto">
             <AlertCircle className="w-8 h-8" />
@@ -195,7 +195,7 @@ const OrderTrackingPage = () => {
   const strokeDashoffset = circumference - (timeProgressPercent / 100) * circumference;
 
   return (
-    <div className="min-h-screen bg-[#FAF9F7] dark:bg-[#121212] text-[#171717] dark:text-[#E5E5E5] font-sans p-4 sm:p-6 lg:p-8 flex flex-col justify-between selection:bg-[#E85D2A]/20">
+    <div className="responsive-shell min-h-screen bg-[#FAF9F7] dark:bg-[#121212] text-[#171717] dark:text-[#E5E5E5] font-sans p-4 sm:p-6 lg:p-8 flex flex-col justify-between selection:bg-[#E85D2A]/20">
       <div className="max-w-2xl w-full mx-auto space-y-6">
 
         {/* Top Header Navigation */}

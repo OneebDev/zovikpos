@@ -261,7 +261,7 @@ const KitchenDashboard = ({ user, onLogout }) => {
   }).length;
 
   return (
-    <div className="min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] p-4 sm:p-6 flex flex-col space-y-5 relative overflow-hidden transition-colors duration-300 font-sans">
+    <div className="responsive-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] p-4 sm:p-6 flex flex-col space-y-5 relative overflow-x-hidden transition-colors duration-300 font-sans">
       {/* Background neon flares */}
       <div className="absolute top-0 left-0 w-[400px] h-[400px] bg-amber-500/5 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-orange-500/3 rounded-full blur-[140px] pointer-events-none" />
@@ -358,10 +358,10 @@ const KitchenDashboard = ({ user, onLogout }) => {
       )}
 
       {/* ── THREE KDS QUEUE COLUMNS ─────────────────────────────────────────── */}
-      <div className="flex-1 grid md:grid-cols-3 gap-5 overflow-hidden min-h-[520px] relative z-10">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-5 overflow-visible md:overflow-hidden min-h-0 md:min-h-[520px] relative z-10">
         
         {/* Column 1: Incoming / PAID */}
-        <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4.5 flex flex-col space-y-4 shadow-xl">
+        <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4.5 flex flex-col space-y-4 shadow-xl min-h-[320px] md:min-h-0">
           <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
@@ -452,7 +452,7 @@ const KitchenDashboard = ({ user, onLogout }) => {
         </div>
 
         {/* Column 2: Cooking / PREPARING */}
-        <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4.5 flex flex-col space-y-4 shadow-xl">
+        <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4.5 flex flex-col space-y-4 shadow-xl min-h-[320px] md:min-h-0">
           <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(168,85,247,0.6)] animate-pulse" />
@@ -541,7 +541,7 @@ const KitchenDashboard = ({ user, onLogout }) => {
         </div>
 
         {/* Column 3: Ready / READY */}
-        <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4.5 flex flex-col space-y-4 shadow-xl">
+        <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4.5 flex flex-col space-y-4 shadow-xl min-h-[320px] md:min-h-0">
           <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />

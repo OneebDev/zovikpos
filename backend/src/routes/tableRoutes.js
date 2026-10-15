@@ -3,6 +3,8 @@ const {
   getAllTables,
   addTable,
   updateTable,
+  deleteTable,
+  bulkDeleteTables,
   regenerateTableQR,
   getTableQRCard,
   getBatchTableQRCards,
@@ -38,6 +40,8 @@ router.use(roleMiddleware(['ADMIN', 'VENDOR']));
 router.get('/', getAllTables);
 router.post('/', roleMiddleware(['ADMIN']), addTable);
 router.put('/:id', roleMiddleware(['ADMIN']), updateTable);
+router.delete('/bulk', roleMiddleware(['ADMIN']), bulkDeleteTables);
+router.delete('/:id', roleMiddleware(['ADMIN']), deleteTable);
 router.post('/:id/regenerate-qr', roleMiddleware(['ADMIN']), regenerateTableQR);
 
 module.exports = router;

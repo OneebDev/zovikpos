@@ -27,8 +27,40 @@ import {
   ChevronRight,
   MapPin,
   Utensils,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import FAQModal from './FAQModal';
+
+const loadedMenuImageUrls = new Set();
+
+const CustomerMenuImage = ({ src, alt, priority, onError }) => {
+  const [loaded, setLoaded] = useState(() => loadedMenuImageUrls.has(src));
+
+  useEffect(() => setLoaded(loadedMenuImageUrls.has(src)), [src]);
+
+  return (
+    <>
+      {!loaded && <div aria-hidden="true" className="absolute inset-0 skeleton !rounded-none" />}
+      <img
+        src={src}
+        alt={alt}
+        loading={priority ? 'eager' : 'lazy'}
+        fetchPriority={priority ? 'high' : 'auto'}
+        decoding="async"
+        onLoad={() => {
+          loadedMenuImageUrls.add(src);
+          setLoaded(true);
+        }}
+        onError={(event) => {
+          setLoaded(true);
+          onError(event);
+        }}
+        className={`w-full h-full object-cover transition-[transform,opacity] duration-500 group-hover:scale-105 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+      />
+    </>
+  );
+};
 
 // Helper to extract clean table display name from token or text
 export const parseTableDisplay = (tokenOrName) => {
@@ -123,8 +155,8 @@ export const OtpInputBoxes = ({ value, onChange, disabled }) => {
           onChange={(e) => handleChange(e, idx)}
           onKeyDown={(e) => handleKeyDown(e, idx)}
           className={`w-10 h-12 sm:w-11 sm:h-13 text-center text-lg sm:text-xl font-black font-mono rounded-xl border-2 transition-all focus:outline-none ${digits[idx]
-              ? 'border-[#E85D2A] bg-white text-[#E85D2A] shadow-sm'
-              : 'border-[#E7E5E4] bg-[#FAF9F7] text-[#171717] focus:border-[#E85D2A] focus:bg-white focus:ring-4 focus:ring-[#E85D2A]/15'
+              ? 'border-[#E85D2A] bg-white dark:bg-[#2B2522] text-[#E85D2A] dark:text-[#FF9B70] shadow-sm'
+              : 'border-[#E7E5E4] dark:border-[#45403D] bg-[#FAF9F7] dark:bg-[#292725] text-[#171717] dark:text-[#F5F5F5] focus:border-[#E85D2A] focus:bg-white dark:focus:bg-[#302A27] focus:ring-4 focus:ring-[#E85D2A]/15'
             }`}
         />
       ))}
@@ -134,6 +166,13 @@ export const OtpInputBoxes = ({ value, onChange, disabled }) => {
 
 const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
   const navigate = useNavigate();
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+
+  useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.toggle('dark', theme === 'dark');
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   const { menu, isLoading: isMenuLoading } = useCustomerMenu();
   const [cart, setCart] = useState(() => {
@@ -153,8 +192,6 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
   const [sessionId, setSessionId] = useState(() => localStorage.getItem('customer_sessionId') || '');
   const [tableError, setTableError] = useState('');
   const [category, setCategory] = useState(() => localStorage.getItem('customer_category') || 'All');
-  const { activeOrders, failedOrders, refetch: refetchActiveOrders, dismissFailedOrder } = useCustomerActiveOrders();
-  const activeOrder = activeOrders[0] || null;
   const [transferSuccessMessage, setTransferSuccessMessage] = useState('');
   const [transferLoading, setTransferLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -203,6 +240,11 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
     const verifiedSessionId = localStorage.getItem('customer_verifiedSessionId');
     return Boolean(savedSession && verifiedSessionId === savedSession);
   });
+
+  const { activeOrders, failedOrders, refetch: refetchActiveOrders, dismissFailedOrder } = useCustomerActiveOrders({
+    enabled: isSessionVerified,
+  });
+  const activeOrder = activeOrders[0] || null;
 
   const [authName, setAuthName] = useState(() => {
     const u = getStoredCustomerUser();
@@ -593,6 +635,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
   // ─── OTP Handlers ────────────────────────────────────────────────────────
   const handleSendOtp = async (e) => {
     if (e) e.preventDefault();
+    if (otpLoading || cooldown > 0) return;
     if (!authEmail) {
       setOtpError('Please enter your email address.');
       return;
@@ -616,6 +659,12 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
       }
     } catch (err) {
       setOtpError(err.response?.data?.error || 'Failed to send OTP code.');
+      if (err.response?.status === 429) {
+        const responseData = err.response?.data || {};
+        const messageDelay = String(responseData.error || '').match(/(\d+)\s*seconds?/i);
+        const retryDelay = Number(responseData.retryAfterSeconds || messageDelay?.[1] || 30);
+        setCooldown(Math.max(1, retryDelay));
+      }
     } finally {
       setOtpLoading(false);
     }
@@ -983,7 +1032,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF9F7] dark:bg-[#121212] text-[#171717] dark:text-[#E5E5E5] flex flex-col font-sans selection:bg-[#F97316]/20">
+    <div className="responsive-shell min-h-screen bg-[#FAF9F7] dark:bg-[#121212] text-[#171717] dark:text-[#E5E5E5] flex flex-col font-sans selection:bg-[#F97316]/20">
       {sessionExpired && (
         <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-8 space-y-6 text-center shadow-2xl">
@@ -1039,6 +1088,15 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
+              className="w-10 h-10 rounded-xl border border-[#E7E5E4] dark:border-[#333] bg-white/70 dark:bg-[#242424] text-[#78716C] dark:text-[#E5E5E5] hover:border-[#E85D2A]/40 hover:text-[#E85D2A] transition-all flex items-center justify-center cursor-pointer"
+              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
             <button
               onClick={() => setShowFAQ(true)}
               className="w-10 h-10 sm:w-auto sm:h-auto sm:px-4 sm:py-2.5 text-xs font-bold text-[#78716C] dark:text-[#A8A29E] hover:text-[#E85D2A] hover:bg-[#E85D2A]/5 dark:hover:bg-[#E85D2A]/10 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-transparent hover:border-[#E85D2A]/20"
@@ -1173,7 +1231,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
       )}
 
       {/* ── Main content ─────────────────────────────────────────────────────── */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 dark:text-[#E5E5E5]">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 pb-32 sm:p-6 sm:pb-36 lg:p-8 space-y-6 dark:text-[#E5E5E5]">
 
         {/* Table QR Error */}
         {tableError && (
@@ -1193,53 +1251,53 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
 
         {/* ── EMAIL + OTP VERIFICATION VIEW (Required before ordering) ────────── */}
         {!isSessionVerified ? (
-          <div className="max-w-md mx-auto my-8 bg-white border border-[#E7E5E4] rounded-[32px] p-6 sm:p-8 shadow-2xl text-center space-y-6 animate-fade-in">
-            <div className="w-16 h-16 bg-[#E85D2A]/10 text-[#E85D2A] rounded-3xl flex items-center justify-center mx-auto ring-8 ring-[#E85D2A]/5">
-              <ShieldCheck className="w-8 h-8" />
+          <div className="w-full max-w-[440px] mx-auto my-5 sm:my-8 bg-white dark:bg-[#1E1C1B] border border-[#EEE9E5] dark:border-[#383330] rounded-[28px] sm:rounded-[32px] p-5 sm:p-8 shadow-[0_24px_70px_-28px_rgba(41,25,15,0.24)] dark:shadow-[0_24px_70px_-28px_rgba(0,0,0,0.72)] text-center space-y-5 sm:space-y-6 animate-fade-in">
+            <div className="w-[68px] h-[68px] bg-[#FFF4EF] dark:bg-[#3A2821] text-[#E85D2A] dark:text-[#FF9B70] rounded-[24px] flex items-center justify-center mx-auto ring-8 ring-[#E85D2A]/[0.04]">
+              <ShieldCheck className="w-8 h-8" strokeWidth={2.1} />
             </div>
 
             <div>
-              <span className="px-3 py-1 bg-[#E85D2A]/10 text-[#E85D2A] rounded-full text-[10px] font-black uppercase tracking-wider">
+              <span className="inline-flex px-3 py-1.5 bg-[#FFF0E9] dark:bg-[#3A2821] text-[#D94E1B] dark:text-[#FF9B70] rounded-full text-[10px] font-extrabold uppercase tracking-[0.09em]">
                 {tableId} • Smart Dining Session
               </span>
-              <h2 className="text-2xl font-black text-[#171717] mt-2">Welcome to {tableId}</h2>
-              <p className="text-xs text-[#78716C] mt-1.5 leading-relaxed">
+              <h2 className="text-[25px] sm:text-[27px] font-extrabold tracking-tight text-[#171717] dark:text-white mt-3">Welcome to {tableId}</h2>
+              <p className="text-[13px] text-[#78716C] dark:text-[#B8B0AA] mt-1.5 leading-[1.6] max-w-[300px] mx-auto">
                 Please verify your email address to unlock the menu and place your order.
               </p>
             </div>
 
             {otpError && (
-              <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-600 rounded-2xl text-xs font-bold flex items-center space-x-2 text-left">
+              <div className="p-3.5 bg-rose-50 dark:bg-rose-950/35 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-300 rounded-2xl text-xs font-bold flex items-center space-x-2 text-left">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{otpError}</span>
               </div>
             )}
 
             {otpSuccess && (
-              <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-2xl text-xs font-bold flex items-center space-x-2 text-left">
+              <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-900/60 text-emerald-600 dark:text-emerald-300 rounded-2xl text-xs font-bold flex items-center space-x-2 text-left">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 <span>{otpSuccess}</span>
               </div>
             )}
 
             {!otpSent ? (
-              <form onSubmit={handleSendOtp} className="space-y-4 text-left">
+              <form onSubmit={handleSendOtp} className="space-y-4 sm:space-y-[18px] text-left">
                 <div>
-                  <label className="text-[11px] font-bold text-[#171717] block mb-1">Your Full Name</label>
+                  <label className="text-xs font-semibold text-[#332E2A] dark:text-[#E7E0DB] block mb-1.5">Your Full Name</label>
                   <div className="relative">
                     <input
                       type="text"
                       value={authName}
                       onChange={(e) => setAuthName(e.target.value)}
                       placeholder="e.g. John Doe"
-                      className="w-full bg-[#FAF9F7] border border-[#E7E5E4] rounded-xl px-4 py-3 text-xs text-[#171717] focus:outline-none focus:border-[#E85D2A] focus:bg-white transition-all"
+                      className="w-full h-12 bg-[#FAF9F7] dark:bg-[#292725] border border-[#E7E5E4] dark:border-[#45403D] rounded-[14px] px-4 pr-11 text-[13px] text-[#171717] dark:text-[#F5F5F5] placeholder:text-[#A8A29E] focus:outline-none focus:border-[#E85D2A] focus:bg-white dark:focus:bg-[#302A27] focus:ring-4 focus:ring-[#E85D2A]/[0.08] transition-all"
                     />
-                    <User className="w-4 h-4 text-[#78716C] absolute right-3.5 top-3.5" />
+                    <User className="w-[17px] h-[17px] text-[#8A817B] dark:text-[#B8B0AA] absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-[#171717] block mb-1">Email Address (for Receipt & OTP)</label>
+                  <label className="text-xs font-semibold text-[#332E2A] dark:text-[#E7E0DB] block mb-1.5">Email Address <span className="font-normal text-[#8A817B] dark:text-[#B8B0AA]">(for receipt &amp; code)</span></label>
                   <div className="relative">
                     <input
                       type="email"
@@ -1247,19 +1305,21 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
                       placeholder="name@university.edu"
-                      className="w-full bg-[#FAF9F7] border border-[#E7E5E4] rounded-xl px-4 py-3 text-xs text-[#171717] focus:outline-none focus:border-[#E85D2A] focus:bg-white transition-all"
+                      className="w-full h-12 bg-[#FAF9F7] dark:bg-[#292725] border border-[#E7E5E4] dark:border-[#45403D] rounded-[14px] px-4 pr-11 text-[13px] text-[#171717] dark:text-[#F5F5F5] placeholder:text-[#A8A29E] focus:outline-none focus:border-[#E85D2A] focus:bg-white dark:focus:bg-[#302A27] focus:ring-4 focus:ring-[#E85D2A]/[0.08] transition-all"
                     />
-                    <Mail className="w-4 h-4 text-[#78716C] absolute right-3.5 top-3.5" />
+                    <Mail className="w-[17px] h-[17px] text-[#8A817B] dark:text-[#B8B0AA] absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={otpLoading}
-                  className="w-full py-3.5 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-[0.98] text-white font-black text-xs rounded-xl shadow-lg shadow-[#E85D2A]/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
+                  disabled={otpLoading || cooldown > 0}
+                  className="w-full min-h-12 py-3 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-[0.99] text-white font-bold text-[13px] rounded-[14px] shadow-[0_8px_18px_-8px_rgba(232,93,42,0.65)] transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-60 disabled:cursor-wait"
                 >
                   {otpLoading ? (
                     <span>Sending Code...</span>
+                  ) : cooldown > 0 ? (
+                    <span>Try again in {cooldown}s</span>
                   ) : (
                     <>
                       <span>Send 6-Digit Code</span>
@@ -1271,9 +1331,9 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
             ) : (
               <form onSubmit={handleVerifyOtp} className="space-y-4 text-left">
                 <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-[11px] font-bold text-[#171717]">Enter 6-Digit Code</label>
-                    <span className="text-[10px] text-[#78716C] font-mono">{authEmail}</span>
+                  <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1 mb-2">
+                    <label className="text-xs font-semibold text-[#332E2A] dark:text-[#E7E0DB]">Enter 6-Digit Code</label>
+                    <span className="text-[10px] text-[#78716C] dark:text-[#B8B0AA] font-mono truncate max-w-full">{authEmail}</span>
                   </div>
                   <OtpInputBoxes
                     value={otpCode}
@@ -1285,7 +1345,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                 <button
                   type="submit"
                   disabled={otpLoading || otpCode.length < 6}
-                  className="w-full py-3.5 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-[0.98] text-white font-black text-xs rounded-xl shadow-lg shadow-[#E85D2A]/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
+                  className="w-full min-h-12 py-3 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-[0.99] text-white font-bold text-[13px] rounded-[14px] shadow-[0_8px_18px_-8px_rgba(232,93,42,0.65)] transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-55 disabled:cursor-not-allowed"
                 >
                   {otpLoading ? <span>Verifying...</span> : <span>Verify &amp; Enter Menu</span>}
                 </button>
@@ -1294,7 +1354,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                   <button
                     type="button"
                     onClick={() => setOtpSent(false)}
-                    className="text-[#78716C] hover:text-[#171717] cursor-pointer"
+                    className="text-[#78716C] dark:text-[#B8B0AA] hover:text-[#171717] dark:hover:text-white cursor-pointer"
                   >
                     Change Email
                   </button>
@@ -1673,7 +1733,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 items-start">
-                  {filteredGrouped.map(({ groupKey, variants }) => {
+                  {filteredGrouped.map(({ groupKey, variants }, imageIndex) => {
                     const isExpanded = expandedGroup === groupKey;
                     const selectedVariant = pendingVariant[groupKey] || variants[0];
                     // Per-variant independent quantity — keyed by variant's own id
@@ -1697,14 +1757,14 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                             ? 'aspect-[16/9] w-full'
                             : 'w-32 h-32 sm:w-full sm:h-44 rounded-l-2xl sm:rounded-t-2xl sm:rounded-bl-none'
                         }`}>
-                          <img
+                          <CustomerMenuImage
                             src={getItemImage(selectedVariant)}
                             alt={groupKey}
+                            priority={imageIndex < 4}
                             onError={(e) => {
                               e.target.onerror = null;
                               e.target.src = 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=700&auto=format&fit=crop&q=80';
                             }}
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                           />
                           {/* Gradient overlay */}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-70" />
@@ -1867,8 +1927,8 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
 
       {/* STICKY CART FOOTER BAR — Ultra Clean & Compact */}
       {totalCartQuantity > 0 && isSessionVerified && (
-        <div className="sticky bottom-4 z-40 max-w-lg sm:max-w-xl mx-auto px-3 sm:px-4 w-full animate-slide-up">
-          <div className="bg-[#171717]/95 dark:bg-[#1E1E1E]/95 text-white p-3 sm:p-3.5 rounded-2xl sm:rounded-3xl shadow-2xl flex items-center justify-between border border-white/10 backdrop-blur-xl ring-1 ring-black/5 gap-2">
+        <div className="fixed inset-x-0 bottom-0 z-40 max-w-lg sm:max-w-xl mx-auto px-3 sm:px-4 pt-3 pb-[max(env(safe-area-inset-bottom),12px)] w-full animate-slide-up pointer-events-none">
+          <div className="bg-[#171717]/95 dark:bg-[#1E1E1E]/95 text-white p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl shadow-[0_12px_40px_rgba(0,0,0,0.32)] flex items-center justify-between border border-white/10 backdrop-blur-xl ring-1 ring-black/5 gap-2 pointer-events-auto">
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
               {/* Quantity Circle */}
               <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#E85D2A] text-white flex items-center justify-center font-black text-xs sm:text-sm shadow-md shadow-[#E85D2A]/30 shrink-0">
@@ -1876,11 +1936,11 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
               </div>
               {/* Subtotal Label + Price in 1 Line */}
               <div className="min-w-0">
-                <span className="text-[10px] sm:text-[11px] font-bold text-[#A8A29E] block uppercase tracking-wider whitespace-nowrap leading-none mb-1">
+                <span className="text-[9px] sm:text-[11px] font-bold text-[#A8A29E] block uppercase tracking-wider whitespace-nowrap leading-none mb-1">
                   Cart Subtotal
                 </span>
-                <span className="text-sm sm:text-base font-black text-white font-mono whitespace-nowrap leading-none flex items-baseline gap-1">
-                  <span className="text-[#E85D2A] text-xs font-bold font-sans">Rs.</span>
+                <span className="text-[13px] sm:text-base font-black text-white font-mono whitespace-nowrap leading-none flex items-baseline gap-1">
+                  <span className="text-[#E85D2A] text-[10px] sm:text-xs font-bold font-sans">Rs.</span>
                   <span>{totalCartPrice.toFixed(2)}</span>
                 </span>
               </div>
@@ -1889,9 +1949,10 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
             {/* Action Button */}
             <button
               onClick={() => navigate('/customer/cart')}
-              className="px-4 py-2.5 sm:px-5 sm:py-3 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-95 text-white font-extrabold text-xs sm:text-sm rounded-xl sm:rounded-2xl shadow-lg shadow-[#E85D2A]/25 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer"
+              className="px-3.5 py-2.5 sm:px-5 sm:py-3 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-95 text-white font-extrabold text-[11px] sm:text-sm rounded-xl sm:rounded-2xl shadow-lg shadow-[#E85D2A]/25 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer"
             >
-              <span>View Cart &amp; Checkout</span>
+              <span className="sm:hidden">Checkout</span>
+              <span className="hidden sm:inline">View Cart &amp; Checkout</span>
               <ArrowRight className="w-4 h-4 shrink-0" />
             </button>
           </div>

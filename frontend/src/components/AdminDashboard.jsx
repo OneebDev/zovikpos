@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { getSocket } from '../services/socket';
@@ -30,12 +30,17 @@ const AdminDashboard = ({ user, onLogout }) => {
   const subPath = location.pathname.replace(/^\/admin\/?/, '');
   const activeTab = subPath || 'dashboard';
 
-  const handleSelectTab = (tabId) => {
+  const handleSelectTab = (tabId, context = null) => {
+    if (tabId === 'inventory') setInventoryFocus(context?.itemId ? context : null);
     if (tabId === 'dashboard') navigate('/admin');
     else navigate(`/admin/${tabId}`);
   };
 
-  const [period, setPeriod] = useState('day');
+  const [period, setPeriod] = useState('all');
+  const [dashboardDateRange, setDashboardDateRange] = useState(null);
+  const [dashboardDatePreset, setDashboardDatePreset] = useState('ALL');
+  const [dashboardCustomFrom, setDashboardCustomFrom] = useState('');
+  const [dashboardCustomTo, setDashboardCustomTo] = useState('');
   const [branches, setBranches] = useState([]);
   const [selectedBranchId, setSelectedBranchId] = useState('all');
   const [stats, setStats] = useState(null);
@@ -49,6 +54,7 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [forecastingLoading, setForecastingLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+  const [inventoryFocus, setInventoryFocus] = useState(null);
 
   const showToast = (msg, type = 'success') => {
     setToastMessage({ text: msg, type });
@@ -67,7 +73,10 @@ const AdminDashboard = ({ user, onLogout }) => {
     const bQuery = selectedBranchId && selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : '';
     const bQuerySingle = selectedBranchId && selectedBranchId !== 'all' ? `?branchId=${selectedBranchId}` : '';
 
-    api.get(`/admin/stats?period=${period}${bQuery}`)
+    const rangeQuery = dashboardDateRange
+      ? `&from=${dashboardDateRange.from || ''}&to=${dashboardDateRange.to || ''}`
+      : '';
+    api.get(`/admin/stats?period=${period}${bQuery}${rangeQuery}`)
       .then(res => setStats(res.data))
       .catch(err => console.error('Fetch stats error:', err))
       .finally(() => setLoading(false));
@@ -104,8 +113,11 @@ const AdminDashboard = ({ user, onLogout }) => {
     try {
       const bQuery = selectedBranchId && selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : '';
       const bQuerySingle = selectedBranchId && selectedBranchId !== 'all' ? `?branchId=${selectedBranchId}` : '';
+      const rangeQuery = dashboardDateRange
+        ? `&from=${dashboardDateRange.from || ''}&to=${dashboardDateRange.to || ''}`
+        : '';
       const [statsRes, menuRes, invRes, ordersRes] = await Promise.all([
-        api.get(`/admin/stats?period=${period}${bQuery}`),
+        api.get(`/admin/stats?period=${period}${bQuery}${rangeQuery}`),
         api.get(`/menu?all=true${bQuery}`),
         api.get(`/inventory${bQuerySingle}`),
         api.get(`/orders?period=${period}${bQuery}`),
@@ -123,7 +135,7 @@ const AdminDashboard = ({ user, onLogout }) => {
     if (user && user.role === 'ADMIN') {
       fetchDashboardData();
     }
-  }, [user, period, selectedBranchId]);
+  }, [user, period, selectedBranchId, dashboardDateRange]);
 
   // Real-time socket sync
   useEffect(() => {
@@ -149,7 +161,7 @@ const AdminDashboard = ({ user, onLogout }) => {
         socket.off('menu:update', handleRealtimeSync);
       };
     }
-  }, [user, period]);
+  }, [user, period, selectedBranchId, dashboardDateRange]);
 
   const handleRecalculateAI = async () => {
     setForecastingLoading(true);
@@ -195,8 +207,17 @@ const AdminDashboard = ({ user, onLogout }) => {
       {activeTab === 'dashboard' && (
         <AdminHomeView
           stats={stats}
-          period={period}
           setPeriod={setPeriod}
+          datePreset={dashboardDatePreset}
+          setDatePreset={setDashboardDatePreset}
+          customFrom={dashboardCustomFrom}
+          customTo={dashboardCustomTo}
+          onCustomRangeChange={(from, to) => {
+            setDashboardCustomFrom(from);
+            setDashboardCustomTo(to);
+            if (from || to) setDashboardDateRange({ from, to });
+          }}
+          onDateRangeChange={setDashboardDateRange}
           onNavigate={handleSelectTab}
           onRecalculateAI={handleRecalculateAI}
           forecastingLoading={forecastingLoading}
@@ -204,7 +225,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       )}
 
       {activeTab === 'orders' && (
-        <AdminOrdersView orders={adminOrders} loading={loading} onRefresh={fetchDashboardData} />
+        <AdminOrdersView orders={adminOrders} loading={loading} onRefresh={fetchDashboardData} showToast={showToast} />
       )}
 
       {activeTab === 'payments' && (
@@ -216,7 +237,14 @@ const AdminDashboard = ({ user, onLogout }) => {
       )}
 
       {activeTab === 'inventory' && (
-        <AdminInventoryView inventory={inventory} logs={logs} onRefresh={fetchDashboardData} showToast={showToast} />
+        <AdminInventoryView
+          inventory={inventory}
+          logs={logs}
+          onRefresh={fetchDashboardData}
+          showToast={showToast}
+          focusRequest={inventoryFocus}
+          onFocusHandled={() => setInventoryFocus(null)}
+        />
       )}
 
       {activeTab === 'staff' && <AdminStaffView showToast={showToast} />}
@@ -250,6 +278,7 @@ const AdminDashboard = ({ user, onLogout }) => {
           period={period}
           setPeriod={setPeriod}
           onRefresh={fetchDashboardData}
+          showToast={showToast}
         />
       )}
 
@@ -257,7 +286,14 @@ const AdminDashboard = ({ user, onLogout }) => {
         <AdminNotificationsView stats={stats} orders={adminOrders} onNavigate={handleSelectTab} />
       )}
 
-      {activeTab === 'audit-logs' && <AdminAuditLogsView logs={auditLogs} loading={loading} />}
+      {activeTab === 'audit-logs' && (
+        <AdminAuditLogsView
+          logs={auditLogs}
+          loading={loading}
+          onRefresh={fetchDashboardData}
+          showToast={showToast}
+        />
+      )}
 
       {activeTab === 'order-history' && <AdminOrderStatusHistoryView showToast={showToast} />}
 

@@ -86,7 +86,7 @@ const Login = ({ onLoginSuccess }) => {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col justify-center items-center px-6 bg-[#0A0A0A] text-gray-250 relative overflow-hidden select-none">
+    <div className="responsive-shell min-h-screen flex flex-col justify-center items-center px-4 sm:px-6 bg-[#0A0A0A] text-gray-250 relative overflow-hidden select-none">
       {/* Decorative warm backlights */}
       <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-orange-600/5 rounded-full blur-[130px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-amber-600/5 rounded-full blur-[130px] pointer-events-none" />

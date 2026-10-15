@@ -20,12 +20,22 @@ import {
 } from 'lucide-react';
 import PhoneInput from '../../PhoneInput';
 import { formatPhoneDisplay, getWhatsAppLink } from '../../../utils/phoneUtils';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 
 const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], onRefresh, showToast }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
   const [selectedSupplierDetails, setSelectedSupplierDetails] = useState(null);
+
+  // Global Delete & Bulk State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [supplierToDelete, setSupplierToDelete] = useState(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [selectedSupplierIds, setSelectedSupplierIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -72,6 +82,28 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
         (s.email && s.email.toLowerCase().includes(q));
     });
   }, [suppliers, searchQuery]);
+
+  const toggleSelectSupplier = (id) => {
+    setSelectedSupplierIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedSupplierIds.size === filteredSuppliers.length) {
+      setSelectedSupplierIds(new Set());
+    } else {
+      setSelectedSupplierIds(new Set(filteredSuppliers.map(s => s.id)));
+    }
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedSupplierIds(new Set());
+    setSelectionMode((active) => !active);
+  };
 
   const openAddModal = () => {
     setFormData({ name: '', contactPerson: '', phone: '', email: '', address: '', notes: '' });
@@ -129,17 +161,44 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
     }
   };
 
-  const handleDelete = async (supplier) => {
-    if (!window.confirm(`Are you sure you want to delete supplier "${supplier.name}"?`)) return;
+  const handleDelete = (supplier) => {
+    setSupplierToDelete(supplier);
+    setIsBulkDeleting(false);
+    setDeleteModalOpen(true);
+  };
 
+  const handleBulkDelete = () => {
+    if (selectedSupplierIds.size === 0) return;
+    setIsBulkDeleting(true);
+    setSupplierToDelete(null);
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    setDeleteLoading(true);
     try {
-      await api.delete(`/inventory/suppliers/${supplier.id}`);
-      if (showToast) showToast(`Deleted supplier "${supplier.name}".`, 'success');
+      if (isBulkDeleting) {
+        const res = await api.delete('/inventory/suppliers/bulk', {
+          data: { ids: Array.from(selectedSupplierIds) }
+        });
+        if (showToast) showToast(res.data?.message || 'Suppliers processed.');
+        setSelectedSupplierIds(new Set());
+      } else if (supplierToDelete) {
+        const res = await api.delete(`/inventory/suppliers/${supplierToDelete.id}`);
+        if (showToast) showToast(res.data?.message || `Deleted supplier "${supplierToDelete.name}".`);
+      }
+      setDeleteModalOpen(false);
+      setSupplierToDelete(null);
+      if (selectedSupplierDetails && supplierToDelete && selectedSupplierDetails.id === supplierToDelete.id) {
+        setSelectedSupplierDetails(null);
+      }
       if (onRefresh) onRefresh();
     } catch (err) {
       console.error('Delete supplier error:', err);
       const msg = err.response?.data?.error || 'Failed to delete supplier.';
       if (showToast) showToast(msg, 'error');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -158,13 +217,26 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
           </p>
         </div>
 
-        <button
-          onClick={openAddModal}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs shadow-lg shadow-orange-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
-        >
-          <Plus className="w-4 h-4 stroke-[3]" />
-          <span>Add Supplier</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedSupplierIds.size} />
+          {selectionMode && selectedSupplierIds.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="px-3.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold text-xs border border-rose-500/30 shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Delete Selected ({selectedSupplierIds.size})</span>
+            </button>
+          )}
+
+          <button
+            onClick={openAddModal}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs shadow-lg shadow-orange-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <Plus className="w-4 h-4 stroke-[3]" />
+            <span>Add Supplier</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Summary Cards */}
@@ -222,6 +294,14 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
             <table className="w-full text-left text-xs divide-y divide-[var(--border-color)]">
               <thead className="bg-[var(--bg-color)]/80 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]">
                 <tr>
+                  {selectionMode && <th className="py-3.5 px-4 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredSuppliers.length > 0 && selectedSupplierIds.size === filteredSuppliers.length}
+                      onChange={toggleSelectAll}
+                      className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500 cursor-pointer"
+                    />
+                  </th>}
                   <th className="py-3.5 px-4">Supplier</th>
                   <th className="py-3.5 px-4">Contact Person</th>
                   <th className="py-3.5 px-4">Phone / Email</th>
@@ -233,9 +313,18 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
               <tbody className="divide-y divide-[var(--border-color)] font-medium text-[var(--text-main)]">
                 {filteredSuppliers.map((s) => {
                   const suppliedItems = inventory.filter(i => String(i.supplierId) === String(s.id));
+                  const isChecked = selectedSupplierIds.has(s.id);
 
                   return (
-                    <tr key={s.id} className="hover:bg-[var(--bg-color)]/50 transition-colors">
+                    <tr key={s.id} className={`hover:bg-[var(--bg-color)]/50 transition-colors ${isChecked ? 'bg-orange-500/5' : ''}`}>
+                      {selectionMode && <td className="py-3.5 px-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleSelectSupplier(s.id)}
+                          className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500 cursor-pointer"
+                        />
+                      </td>}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center font-bold text-sky-400 shrink-0">
@@ -477,14 +566,55 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
               </div>
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-[var(--border-color)]">
-              <button onClick={() => setSelectedSupplierDetails(null)} className="px-4 py-2 rounded-xl bg-[var(--bg-color)] font-bold text-xs text-[var(--text-muted)] cursor-pointer">Close</button>
+            <div className="flex justify-between items-center pt-3 border-t border-[var(--border-color)]">
+              <button
+                type="button"
+                onClick={() => {
+                  const s = selectedSupplierDetails;
+                  handleDelete(s);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Supplier</span>
+              </button>
+
+              <button
+                onClick={() => setSelectedSupplierDetails(null)}
+                className="px-4 py-2 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] border border-[var(--border-color)] font-bold text-xs text-[var(--text-muted)] cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>,
         document.body
       )}
 
+      {/* Global Delete Confirmation Modal */}
+      <GlobalDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setSupplierToDelete(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        title={isBulkDeleting ? `Delete ${selectedSupplierIds.size} Selected Suppliers` : `Delete Supplier "${supplierToDelete?.name || ''}"`}
+        message={
+          isBulkDeleting
+            ? `Are you sure you want to delete ${selectedSupplierIds.size} selected suppliers? Suppliers with historical receiving records or linked inventory items will be preserved safely.`
+            : `Are you sure you want to delete supplier "${supplierToDelete?.name}"? If they have linked purchase receivings or inventory items, deletion will be blocked to preserve historical records.`
+        }
+        itemCount={isBulkDeleting ? selectedSupplierIds.size : 1}
+        itemName={supplierToDelete ? supplierToDelete.name : ''}
+        isBulk={isBulkDeleting}
+        confirmButtonText={isBulkDeleting ? 'Delete Selected' : 'Delete Supplier'}
+        loading={deleteLoading}
+        dangerLevel="danger"
+        warningNotes={[
+          'Suppliers with linked purchase deliveries or active catalog inventory cannot be permanently deleted.',
+        ]}
+      />
     </div>
   );
 };

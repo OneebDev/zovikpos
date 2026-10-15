@@ -9,15 +9,26 @@ import {
   DollarSign,
   Calendar,
   X,
+  Trash2,
 } from 'lucide-react';
 import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
 import api from '../../../services/api';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 
 const AdminCustomersView = ({ showToast }) => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+
+  // Global Delete State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const fetchCustomers = async () => {
     setLoading(true);
@@ -43,6 +54,35 @@ const AdminCustomersView = ({ showToast }) => {
         c.name?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [customers, searchTerm]);
+
+  const toggleSelectCustomer = (id) => {
+    setSelectedCustomerIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedCustomerIds.size === filteredCustomers.length) {
+      setSelectedCustomerIds(new Set());
+    } else {
+      setSelectedCustomerIds(new Set(filteredCustomers.map((c) => c.id)));
+    }
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedCustomerIds(new Set());
+    setSelectionMode((active) => !active);
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedCustomerIds.size === 0) return;
+    setIsBulkDeleting(true);
+    setCustomerToDelete(null);
+    setDeleteModalOpen(true);
+  };
 
   const handleExportCSV = () => {
     const csvData = filteredCustomers.map((c) => ({
@@ -110,6 +150,16 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
 
         <div className="flex items-center space-x-2">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedCustomerIds.size} />
+          {selectionMode && selectedCustomerIds.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Selected ({selectedCustomerIds.size})</span>
+            </button>
+          )}
           <button
             onClick={handleExportCSV}
             className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
@@ -154,6 +204,14 @@ const AdminCustomersView = ({ showToast }) => {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
+                  {selectionMode && <th className="p-4 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredCustomers.length > 0 && selectedCustomerIds.size === filteredCustomers.length}
+                      onChange={toggleSelectAll}
+                      className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500 cursor-pointer"
+                    />
+                  </th>}
                   <th className="p-4">Customer</th>
                   <th className="p-4">Email</th>
                   <th className="p-4">Total Orders</th>
@@ -164,31 +222,55 @@ const AdminCustomersView = ({ showToast }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-color)]">
-                {filteredCustomers.map((c) => (
-                  <tr key={c.id} className="hover:bg-[var(--bg-color)]/40 transition-colors">
-                    <td className="p-4 font-bold text-[var(--text-main)]">{c.name}</td>
-                    <td className="p-4 font-mono text-[var(--text-muted)]">{c.email}</td>
-                    <td className="p-4 font-bold text-[var(--text-main)]">{c.totalOrders} orders</td>
-                    <td className="p-4 font-mono font-extrabold text-emerald-400">Rs. {Number(c.totalSpent || 0).toFixed(2)}</td>
-                    <td className="p-4 text-[11px] text-[var(--text-muted)]">
-                      {c.lastOrderDate ? new Date(c.lastOrderDate).toLocaleString() : 'No orders'}
-                    </td>
-                    <td className="p-4">
-                      <span className="px-2.5 py-1 rounded-md text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                        {c.isActive ? 'ACTIVE' : 'INACTIVE'}
-                      </span>
-                    </td>
-                    <td className="p-4 text-right">
-                      <button
-                        onClick={() => setSelectedCustomer(c)}
-                        className="px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded-xl font-bold transition-all flex items-center space-x-1 ml-auto cursor-pointer"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>View Details</span>
-                      </button>
+                {filteredCustomers.map((c) => {
+                  const isChecked = selectedCustomerIds.has(c.id);
+                  return (
+                    <tr key={c.id} className={`hover:bg-[var(--bg-color)]/40 transition-colors ${isChecked ? 'bg-orange-500/5' : ''}`}>
+                      {selectionMode && <td className="p-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleSelectCustomer(c.id)}
+                          className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500 cursor-pointer"
+                        />
+                      </td>}
+                      <td className="p-4 font-bold text-[var(--text-main)]">{c.name}</td>
+                      <td className="p-4 font-mono text-[var(--text-muted)]">{c.email}</td>
+                      <td className="p-4 font-bold text-[var(--text-main)]">{c.totalOrders} orders</td>
+                      <td className="p-4 font-mono font-extrabold text-emerald-400">Rs. {Number(c.totalSpent || 0).toFixed(2)}</td>
+                      <td className="p-4 text-[11px] text-[var(--text-muted)]">
+                        {c.lastOrderDate ? new Date(c.lastOrderDate).toLocaleString() : 'No orders'}
+                      </td>
+                      <td className="p-4">
+                        <span className="px-2.5 py-1 rounded-md text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          {c.isActive ? 'ACTIVE' : 'INACTIVE'}
+                        </span>
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => setSelectedCustomer(c)}
+                            className="px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded-xl font-bold transition-all flex items-center space-x-1 cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View Details</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsBulkDeleting(false);
+                              setCustomerToDelete(c);
+                              setDeleteModalOpen(true);
+                            }}
+                          title="Delete / Archive Customer"
+                          className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))}
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -250,9 +332,80 @@ const AdminCustomersView = ({ showToast }) => {
                 )}
               </div>
             </div>
+
+            {/* Modal Actions */}
+            <div className="flex justify-between items-center pt-2 border-t border-[var(--border-color)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomerToDelete(selectedCustomer);
+                  setDeleteModalOpen(true);
+                }}
+                className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Customer Account</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedCustomer(null)}
+                className="px-5 py-2 bg-[var(--bg-color)] hover:bg-[var(--border-color)] text-[var(--text-main)] rounded-xl text-xs font-bold border border-[var(--border-color)] transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Global Delete Confirmation Modal */}
+      <GlobalDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setCustomerToDelete(null);
+        }}
+        onConfirm={async () => {
+          setDeleteLoading(true);
+          try {
+            if (isBulkDeleting) {
+              const res = await api.delete('/admin/customers/bulk', {
+                data: { ids: Array.from(selectedCustomerIds) }
+              });
+              if (showToast) showToast(res.data?.message || 'Customers processed.');
+              setSelectedCustomerIds(new Set());
+            } else if (customerToDelete) {
+              const res = await api.delete(`/admin/customers/${customerToDelete.id}`);
+              if (showToast) showToast(res.data?.message || 'Customer account removed.');
+              if (selectedCustomer?.id === customerToDelete.id) setSelectedCustomer(null);
+            }
+            setDeleteModalOpen(false);
+            setCustomerToDelete(null);
+            fetchCustomers();
+          } catch (err) {
+            console.error('Delete customer error:', err);
+            if (showToast) showToast(err.response?.data?.error || 'Failed to delete customer', 'error');
+          } finally {
+            setDeleteLoading(false);
+          }
+        }}
+        title={isBulkDeleting ? `Delete ${selectedCustomerIds.size} Selected Customers` : `Delete Customer (${customerToDelete?.name || ''})`}
+        message={
+          isBulkDeleting
+            ? `Are you sure you want to delete ${selectedCustomerIds.size} selected customer accounts? Accounts with past dining or order records will be safely archived to protect order ledgers.`
+            : `Are you sure you want to remove customer "${customerToDelete?.name}"? If this customer has existing orders, they will be safely deactivated and archived.`
+        }
+        itemCount={isBulkDeleting ? selectedCustomerIds.size : 1}
+        itemName={customerToDelete ? `${customerToDelete.name} (${customerToDelete.email})` : ''}
+        isBulk={isBulkDeleting}
+        confirmButtonText={isBulkDeleting ? 'Delete Selected' : 'Delete Customer'}
+        loading={deleteLoading}
+        warningNotes={[
+          'Customers with zero orders are permanently deleted.',
+          'Customers with past dining records are safely archived to protect sales ledger integrity.',
+        ]}
+      />
     </div>
   );
 };

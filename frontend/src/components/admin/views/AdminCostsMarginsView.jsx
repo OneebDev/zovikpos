@@ -15,8 +15,11 @@ import {
   Info,
   X,
   Edit3,
-  TrendingDown
+  TrendingDown,
+  Trash2
 } from 'lucide-react';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 
 const convertUnit = (qty, fromUnit, toUnit) => {
   const amount = Number(qty);
@@ -42,6 +45,80 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
   const [foodCostFilter, setFoodCostFilter] = useState('ALL');
   const [marginFilter, setMarginFilter] = useState('ALL');
   const [selectedItemDetails, setSelectedItemDetails] = useState(null);
+
+  // Multi-select & Delete State
+  const [selectedItemIds, setSelectedItemIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null); // single item or null for bulk
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Toggle single item selection
+  const toggleSelectItem = (id) => {
+    setSelectedItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Toggle select all visible items
+  const toggleSelectAll = (items) => {
+    if (selectedItemIds.size === items.length && items.length > 0) {
+      setSelectedItemIds(new Set());
+    } else {
+      setSelectedItemIds(new Set(items.map(i => i.id)));
+    }
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedItemIds(new Set());
+    setSelectionMode((active) => !active);
+  };
+
+  // Open single recipe clear
+  const handleOpenSingleDelete = (item) => {
+    setItemToDelete(item);
+    setDeleteModalOpen(true);
+  };
+
+  // Open bulk recipe clear
+  const handleOpenBulkDelete = () => {
+    if (selectedItemIds.size === 0) return;
+    setItemToDelete(null);
+    setDeleteModalOpen(true);
+  };
+
+  // Confirm delete (single or bulk)
+  const handleConfirmDelete = async () => {
+    setIsDeleting(true);
+    try {
+      if (itemToDelete) {
+        await api.delete(`/inventory/recipes/${itemToDelete.id}`);
+        if (showToast) showToast(`Recipe cost & ingredients for "${itemToDelete.name}" cleared successfully.`, 'success');
+        setSelectedItemIds(prev => {
+          const next = new Set(prev);
+          next.delete(itemToDelete.id);
+          return next;
+        });
+      } else {
+        const ids = Array.from(selectedItemIds);
+        await api.delete('/inventory/recipes/bulk', { data: { menuItemIds: ids } });
+        if (showToast) showToast(`Successfully cleared recipe costs for ${ids.length} menu items.`, 'success');
+        setSelectedItemIds(new Set());
+      }
+      setDeleteModalOpen(false);
+      setItemToDelete(null);
+      await loadData();
+    } catch (err) {
+      console.error('Delete recipe error:', err);
+      const msg = err.response?.data?.error || 'Failed to clear recipe.';
+      if (showToast) showToast(msg, 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -196,15 +273,28 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
           </p>
         </div>
 
-        {onNavigateToRecipes && (
-          <button
-            onClick={onNavigateToRecipes}
-            className="px-4 py-2.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 font-bold text-xs transition-all flex items-center gap-2 cursor-pointer"
-          >
-            <Edit3 className="w-4 h-4" />
-            <span>Go to Recipe Builder</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2.5">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedItemIds.size} />
+          {selectionMode && selectedItemIds.size > 0 && (
+            <button
+              onClick={handleOpenBulkDelete}
+              className="px-3.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs transition-all flex items-center gap-2 cursor-pointer shadow-sm animate-fade-in"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Clear Cost / Recipe ({selectedItemIds.size})</span>
+            </button>
+          )}
+
+          {onNavigateToRecipes && (
+            <button
+              onClick={onNavigateToRecipes}
+              className="px-4 py-2.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 font-bold text-xs transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Edit3 className="w-4 h-4" />
+              <span>Go to Recipe Builder</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary KPI Cards */}
@@ -307,6 +397,14 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
             <table className="w-full text-left text-xs divide-y divide-[var(--border-color)]">
               <thead className="bg-[var(--bg-color)]/80 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]">
                 <tr>
+                  {selectionMode && <th className="py-3.5 pl-4 pr-2 w-8">
+                    <input
+                      type="checkbox"
+                      className="w-3.5 h-3.5 rounded accent-amber-500 cursor-pointer"
+                      checked={filteredItems.length > 0 && selectedItemIds.size === filteredItems.length}
+                      onChange={() => toggleSelectAll(filteredItems)}
+                    />
+                  </th>}
                   <th className="py-3.5 px-4">Menu Item</th>
                   <th className="py-3.5 px-4">Selling Price</th>
                   <th className="py-3.5 px-4">Recipe Cost</th>
@@ -317,80 +415,120 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-color)] font-medium text-[var(--text-main)]">
-                {filteredItems.map((item) => (
-                  <tr key={item.id} className="hover:bg-[var(--bg-color)]/50 transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 shrink-0">
-                          🍔
+                {filteredItems.map((item) => {
+                  const isSelected = selectedItemIds.has(item.id);
+                  return (
+                    <tr key={item.id} className={`hover:bg-[var(--bg-color)]/50 transition-colors ${isSelected ? 'bg-amber-500/5' : ''}`}>
+                      {selectionMode && <td className="py-3 pl-4 pr-2">
+                        <input
+                          type="checkbox"
+                          className="w-3.5 h-3.5 rounded accent-amber-500 cursor-pointer"
+                          checked={isSelected}
+                          onChange={() => toggleSelectItem(item.id)}
+                        />
+                      </td>}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 shrink-0">
+                            🍔
+                          </div>
+                          <div>
+                            <strong className="text-[var(--text-main)] block">{item.name}</strong>
+                            <span className="text-[10px] text-[var(--text-muted)]">{item.category || 'General'}</span>
+                          </div>
                         </div>
-                        <div>
-                          <strong className="text-[var(--text-main)] block">{item.name}</strong>
-                          <span className="text-[10px] text-[var(--text-muted)]">{item.category || 'General'}</span>
+                      </td>
+
+                      <td className="py-3 px-4 font-mono font-bold text-[var(--text-main)]">
+                        Rs. {item.price}
+                      </td>
+
+                      <td className="py-3 px-4 font-mono font-bold text-amber-400">
+                        {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.recipeCost.toFixed(2)}` : '—'}
+                      </td>
+
+                      <td className="py-3 px-4 font-mono font-bold">
+                        {item.hasRecipe && item.recipeCost > 0 ? (
+                          <span className={`px-2 py-0.5 rounded text-[11px] ${item.foodCostPct >= 100 ? 'text-rose-400 bg-rose-500/10' : item.foodCostPct > 35 ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-400 bg-emerald-500/10'}`}>
+                            {item.foodCostPct.toFixed(1)}%
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+
+                      <td className="py-3 px-4 font-mono font-bold text-emerald-400">
+                        {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.grossMargin.toFixed(2)}` : '—'}
+                      </td>
+
+                      <td className="py-3 px-4">
+                        {item.status === 'Healthy Margin' && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                            <CheckCircle2 className="w-3 h-3" /> Healthy Margin
+                          </span>
+                        )}
+                        {item.status === 'Low Margin' && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                            <AlertTriangle className="w-3 h-3" /> Low Margin
+                          </span>
+                        )}
+                        {item.status === 'Loss / Negative Margin' && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full">
+                            <TrendingDown className="w-3 h-3" /> Loss / Negative Margin
+                          </span>
+                        )}
+                        {item.status === 'No Recipe / Cost Missing' && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-slate-400 bg-slate-500/10 border border-slate-500/20 px-2 py-0.5 rounded-full">
+                            No Recipe / Cost Missing
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => setSelectedItemDetails(item)}
+                            className="px-3 py-1.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-main)] border border-[var(--border-color)] font-bold text-[11px] transition-colors cursor-pointer"
+                          >
+                            Details
+                          </button>
+                          {item.hasRecipe && (
+                            <button
+                              onClick={() => handleOpenSingleDelete(item)}
+                              title="Clear recipe ingredients and cost"
+                              className="p-1.5 rounded-lg bg-[var(--bg-color)] hover:bg-rose-500/10 text-[var(--text-muted)] hover:text-rose-400 border border-[var(--border-color)] hover:border-rose-500/30 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
-                      </div>
-                    </td>
-
-                    <td className="py-3 px-4 font-mono font-bold text-[var(--text-main)]">
-                      Rs. {item.price}
-                    </td>
-
-                    <td className="py-3 px-4 font-mono font-bold text-amber-400">
-                      {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.recipeCost.toFixed(2)}` : '—'}
-                    </td>
-
-                    <td className="py-3 px-4 font-mono font-bold">
-                      {item.hasRecipe && item.recipeCost > 0 ? (
-                        <span className={`px-2 py-0.5 rounded text-[11px] ${item.foodCostPct >= 100 ? 'text-rose-400 bg-rose-500/10' : item.foodCostPct > 35 ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-400 bg-emerald-500/10'}`}>
-                          {item.foodCostPct.toFixed(1)}%
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-
-                    <td className="py-3 px-4 font-mono font-bold text-emerald-400">
-                      {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.grossMargin.toFixed(2)}` : '—'}
-                    </td>
-
-                    <td className="py-3 px-4">
-                      {item.status === 'Healthy Margin' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                          <CheckCircle2 className="w-3 h-3" /> Healthy Margin
-                        </span>
-                      )}
-                      {item.status === 'Low Margin' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                          <AlertTriangle className="w-3 h-3" /> Low Margin
-                        </span>
-                      )}
-                      {item.status === 'Loss / Negative Margin' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full">
-                          <TrendingDown className="w-3 h-3" /> Loss / Negative Margin
-                        </span>
-                      )}
-                      {item.status === 'No Recipe / Cost Missing' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-slate-400 bg-slate-500/10 border border-slate-500/20 px-2 py-0.5 rounded-full">
-                          No Recipe / Cost Missing
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={() => setSelectedItemDetails(item)}
-                        className="px-3 py-1.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-main)] border border-[var(--border-color)] font-bold text-[11px] transition-colors cursor-pointer"
-                      >
-                        View Details
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <GlobalDeleteModal
+          isOpen={deleteModalOpen}
+          onClose={() => { setDeleteModalOpen(false); setItemToDelete(null); }}
+          onConfirm={handleConfirmDelete}
+          loading={isDeleting}
+          title={itemToDelete ? 'Clear Recipe & Cost' : `Clear ${selectedItemIds.size} Recipes & Costs`}
+          message={
+            itemToDelete
+              ? `This will remove all recipe ingredients for "${itemToDelete.name}", resetting its recipe cost to zero. The menu item itself will NOT be deleted.`
+              : `This will remove recipe ingredients for ${selectedItemIds.size} selected menu items, resetting their recipe costs to zero. The menu items themselves will NOT be deleted.`
+          }
+          confirmButtonText="Clear Recipe"
+          itemName={itemToDelete?.name || `${selectedItemIds.size} menu item recipes`}
+        />
+      )}
 
       {/* Item Cost Breakdown Modal via Portal */}
       {selectedItemDetails && createPortal(

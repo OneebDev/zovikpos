@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* ═══════════════════════════════════════════════════════════════
    ZOVIKPOS — GLOBAL DESIGN SYSTEM & BRAND THEME
@@ -501,4 +502,97 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
   transform: scale(1.15);
+}
+
+/* Role dashboards share responsive rules. Keep dense operational tables
+   readable by scrolling their existing overflow containers on small screens. */
+.responsive-shell,
+.responsive-shell main,
+.responsive-shell main > * {
+  min-width: 0;
+}
+
+.responsive-shell .overflow-x-auto {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.responsive-shell input,
+.responsive-shell select,
+.responsive-shell textarea {
+  max-width: 100%;
+}
+
+/* Keep native select menus readable and consistent with the active app theme. */
+:root:not(.dark) select {
+  color-scheme: light;
+}
+
+.dark select {
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  color: var(--text-main);
+  background-color: var(--card-bg);
+}
+
+.responsive-shell button {
+  white-space: nowrap;
+}
+
+.fixed.inset-0 button {
+  white-space: nowrap;
+}
+
+@media (max-width: 1023px) {
+  .responsive-shell .flex:not(.flex-col):not(.flex-nowrap):not(.overflow-x-auto):has(> button),
+  .fixed.inset-0 .flex:not(.flex-col):not(.flex-nowrap):not(.overflow-x-auto):has(> button) {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 767px) {
+  .responsive-shell main {
+    padding: 1rem;
+  }
+
+  /* Four/five-column summary strips become compact two-column layouts. */
+  .responsive-shell .grid-cols-4,
+  .responsive-shell .grid-cols-6,
+  .responsive-shell [class~="sm:grid-cols-4"],
+  .responsive-shell [class~="sm:grid-cols-5"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Data tables retain their columns and can be swiped within their panel. */
+  .responsive-shell .overflow-x-auto > table {
+    min-width: 680px;
+  }
+
+  .responsive-shell .fixed.inset-0 > div {
+    max-width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .fixed.inset-0 > [class*="max-w-"] {
+    max-width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .app-calendar-month-grid {
+    min-width: 700px;
+  }
+}
+
+@media (max-width: 380px) {
+  .responsive-shell main {
+    padding: 0.75rem;
+  }
+
+  .responsive-shell .grid-cols-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

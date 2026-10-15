@@ -80,10 +80,11 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
   // On mount or branch change
   useEffect(() => {
     const cached = insightsCache.get(branchKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    if (cached) {
       // Restore instantly from module-level cache — zero loading shown
       setAiData(cached.data);
       setErrorMsg(cached.errorMsg);
+      setLastUpdated(new Date(cached.timestamp));
     } else {
       fetchAIInsights(false);
     }
@@ -106,9 +107,9 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
   const isRefreshing = loading || forecastingLoading;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-7">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-2xl shadow-sm">
         <div>
           <div className="flex items-center space-x-2">
             <Sparkles className="w-5 h-5 text-orange-400" />
@@ -116,7 +117,7 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
               AI Groq ML Insights &amp; Demand Forecasting
             </h2>
           </div>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5">
+          <p className="text-sm text-[var(--text-muted)] mt-1 max-w-3xl leading-relaxed">
             Real-time demand forecasting derived strictly from historical POS transaction data, stockout risk prediction, and Groq LLM intelligence.
           </p>
           {lastUpdated && !isRefreshing && (
@@ -164,35 +165,35 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
       {/* Data content — only rendered when aiData exists */}
       {aiData && (
         <>
-          {/* Executive Summary */}
+      {/* Executive Summary */}
           {aiData.executiveSummary && !isRefreshing && (
-            <div className="bg-orange-500/10 border border-orange-500/30 p-4 rounded-xl flex items-start space-x-3 text-xs text-orange-300">
-              <Lightbulb className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
+            <div className="bg-orange-500/5 border border-orange-500/25 p-5 sm:p-6 rounded-2xl flex items-start gap-4 shadow-sm">
+              <span className="p-2.5 rounded-xl bg-orange-500/10 shrink-0"><Lightbulb className="w-5 h-5 text-orange-400" /></span>
               <div>
-                <strong className="font-bold block text-sm text-orange-200">Executive AI Summary</strong>
-                <p className="mt-0.5 text-orange-300/90 leading-relaxed">{aiData.executiveSummary}</p>
+                <strong className="font-bold block text-sm text-[var(--text-main)]">Key takeaway</strong>
+                <p className="mt-1.5 text-sm sm:text-base text-[var(--text-muted)] leading-7 max-w-5xl">{aiData.executiveSummary}</p>
               </div>
             </div>
           )}
 
           {/* Metrics Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
-            <div className="bg-[var(--card-bg)]/50 border border-[var(--border-color)] p-5 rounded-2xl shadow-lg space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 rounded-2xl shadow-sm space-y-2">
               <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">Model Prediction Accuracy</span>
               <h3 className="text-2xl sm:text-3xl font-extrabold text-orange-400 font-mono">{accuracyText}</h3>
               <p className="text-[10px] text-[var(--text-muted)]">{accuracyHelper}</p>
             </div>
-            <div className="bg-[var(--card-bg)]/50 border border-[var(--border-color)] p-5 rounded-2xl shadow-lg space-y-2">
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 rounded-2xl shadow-sm space-y-2">
               <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">Average Kitchen Prep Time</span>
               <h3 className="text-2xl sm:text-3xl font-extrabold text-emerald-400 font-mono">{prepTimeText}</h3>
               <p className="text-[10px] text-[var(--text-muted)]">{prepTimeSubtext}</p>
             </div>
-            <div className="bg-[var(--card-bg)]/50 border border-[var(--border-color)] p-5 rounded-2xl shadow-lg space-y-2">
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 rounded-2xl shadow-sm space-y-2">
               <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">Stock Risk Predictions</span>
               <h3 className="text-2xl sm:text-3xl font-extrabold text-amber-400 font-mono">{riskAlerts.length} Alerts</h3>
               <p className="text-[10px] text-[var(--text-muted)]">Low stock &amp; stockout risk notifications</p>
             </div>
-            <div className="bg-[var(--card-bg)]/50 border border-[var(--border-color)] p-5 rounded-2xl shadow-lg space-y-2">
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 rounded-2xl shadow-sm space-y-2">
               <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">POS Data Confidence</span>
               <h3 className={`text-2xl sm:text-3xl font-extrabold font-mono ${
                 confidenceScore.includes('HIGH') ? 'text-emerald-400' : confidenceScore.includes('MEDIUM') ? 'text-amber-400' : 'text-orange-400'
@@ -204,9 +205,9 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
           </div>
 
           {/* Demand & Cost sections */}
-          <div className="grid lg:grid-cols-2 gap-6">
+          <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
             {/* ML Demand Forecasts */}
-            <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-2xl shadow-sm space-y-4">
               <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
                 <BrainCircuit className="w-4 h-4 text-orange-400" />
                 <span>Projected Item Demand Forecasts</span>
@@ -216,8 +217,8 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
                   <p className="py-8 text-[var(--text-muted)] italic text-center">No urgent stockout alerts predicted. Inventory levels are healthy.</p>
                 ) : (
                   riskAlerts.map((alert, idx) => (
-                    <div key={idx} className="py-3 flex justify-between items-center">
-                      <div>
+                    <div key={idx} className="py-4 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-3 items-start">
+                      <div className="min-w-0">
                         <div className="flex items-center space-x-2">
                           <strong className="text-[var(--text-main)] font-bold">{alert.name || alert.itemName}</strong>
                           <span className={`px-2 py-0.5 rounded text-[9px] font-black border ${
@@ -230,14 +231,16 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
                             {alert.confidenceBadge || 'HIGH'} CONFIDENCE
                           </span>
                         </div>
-                        <p className="text-[11px] text-[var(--text-muted)] mt-1">{alert.message}</p>
-                        <span className="text-[10px] text-[var(--text-muted)] font-mono">
-                          Current: {alert.currentStock} {alert.unit} | Safety Min: {alert.minThreshold} {alert.unit}
-                        </span>
+                        <p className="text-xs text-[var(--text-muted)] mt-1.5 leading-relaxed">{alert.message || 'Based on available inventory and historical sales data.'}</p>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[10px] text-[var(--text-muted)]">
+                          <span>On hand: <strong className="text-[var(--text-main)]">{alert.currentStock} {alert.unit}</strong></span>
+                          <span>Safety minimum: <strong className="text-[var(--text-main)]">{alert.minThreshold} {alert.unit}</strong></span>
+                        </div>
                       </div>
-                      <div className="text-right flex-shrink-0">
-                        <span className="font-mono font-extrabold text-orange-400 block text-xs">
-                          {alert.forecastLabel || (alert.forecast > 0 ? `~${alert.forecast} ${alert.unit}` : 'Insufficient Sales History')}
+                      <div className="sm:min-w-40 sm:text-right rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] px-3 py-2.5">
+                        <span className="text-[9px] uppercase tracking-wide text-[var(--text-muted)] block">Forecast / coverage</span>
+                        <span className="font-mono font-extrabold text-orange-400 block text-xs mt-1">
+                          {alert.forecastLabel || (alert.forecast > 0 ? `~${alert.forecast} ${alert.unit}` : 'Not enough sales data')}
                         </span>
                         {alert.suggestedRestock > 0 && (
                           <span className="text-[10px] font-bold text-amber-400 block mt-1">
@@ -252,7 +255,7 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
             </div>
 
             {/* AI Food Cost Optimizations */}
-            <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-2xl shadow-sm space-y-4">
               <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
                 <Package className="w-4 h-4 text-amber-400" />
                 <span>AI Food Cost &amp; Margin Optimizations</span>

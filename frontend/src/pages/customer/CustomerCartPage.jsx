@@ -5,6 +5,7 @@ import { connectSocket, getSocket } from '../../services/socket';
 import { getETAPrediction } from '../../services/etaService';
 import { OtpInputBoxes } from '../../components/CustomerDashboard';
 import PhoneInput from '../../components/PhoneInput';
+import { paymentMethodLabel } from '../../utils/paymentMethods';
 import {
   ArrowLeft,
   ShoppingBag,
@@ -95,7 +96,7 @@ const CustomerCartPage = ({ user }) => {
 
   // ─── Payment / checkout ───────────────────────────────────────────────────
   const [paymentMethod, setPaymentMethod] = useState(
-    () => localStorage.getItem('customer_paymentMethod') || 'COD'
+    () => paymentMethodLabel(localStorage.getItem('customer_paymentMethod'))
   );
   const [paymentSettings, setPaymentSettings] = useState({ codEnabled: true, onlineEnabled: true });
   const [placingOrder, setPlacingOrder] = useState(false);
@@ -457,61 +458,61 @@ const CustomerCartPage = ({ user }) => {
   // ─── If checkout is completed, render confirmation and track button ──────
   if (checkoutDone && activeOrder) {
     return (
-      <div className="w-full bg-[#FAF9F7] dark:bg-[#121212] min-h-screen font-sans flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-[#E85D2A]/20">
-        <div className="max-w-md w-full bg-white dark:bg-[#1E1E1E] border border-[#E7E5E4] dark:border-[#333] rounded-[36px] p-8 shadow-2xl text-center space-y-6 animate-in fade-in zoom-in duration-300 relative overflow-hidden">
+      <div className="responsive-shell w-full bg-[#FAF9F7] dark:bg-[#121212] min-h-screen font-sans flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-[#E85D2A]/20">
+        <div className="max-w-[440px] w-full bg-white dark:bg-[#1C1B1A] border border-[#E7E5E4] dark:border-[#383330] rounded-[28px] sm:rounded-[32px] p-5 sm:p-8 shadow-[0_24px_70px_-28px_rgba(41,25,15,0.24)] dark:shadow-[0_24px_70px_-28px_rgba(0,0,0,0.75)] text-center space-y-5 sm:space-y-6 animate-in fade-in zoom-in duration-300 relative overflow-hidden">
           
           {/* Top Decorative Glow */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-1.5 bg-gradient-to-r from-emerald-500 via-[#E85D2A] to-emerald-500 rounded-b-full" />
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-1 bg-gradient-to-r from-emerald-500 via-[#E85D2A] to-emerald-500 rounded-b-full" />
 
           {/* Celebratory Checkmark Icon */}
-          <div className="relative w-20 h-20 bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto ring-8 ring-emerald-500/15 shadow-inner">
-            <CheckCircle2 className="w-10 h-10 stroke-[2.5]" />
+          <div className="relative w-[76px] h-[76px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto ring-8 ring-emerald-500/[0.08] shadow-inner">
+            <CheckCircle2 className="w-9 h-9 stroke-[2.3]" />
           </div>
 
           <div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-full text-[10px] font-black uppercase tracking-widest mb-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80 rounded-full text-[10px] font-extrabold uppercase tracking-[0.12em] mb-2">
               <Sparkles className="w-3 h-3 text-emerald-500" />
               <span>Order Confirmed</span>
             </span>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#171717] dark:text-white mt-1">
+            <h1 className="text-[25px] sm:text-[30px] font-extrabold tracking-tight text-[#171717] dark:text-white mt-1 break-words">
               {activeOrder.orderNumber || `#000${activeOrder.id}`}
             </h1>
-            <p className="text-xs text-[#78716C] dark:text-[#A8A29E] mt-2 leading-relaxed">
-              Your order has been placed successfully for <strong className="text-[#E85D2A] font-extrabold">{activeOrder.tableNumber || tableId}</strong>.
-              A confirmation receipt has been sent to <strong className="text-[#171717] dark:text-white font-bold">{activeOrder.customerEmail || guestEmail}</strong>.
+            <p className="text-[13px] text-[#78716C] dark:text-[#B8B0AA] mt-2 leading-[1.65] max-w-[340px] mx-auto">
+              Your order is confirmed for <strong className="text-[#D94E1B] dark:text-[#FF9B70] font-bold">{activeOrder.tableNumber || tableId}</strong>.
+              <span className="block mt-1">Receipt sent to <strong className="text-[#332E2A] dark:text-[#F3EFEC] font-semibold break-all">{activeOrder.customerEmail || guestEmail}</strong></span>
             </p>
           </div>
 
           {/* Receipt Breakdown Card */}
-          <div className="bg-[#FAF9F7] dark:bg-[#252525] border border-[#E7E5E4] dark:border-[#3A3A3A] rounded-2xl p-4 text-xs space-y-2.5 text-left">
-            <div className="flex justify-between items-center text-[#78716C] dark:text-[#A8A29E]">
+          <div className="bg-[#FAF9F7] dark:bg-[#242322] border border-[#E7E5E4] dark:border-[#3A3836] rounded-2xl p-4 sm:p-[18px] text-xs space-y-3 text-left">
+            <div className="flex justify-between items-center gap-3 text-[#78716C] dark:text-[#B8B0AA]">
               <span className="font-semibold">Estimated Prep Time:</span>
-              <strong className="text-emerald-600 dark:text-emerald-400 font-extrabold bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                ~{activeOrder.etaPrediction?.adjustedEta ? Math.round(activeOrder.etaPrediction.adjustedEta) : 10} Mins
+              <strong className="text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/80 whitespace-nowrap">
+                ~{activeOrder.etaPrediction?.adjustedEta ? Math.round(activeOrder.etaPrediction.adjustedEta) : 10} min
               </strong>
             </div>
-            <div className="flex justify-between items-center text-[#78716C] dark:text-[#A8A29E]">
+            <div className="flex justify-between items-center gap-3 text-[#78716C] dark:text-[#B8B0AA]">
               <span className="font-semibold">Payment Option:</span>
-              <strong className="text-[#171717] dark:text-white font-extrabold">{activeOrder.paymentMethod} ({activeOrder.paymentStatus})</strong>
+              <strong className="text-[#332E2A] dark:text-[#F3EFEC] font-bold text-right">{paymentMethodLabel(activeOrder.paymentMethod)} <span className="text-[10px] text-[#78716C] dark:text-[#B8B0AA]">· {activeOrder.paymentStatus}</span></strong>
             </div>
-            <div className="flex justify-between items-center text-[#171717] dark:text-white font-black border-t border-[#E7E5E4] dark:border-[#3A3A3A] pt-2.5 text-sm">
-              <span>Total Paid:</span>
-              <span className="text-[#E85D2A] font-mono text-base">Rs. {Number(activeOrder.total || 0).toFixed(2)}</span>
+            <div className="flex justify-between items-center gap-3 text-[#171717] dark:text-white font-bold border-t border-[#E7E5E4] dark:border-[#3A3836] pt-3 text-sm">
+              <span>Order Total</span>
+              <span className="text-[#D94E1B] dark:text-[#FF9B70] font-mono text-base font-extrabold whitespace-nowrap">Rs. {Number(activeOrder.total || 0).toFixed(2)}</span>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="space-y-3 pt-2">
+          <div className="space-y-2.5 pt-0.5">
             <button
               onClick={() => navigate(`/customer/track/${activeOrder.trackingToken || activeOrder.id}`)}
-              className="w-full py-4 bg-gradient-to-tr from-[#E85D2A] to-[#FB923C] hover:opacity-95 text-white font-extrabold text-xs rounded-2xl shadow-xl shadow-[#E85D2A]/25 transition-all cursor-pointer flex items-center justify-center space-x-2 active:scale-95"
+              className="w-full min-h-12 py-3.5 bg-gradient-to-r from-[#E85D2A] to-[#F47832] hover:brightness-105 text-white font-bold text-[13px] rounded-[15px] shadow-[0_10px_22px_-10px_rgba(232,93,42,0.8)] transition-all cursor-pointer flex items-center justify-center space-x-2 active:scale-[0.99]"
             >
               <QrCode className="w-4.5 h-4.5" />
               <span>Track Live Order & View QR</span>
             </button>
             <button
               onClick={() => navigate('/customer')}
-              className="w-full py-3 bg-[#FAF9F7] dark:bg-[#2A2A2A] hover:bg-[#E7E5E4] dark:hover:bg-[#333] text-[#78716C] dark:text-[#A8A29E] font-bold text-xs rounded-2xl transition-all cursor-pointer border border-[#E7E5E4] dark:border-[#404040]"
+              className="w-full min-h-11 py-3 bg-[#FAF9F7] dark:bg-[#292725] hover:bg-[#E7E5E4] dark:hover:bg-[#333] text-[#625A55] dark:text-[#D0C9C4] font-semibold text-xs rounded-[15px] transition-all cursor-pointer border border-[#E7E5E4] dark:border-[#45403D]"
             >
               Back to Menu
             </button>
@@ -523,7 +524,7 @@ const CustomerCartPage = ({ user }) => {
 
   // ════════════════════════════════════════════════════════════════════════════
   return (
-    <div className="w-full bg-[#FAF9F7] dark:bg-[#111111] text-[#171717] dark:text-[#F5F5F5] min-h-screen font-sans flex flex-col transition-colors duration-200">
+    <div className="responsive-shell w-full bg-[#FAF9F7] dark:bg-[#111111] text-[#171717] dark:text-[#F5F5F5] min-h-screen font-sans flex flex-col transition-colors duration-200">
       {/* HEADER */}
       <header className="w-full bg-white dark:bg-[#1F1F1F] border-b border-[#E7E5E4] dark:border-[#333] sticky top-0 z-40 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
         <div className="flex items-center space-x-3">
@@ -551,7 +552,7 @@ const CustomerCartPage = ({ user }) => {
         )}
       </header>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
         {/* Error Alert */}
         {error && (
           <div className="p-4 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-300 rounded-2xl text-xs font-bold flex items-center space-x-2.5 shadow-sm">
@@ -577,7 +578,7 @@ const CustomerCartPage = ({ user }) => {
             </button>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-12 gap-8">
+          <div className="grid lg:grid-cols-12 gap-5 sm:gap-8 items-start">
             {/* Left: Cart Items List */}
             <div className="lg:col-span-7 space-y-4">
               <h2 className="text-xs font-black text-gray-400 dark:text-[#A8A29E] uppercase tracking-wider">Selected Items ({totalQty})</h2>
@@ -661,7 +662,7 @@ const CustomerCartPage = ({ user }) => {
             <div className="lg:col-span-5 space-y-6">
               
               {/* Customer Verification Card */}
-              <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-3xl p-6 shadow-sm space-y-5">
+              <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-[24px] sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-5">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-black uppercase tracking-wider text-gray-400 dark:text-[#A8A29E]">Customer Details</h3>
                   {otpVerified && (
@@ -744,7 +745,7 @@ const CustomerCartPage = ({ user }) => {
               </div>
 
               {/* Payment Method Card */}
-              <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-3xl p-6 shadow-sm space-y-4">
+              <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-[24px] sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-gray-400 dark:text-[#A8A29E]">Payment Option</h3>
                 
                 {!paymentSettings.codEnabled && !paymentSettings.onlineEnabled ? (
@@ -819,7 +820,7 @@ const CustomerCartPage = ({ user }) => {
               </div>
 
               {/* Order Summary & Placement Button */}
-              <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-3xl p-6 shadow-sm space-y-4">
+              <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-[24px] sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-gray-400 dark:text-[#A8A29E]">Order Summary</h3>
                 
                 <div className="space-y-2 text-xs text-gray-600 dark:text-gray-300">

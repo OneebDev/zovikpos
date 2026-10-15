@@ -5,6 +5,7 @@ const {
   createItem,
   updateItem,
   deleteItem,
+  bulkDeleteItems,
   generateMenuQR,
   uploadImage,
 } = require('../controllers/menuController');
@@ -18,6 +19,7 @@ router.get('/:id', getItemById);
 router.post('/upload-image', authMiddleware, roleMiddleware(['ADMIN', 'VENDOR']), uploadImage);
 router.post('/', authMiddleware, roleMiddleware(['ADMIN', 'VENDOR']), createItem);
 router.put('/:id', authMiddleware, roleMiddleware(['ADMIN', 'VENDOR']), updateItem);
+router.delete('/bulk', authMiddleware, roleMiddleware(['ADMIN', 'VENDOR']), bulkDeleteItems);
 router.delete('/:id', authMiddleware, roleMiddleware(['ADMIN', 'VENDOR']), deleteItem);
 router.get('/:id/qr', generateMenuQR);
 

@@ -36,7 +36,7 @@ const fetchCustomerOrders = async () => {
   return result;
 };
 
-export const useCustomerActiveOrders = () => {
+export const useCustomerActiveOrders = ({ enabled = true } = {}) => {
   const queryClient = useQueryClient();
   const sessionId = typeof window !== 'undefined' ? localStorage.getItem('customer_sessionId') : null;
 
@@ -48,7 +48,7 @@ export const useCustomerActiveOrders = () => {
     queryKey: [...ACTIVE_ORDERS_QUERY_KEY, sessionId],
     queryFn: fetchCustomerOrders,
     initialData: getInitialCache(),
-    enabled: Boolean(sessionId),
+    enabled: Boolean(sessionId) && enabled,
     staleTime: 1000 * 10, // 10 seconds staleTime for background re-validation on mount
     gcTime: 1000 * 60 * 30,
     refetchOnMount: true,
@@ -105,7 +105,7 @@ export const useCustomerActiveOrders = () => {
     };
 
     const handleTableShift = () => {
-      refetch();
+      if (enabled) refetch();
     };
 
     socket.on('order:update', handleOrderUpdate);
@@ -115,7 +115,7 @@ export const useCustomerActiveOrders = () => {
       socket.off('order:update', handleOrderUpdate);
       socket.off('table:shift', handleTableShift);
     };
-  }, [queryClient, sessionId, refetch]);
+  }, [queryClient, sessionId, refetch, enabled]);
 
   const dismissFailedOrder = (orderId) => {
     const dismissedIds = JSON.parse(localStorage.getItem('customer_dismissed_failed') || '[]');

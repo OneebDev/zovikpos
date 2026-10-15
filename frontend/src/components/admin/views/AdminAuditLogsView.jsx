@@ -4,14 +4,36 @@ import {
   Search,
   Download,
   Printer,
-  User,
-  Clock,
+  Trash2,
+  CheckSquare,
+  Square,
+  AlertTriangle,
 } from 'lucide-react';
 import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import api from '../../../services/api';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 
-const AdminAuditLogsView = ({ logs = [], loading }) => {
+const AdminAuditLogsView = ({ logs = [], loading, onRefresh, showToast }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('ALL');
+
+  // Selection & Delete State
+  const [selectedLogIds, setSelectedLogIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [logToDelete, setLogToDelete] = useState(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Distinct actions for filtering
+  const distinctActions = useMemo(() => {
+    const set = new Set();
+    logs.forEach((l) => {
+      if (l.action) set.add(l.action);
+    });
+    return Array.from(set).sort();
+  }, [logs]);
 
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
@@ -19,12 +41,86 @@ const AdminAuditLogsView = ({ logs = [], loading }) => {
         log.action?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         log.entity?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         log.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.user?.email?.toLowerCase().includes(searchTerm.toLowerCase());
+        log.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        String(log.entityId || '').includes(searchTerm);
       const matchesAction = actionFilter === 'ALL' || log.action === actionFilter;
 
       return matchesSearch && matchesAction;
     });
   }, [logs, searchTerm, actionFilter]);
+
+  // Checkbox Selection
+  const isAllSelected =
+    filteredLogs.length > 0 &&
+    filteredLogs.every((l) => selectedLogIds.has(l.id));
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedLogIds(new Set());
+    } else {
+      const next = new Set(selectedLogIds);
+      filteredLogs.forEach((l) => next.add(l.id));
+      setSelectedLogIds(next);
+    }
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedLogIds(new Set());
+    setSelectionMode((active) => !active);
+  };
+
+  const handleToggleSelect = (id) => {
+    const next = new Set(selectedLogIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedLogIds(next);
+  };
+
+  // Single Delete
+  const handleConfirmSingleDelete = async () => {
+    if (!logToDelete) return;
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete(`/admin/audit-logs/${logToDelete.id}`);
+      if (showToast) showToast(res.data?.message || 'Audit log entry deleted successfully.');
+      setDeleteModalOpen(false);
+      setLogToDelete(null);
+      setSelectedLogIds((prev) => {
+        const next = new Set(prev);
+        next.delete(logToDelete.id);
+        return next;
+      });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error('Delete audit log error:', err);
+      if (showToast) showToast(err.response?.data?.error || 'Failed to delete audit log entry', 'error');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Bulk Delete
+  const handleConfirmBulkDelete = async () => {
+    const ids = Array.from(selectedLogIds);
+    if (ids.length === 0) return;
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete('/admin/audit-logs/bulk', { data: { ids } });
+      if (showToast) showToast(res.data?.message || `Successfully deleted ${ids.length} audit log records.`);
+      setDeleteModalOpen(false);
+      setIsBulkDeleting(false);
+      setSelectedLogIds(new Set());
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error('Bulk delete audit logs error:', err);
+      if (showToast) showToast(err.response?.data?.error || 'Failed to bulk delete audit logs', 'error');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const handleExportCSV = () => {
     const csvData = filteredLogs.map((l) => ({
@@ -85,23 +181,41 @@ const AdminAuditLogsView = ({ logs = [], loading }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
-        <div>
-          <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">System Immutable Audit Logs</h2>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5">Tamper-proof audit trails for administrative, staff, and order actions.</p>
+      <div className="flex flex-col items-stretch gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl lg:flex-row lg:justify-between lg:items-start">
+        <div className="min-w-0 flex items-start gap-2">
+          <ShieldCheck className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">System Audit Logs</h2>
+            <p className="text-xs text-[var(--text-muted)] mt-1">Comprehensive audit trail of admin, inventory, and system events with single &amp; bulk deletion controls.</p>
+          </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-nowrap items-center gap-1.5 w-full lg:w-auto overflow-x-auto lg:shrink-0">
+          {/* Bulk Delete Selected Button */}
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedLogIds.size} />
+          {selectionMode && selectedLogIds.size > 0 && (
+            <button
+              onClick={() => {
+                setIsBulkDeleting(true);
+                setDeleteModalOpen(true);
+              }}
+              className="shrink-0 px-2.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer animate-fade-in"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Selected ({selectedLogIds.size})</span>
+            </button>
+          )}
+
           <button
             onClick={handleExportCSV}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            className="shrink-0 px-2.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
           </button>
           <button
             onClick={handleExportPDF}
-            className="px-3.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            className="shrink-0 px-2.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Export PDF</span>
@@ -109,16 +223,43 @@ const AdminAuditLogsView = ({ logs = [], loading }) => {
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative max-w-md">
-        <Search className="w-4 h-4 text-[var(--text-muted)] absolute left-3.5 top-3" />
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search action, entity, user..."
-          className="w-full pl-10 pr-4 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
-        />
+      {/* Search & Action Filter Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 text-[var(--text-muted)] absolute left-3.5 top-3" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search action, entity, user, entity ID..."
+            className="w-full pl-10 pr-4 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+          />
+        </div>
+
+        <select
+          value={actionFilter}
+          onChange={(e) => setActionFilter(e.target.value)}
+          className="px-4 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+        >
+          <option value="ALL">All Actions ({logs.length})</option>
+          {distinctActions.map((act) => (
+            <option key={act} value={act}>
+              {act}
+            </option>
+          ))}
+        </select>
+
+        {selectionMode && selectedLogIds.size > 0 && (
+          <div className="flex items-center space-x-2 text-xs font-bold text-orange-400">
+            <span>{selectedLogIds.size} selected</span>
+            <button
+              onClick={() => setSelectedLogIds(new Set())}
+              className="text-xs text-[var(--text-muted)] hover:text-[var(--text-main)] underline cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Audit Log Table */}
@@ -136,6 +277,15 @@ const AdminAuditLogsView = ({ logs = [], loading }) => {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
+                  {selectionMode && <th className="p-4 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={handleToggleSelectAll}
+                      className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500/20 cursor-pointer"
+                      title={isAllSelected ? 'Deselect all' : 'Select all'}
+                    />
+                  </th>}
                   <th className="p-4">User</th>
                   <th className="p-4">Role</th>
                   <th className="p-4">Action</th>
@@ -143,29 +293,98 @@ const AdminAuditLogsView = ({ logs = [], loading }) => {
                   <th className="p-4">Entity ID</th>
                   <th className="p-4">IP Address</th>
                   <th className="p-4">Timestamp</th>
+                  <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-color)]">
-                {filteredLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-[var(--bg-color)]/40 transition-colors">
-                    <td className="p-4 font-bold text-[var(--text-main)]">{log.user?.name || log.user?.email || 'System'}</td>
-                    <td className="p-4">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-orange-500/10 text-orange-400 border border-orange-500/20">
-                        {log.user?.role || 'SYSTEM'}
-                      </span>
-                    </td>
-                    <td className="p-4 font-mono font-extrabold text-emerald-400">{log.action}</td>
-                    <td className="p-4 text-[var(--text-main)] font-semibold">{log.entity}</td>
-                    <td className="p-4 font-mono text-[var(--text-muted)]">{log.entityId || 'N/A'}</td>
-                    <td className="p-4 font-mono text-[11px] text-[var(--text-muted)]">{log.ipAddress || '127.0.0.1'}</td>
-                    <td className="p-4 text-[11px] text-[var(--text-muted)]">{new Date(log.createdAt).toLocaleString()}</td>
-                  </tr>
-                ))}
+                {filteredLogs.map((log) => {
+                  const isSelected = selectedLogIds.has(log.id);
+
+                  return (
+                    <tr
+                      key={log.id}
+                      className={`hover:bg-[var(--bg-color)]/40 transition-colors ${
+                        isSelected ? 'bg-orange-500/5' : ''
+                      }`}
+                    >
+                      {selectionMode && <td className="p-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelect(log.id)}
+                          className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500/20 cursor-pointer"
+                        />
+                      </td>}
+                      <td className="p-4 font-bold text-[var(--text-main)]">
+                        {log.user?.name || log.user?.email || 'System'}
+                      </td>
+                      <td className="p-4">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                          {log.user?.role || 'SYSTEM'}
+                        </span>
+                      </td>
+                      <td className="p-4 font-mono font-extrabold text-emerald-400">
+                        {log.action}
+                      </td>
+                      <td className="p-4 text-[var(--text-main)] font-semibold">
+                        {log.entity}
+                      </td>
+                      <td className="p-4 font-mono text-[var(--text-muted)]">
+                        {log.entityId || 'N/A'}
+                      </td>
+                      <td className="p-4 font-mono text-[11px] text-[var(--text-muted)]">
+                        {log.ipAddress || '127.0.0.1'}
+                      </td>
+                      <td className="p-4 text-[11px] text-[var(--text-muted)]">
+                        {new Date(log.createdAt).toLocaleString()}
+                      </td>
+                      <td className="p-4 text-right">
+                        <button
+                          onClick={() => {
+                            setLogToDelete(log);
+                            setIsBulkDeleting(false);
+                            setDeleteModalOpen(true);
+                          }}
+                          title="Delete Audit Log Record"
+                          className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer inline-flex items-center"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {/* Global Delete Confirmation Modal */}
+      <GlobalDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setLogToDelete(null);
+          setIsBulkDeleting(false);
+        }}
+        onConfirm={isBulkDeleting ? handleConfirmBulkDelete : handleConfirmSingleDelete}
+        title={isBulkDeleting ? 'Confirm Bulk Audit Log Deletion' : 'Delete Audit Log Record'}
+        message={
+          isBulkDeleting
+            ? `Are you sure you want to permanently delete ${selectedLogIds.size} selected audit log records? This cannot be undone.`
+            : `Are you sure you want to permanently delete audit record for action "${logToDelete?.action || ''}" on entity "${logToDelete?.entity || ''}"?`
+        }
+        itemCount={isBulkDeleting ? selectedLogIds.size : 1}
+        itemName={isBulkDeleting ? `${selectedLogIds.size} Audit Logs` : logToDelete?.action || 'Audit Log'}
+        confirmButtonText={isBulkDeleting ? `Delete ${selectedLogIds.size} Records` : 'Delete Record'}
+        loading={deleteLoading}
+        dangerLevel="danger"
+        warningNotes={[
+          'Audit log deletions are logged for security oversight.',
+          'Deleted records cannot be recovered.'
+        ]}
+      />
     </div>
   );
 };

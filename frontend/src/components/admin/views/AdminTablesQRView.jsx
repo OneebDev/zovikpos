@@ -12,8 +12,10 @@ import {
   Power,
   CheckSquare,
   Square,
+  Trash2,
 } from 'lucide-react';
 import api from '../../../services/api';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
 
 const AdminTablesQRView = ({ showToast }) => {
   const [tables, setTables] = useState([]);
@@ -23,6 +25,12 @@ const AdminTablesQRView = ({ showToast }) => {
   const [actionLoading, setActionLoading] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState(null);
   const [selectedTableIds, setSelectedTableIds] = useState([]);
+
+  // Global Delete State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [tableToDelete, setTableToDelete] = useState(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Dynamically compute active host from browser location
   const getActiveBaseUrl = () => {
@@ -154,6 +162,41 @@ const AdminTablesQRView = ({ showToast }) => {
       if (showToast) showToast(err.response?.data?.error || 'Failed to create table', 'error');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Single Table Delete Handler
+  const handleConfirmDeleteTable = async () => {
+    if (!tableToDelete) return;
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete(`/tables/${tableToDelete.id}`);
+      if (showToast) showToast(res.data?.message || 'Table deleted successfully.');
+      setDeleteModalOpen(false);
+      setTableToDelete(null);
+      fetchTables();
+    } catch (err) {
+      console.error('Delete table error:', err);
+      if (showToast) showToast(err.response?.data?.error || 'Failed to delete table', 'error');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Bulk Delete Inactive Tables
+  const handleConfirmBulkDeleteTables = async () => {
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete('/tables/bulk', { data: { scope: 'INACTIVE' } });
+      if (showToast) showToast(res.data?.message || 'Bulk table cleanup completed.');
+      setDeleteModalOpen(false);
+      setIsBulkDeleting(false);
+      fetchTables();
+    } catch (err) {
+      console.error('Bulk delete tables error:', err);
+      if (showToast) showToast(err.response?.data?.error || 'Failed to delete tables', 'error');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -403,20 +446,60 @@ const AdminTablesQRView = ({ showToast }) => {
                     </button>
                   </div>
 
-                  <button
-                    onClick={() => handleRegenerateQR(table.id)}
-                    disabled={isRegeneratingThis || actionLoading}
-                    className="w-full py-1.5 bg-[var(--bg-color)] hover:bg-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] font-bold text-[11px] rounded-xl border border-[var(--border-color)] transition-all flex items-center justify-center space-x-1 cursor-pointer"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isRegeneratingThis ? 'animate-spin' : ''}`} />
-                    <span>Regenerate Signed Token</span>
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleRegenerateQR(table.id)}
+                      disabled={isRegeneratingThis || actionLoading}
+                      className="flex-1 py-1.5 bg-[var(--bg-color)] hover:bg-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] font-bold text-[11px] rounded-xl border border-[var(--border-color)] transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRegeneratingThis ? 'animate-spin' : ''}`} />
+                      <span>Regenerate Token</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTableToDelete(table);
+                        setIsBulkDeleting(false);
+                        setDeleteModalOpen(true);
+                      }}
+                      title="Delete / Archive Table"
+                      className="p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-rose-500/20 transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
       )}
+
+      {/* Global Delete Confirmation Modal */}
+      <GlobalDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setTableToDelete(null);
+          setIsBulkDeleting(false);
+        }}
+        onConfirm={isBulkDeleting ? handleConfirmBulkDeleteTables : handleConfirmDeleteTable}
+        title={isBulkDeleting ? 'Confirm Bulk Table Cleanup' : `Delete Table ${tableToDelete?.tableNumber || ''}`}
+        message={
+          isBulkDeleting
+            ? 'Are you sure you want to permanently delete all unreferenced inactive tables? Tables with active dining or order history will remain preserved.'
+            : `Are you sure you want to remove Table ${tableToDelete?.tableNumber}? If this table has historical orders or sessions, it will be safely deactivated and archived.`
+        }
+        itemCount={isBulkDeleting ? tables.filter(t => !t.isActive).length : 1}
+        itemName={tableToDelete ? `Table ${tableToDelete.tableNumber} (ID #${tableToDelete.id})` : ''}
+        isScopeAll={isBulkDeleting}
+        requiredConfirmationText={isBulkDeleting ? 'DELETE' : ''}
+        confirmButtonText={isBulkDeleting ? 'Delete Inactive Tables' : 'Delete Table'}
+        loading={deleteLoading}
+        warningNotes={[
+          'Deleting an unreferenced table removes its QR code stand and active floor listing.',
+          'Tables linked to customer orders or revenue history will be safely archived to protect audit logs.',
+        ]}
+      />
 
       {/* Add Table Modal */}
       {showAddModal && (

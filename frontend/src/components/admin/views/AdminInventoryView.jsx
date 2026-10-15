@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Package,
@@ -30,10 +30,20 @@ import {
   Info,
   Check,
   Eye,
-  FileSpreadsheet
+  FileSpreadsheet,
+  UploadCloud,
+  FileText,
+  FileCheck,
+  Sparkles,
+  ArrowRight,
+  Target,
+  CheckSquare
 } from 'lucide-react';
 import { exportToCSV } from '../../../utils/exportUtils';
 import api from '../../../services/api';
+import { inferCategoryFromItemName } from '../../../utils/categoryHelper';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 import AdminInventoryReceivingView from './AdminInventoryReceivingView';
 import AdminRecipeBuilderView from './AdminRecipeBuilderView';
 import AdminCostsMarginsView from './AdminCostsMarginsView';
@@ -225,7 +235,12 @@ const formatQuantity = (qty, unit) => {
   return (Math.round(num * 100) / 100).toLocaleString();
 };
 
-const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast }) => {
+const roundInventoryMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const inventoryLineSubtotal = (quantity, unitCost) => roundInventoryMoney((Number.parseFloat(quantity) || 0) * (Number.parseFloat(unitCost) || 0));
+const sumInventorySubtotals = (rows, getQuantity = row => row.stockLevel ?? row.quantity, getCost = row => row.costPrice) =>
+  roundInventoryMoney((rows || []).reduce((sum, row) => sum + inventoryLineSubtotal(getQuantity(row), getCost(row)), 0));
+
+const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, focusRequest, onFocusHandled }) => {
   const [activeTab, setActiveTab] = useState('CATALOG');
   const [summary, setSummary] = useState(null);
   
@@ -246,6 +261,33 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
   const [editingItem, setEditingItem] = useState(null);
   const [selectedItemForAdjustment, setSelectedItemForAdjustment] = useState(null);
   const [itemActionMenuId, setItemActionMenuId] = useState(null);
+
+  useEffect(() => {
+    if (!focusRequest?.itemId || inventory.length === 0) return;
+    const item = inventory.find((entry) => String(entry.id) === String(focusRequest.itemId));
+    if (item) {
+      setActiveTab('CATALOG');
+      if (focusRequest.action === 'restock') {
+        setAdjType('CORRECTION');
+        setAdjQty('');
+        setAdjReason('Restock from Action Alerts');
+        setSelectedItemForAdjustment(item);
+      } else {
+        setSelectedItemForDetails(item);
+      }
+    } else {
+      showToast?.('This inventory item is no longer available.', 'error');
+    }
+    onFocusHandled?.();
+  }, [focusRequest, inventory, onFocusHandled, showToast]);
+
+  // Bulk & Single Delete with GlobalDeleteModal
+  const [selectedInventoryIds, setSelectedInventoryIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   
   // Stock Adjustment Form State
   const [adjType, setAdjType] = useState('CORRECTION'); // CORRECTION | WASTE | EXPIRATION | DAMAGE | USED | OTHER
@@ -267,6 +309,71 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
   const [ingredientSearch, setIngredientSearch] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState({});
+
+  const getTodayCompactDate = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+  };
+
+  const parseReceivingDiscount = (value) => {
+    if (/%/.test(String(value ?? ''))) return 0;
+    const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? Math.abs(parsed) : 0;
+  };
+  const parseReceivingDiscountPercent = (value) => {
+    const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+    return value !== null && value !== undefined && value !== '' && Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : null;
+  };
+  const calculateCardDiscount = (subtotal, value, mode = 'AMOUNT') => roundInventoryMoney(
+    mode === 'PERCENT' ? (subtotal * Math.min(100, Math.max(0, Number(value) || 0))) / 100 : Math.max(0, Number(value) || 0)
+  );
+  const setCard1DiscountFromInvoice = (invoice) => {
+    const percent = parseReceivingDiscountPercent(invoice?.invoiceDiscountPercent);
+    if (percent !== null) {
+      setCard1DiscountMode('PERCENT');
+      setCard1Discount(percent);
+    } else {
+      setCard1DiscountMode('AMOUNT');
+      setCard1Discount(parseReceivingDiscount(invoice?.invoiceDiscount));
+    }
+  };
+
+  // Factory for a blank ingredient card
+  const createBlankIngredientCard = (overrides = {}) => {
+    const dateStr = getTodayCompactDate();
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    return {
+      id: 'card_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      name: overrides.name || '',
+      unit: overrides.unit || 'KG',
+      category: overrides.category || 'General',
+      minThreshold: overrides.minThreshold || '10',
+      maxThreshold: overrides.maxThreshold || '100',
+      costPrice: overrides.costPrice !== undefined ? String(overrides.costPrice) : '0',
+      stockLevel: overrides.stockLevel !== undefined ? String(overrides.stockLevel) : '0',
+      supplierId: overrides.supplierId || '',
+      sku: overrides.sku || `REF-${dateStr}-${rand}`,
+      batchNumber: overrides.batchNumber || `BATCH-${dateStr}-${rand}`,
+      supplierInvoiceNumber: overrides.supplierInvoiceNumber || `INV-${dateStr}-${String(Date.now()).slice(-6)}`,
+      expiryDate: overrides.expiryDate || '',
+      notes: overrides.notes || '',
+      originalDescription: overrides.originalDescription || '',
+      isNewItem: overrides.isNewItem !== undefined ? overrides.isNewItem : true,
+      saved: overrides.saved || false,
+      showSuggestions: false
+    };
+  };
+
+  // Dynamic Multi-Item Cards array state for Add New Ingredient Item
+  const [ingredientCards, setIngredientCards] = useState([createBlankIngredientCard()]);
+  const [card1Discount, setCard1Discount] = useState(0);
+  const [card1DiscountMode, setCard1DiscountMode] = useState('AMOUNT');
+  const [additionalDeliveryCards, setAdditionalDeliveryCards] = useState([]);
+  const [activeTargetCardId, setActiveTargetCardId] = useState('card-1');
+
+  // Backward compatibility object for single-item helpers & listeners
   const [newItem, setNewItem] = useState({
     name: '',
     unit: 'KG',
@@ -283,31 +390,1437 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
     notes: '',
   });
 
-  // Unique Batch Number generator helper
+  // Unique Batch Number generator helper for Card 1
   const generateAutoBatch = () => {
-    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const dateStr = getTodayCompactDate();
     const rand = Math.floor(1000 + Math.random() * 9000);
     const batch = `BATCH-${dateStr}-${rand}`;
     setNewItem(prev => ({ ...prev, batchNumber: batch }));
+    setIngredientCards(prev => prev.map(c => ({ ...c, batchNumber: batch })));
     if (showToast) showToast(`Batch # Generated: ${batch}`, 'info');
+    return batch;
   };
 
-  // Unique Reference generator helper (format: REF-YYYYMMDD-XXXX)
+  // Unique Reference generator helper (format: RCV-YYYYMMDD-XXXX)
   const generateAutoSKU = () => {
-    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const dateStr = getTodayCompactDate();
     const rand = Math.floor(1000 + Math.random() * 9000);
-    const refNum = `REF-${dateStr}-${rand}`;
+    const refNum = `RCV-${dateStr}-${rand}`;
     setNewItem(prev => ({ ...prev, sku: refNum }));
+    setIngredientCards(prev => prev.map(c => ({ ...c, sku: refNum })));
     if (showToast) showToast(`Internal Reference Generated: ${refNum}`, 'info');
+    return refNum;
   };
 
   // Unique Supplier Invoice # generator helper
   const generateAutoInvoiceNum = () => {
-    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const dateStr = getTodayCompactDate();
     const ms = String(Date.now()).slice(-6);
     const inv = `INV-${dateStr}-${ms}`;
     setNewItem(prev => ({ ...prev, supplierInvoiceNumber: inv }));
+    setIngredientCards(prev => prev.map(c => ({ ...c, supplierInvoiceNumber: inv })));
     if (showToast) showToast(`Supplier Invoice # Generated: ${inv}`, 'info');
+    return inv;
+  };
+
+  // Dynamic Ingredient Card Handlers
+  const handleAddIngredientCard = (initialData = {}) => {
+    const newCard = createBlankIngredientCard(initialData);
+    setIngredientCards(prev => [...prev, newCard]);
+    if (showToast) showToast('Added new ingredient card!', 'info');
+  };
+
+  const handleRemoveIngredientCard = (cardId) => {
+    setIngredientCards(prev => {
+      const filtered = prev.filter(c => c.id !== cardId);
+      return filtered.length > 0 ? filtered : [createBlankIngredientCard()];
+    });
+  };
+
+  const handleClearAllIngredientCards = () => {
+    setIngredientCards([createBlankIngredientCard()]);
+    setCard1Discount(0);
+    setCard1DiscountMode('AMOUNT');
+    setImportedItems([]);
+    if (showToast) showToast('Reset all ingredient cards.', 'info');
+  };
+
+  const handleIngredientCardChange = (cardId, field, value) => {
+    setIngredientCards(prev => prev.map(card => {
+      if (card.id !== cardId) return card;
+      const updated = { ...card, [field]: value };
+      if (field === 'name') {
+        const val = value.trim().toLowerCase();
+        const exists = inventory.some(i => i.name.toLowerCase().trim() === val);
+        updated.isNewItem = !exists;
+        const matched = INGREDIENT_PRESETS.find(p => p.name.toLowerCase().trim() === val);
+        if (matched) {
+          updated.unit = matched.unit;
+          updated.category = matched.category;
+        }
+      }
+      return updated;
+    }));
+  };
+
+  const generateAutoBatchForIngredientCard = (cardId) => {
+    const dateStr = getTodayCompactDate();
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    const newBatch = `BATCH-${dateStr}-${rand}`;
+    setIngredientCards(prev => prev.map(c => c.id === cardId ? { ...c, batchNumber: newBatch } : c));
+    if (showToast) showToast(`Batch # Generated: ${newBatch}`, 'info');
+  };
+
+  const generateAutoSKUForIngredientCard = (cardId) => {
+    const dateStr = getTodayCompactDate();
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    const newRef = `REF-${dateStr}-${rand}`;
+    setIngredientCards(prev => prev.map(c => c.id === cardId ? { ...c, sku: newRef } : c));
+    if (showToast) showToast(`Reference Generated: ${newRef}`, 'info');
+  };
+
+  const generateAutoInvoiceForIngredientCard = (cardId) => {
+    const dateStr = getTodayCompactDate();
+    const ms = String(Date.now()).slice(-6);
+    const inv = `INV-${dateStr}-${ms}`;
+    setIngredientCards(prev => prev.map(c => c.id === cardId ? { ...c, supplierInvoiceNumber: inv } : c));
+    if (showToast) showToast(`Supplier Invoice # Generated: ${inv}`, 'info');
+  };
+
+  // Preset Selection -> Updates empty card or appends a new card to the active target supplier card
+  const handleSelectPresetForCard = (preset) => {
+    const exists = inventory.some(i => i.name.toLowerCase().trim() === preset.name.toLowerCase().trim());
+
+    if (activeTargetCardId === 'card-1' || !additionalDeliveryCards.some(c => c.id === activeTargetCardId)) {
+      // Adding into Card #1
+      const targetSupplierId = newItem.supplierId || '';
+      const targetBatch = newItem.batchNumber || '';
+      const targetInvoice = newItem.supplierInvoiceNumber || '';
+
+      setIngredientCards(prev => {
+        // If we have only 1 card and it has no name, populate it
+        if (prev.length === 1 && !prev[0].name.trim()) {
+          return [{
+            ...prev[0],
+            name: preset.name,
+            unit: preset.unit,
+            category: preset.category,
+            supplierId: targetSupplierId || prev[0].supplierId || '',
+            batchNumber: targetBatch || prev[0].batchNumber,
+            supplierInvoiceNumber: targetInvoice || prev[0].supplierInvoiceNumber,
+            isNewItem: !exists
+          }];
+        }
+        // Otherwise, append a new card with this preset
+        return [
+          ...prev,
+          createBlankIngredientCard({
+            name: preset.name,
+            unit: preset.unit,
+            category: preset.category,
+            supplierId: targetSupplierId,
+            batchNumber: targetBatch,
+            supplierInvoiceNumber: targetInvoice,
+            isNewItem: !exists
+          })
+        ];
+      });
+
+      const supName = suppliersList.find(s => String(s.id) === String(targetSupplierId))?.name;
+      if (showToast) {
+        showToast(`Added "${preset.name}" to Card #1${supName ? ` (${supName})` : ''}!`, exists ? 'info' : 'success');
+      }
+    } else {
+      // Adding into an Additional Delivery Card
+      const targetCard = additionalDeliveryCards.find(c => c.id === activeTargetCardId);
+      if (!targetCard) return;
+
+      const newItemObj = {
+        id: `item_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        name: preset.name,
+        originalDescription: preset.name,
+        unit: preset.unit,
+        category: preset.category,
+        quantity: '0',
+        stockLevel: '0',
+        costPrice: '0',
+        supplierName: targetCard.supplierName,
+        supplierId: targetCard.supplierId,
+        invoiceNumber: targetCard.supplierInvoiceNumber,
+        batchNumber: targetCard.batchNumber,
+        expiryDate: '',
+        isNewItem: !exists,
+        saved: false,
+        showSuggestions: false
+      };
+
+      setAdditionalDeliveryCards(prev => prev.map(c => {
+        if (c.id === activeTargetCardId) {
+          const currentItems = c.items || [];
+          if (currentItems.length === 1 && !currentItems[0].name.trim()) {
+            return {
+              ...c,
+              items: [{ ...currentItems[0], ...newItemObj, id: currentItems[0].id }]
+            };
+          }
+          return {
+            ...c,
+            items: [...currentItems, newItemObj]
+          };
+        }
+        return c;
+      }));
+
+      const cardSupName = targetCard.supplierName || suppliersList.find(s => String(s.id) === String(targetCard.supplierId))?.name || 'Selected Delivery Card';
+      if (showToast) {
+        showToast(`Added "${preset.name}" to ${cardSupName}!`, exists ? 'info' : 'success');
+      }
+    }
+  };
+
+  // Convert uploaded rows to ingredient cards format
+  const mapUploadRowsToIngredientCards = (rows, detectedSupId = '', detectedInv = '', sharedSku = '', sharedBatch = '') => {
+    const dateStr = getTodayCompactDate();
+    const finalSku = sharedSku || `RCV-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const finalBatch = sharedBatch || `BATCH-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const finalInv = detectedInv || `INV-${dateStr}-${String(Date.now()).slice(-6)}`;
+
+    return rows.map((it, idx) => ({
+      id: it.id || `card_up_${idx}_${Date.now()}`,
+      name: it.name || it.originalDescription || '',
+      originalDescription: it.originalDescription || it.rawName || '',
+      unit: (it.unit || 'KG').toUpperCase(),
+      category: it.category || inferCategoryFromItemName(it.name || it.originalDescription || ''),
+      minThreshold: '10',
+      maxThreshold: '100',
+      costPrice: String(it.costPrice || 0),
+      stockLevel: String(it.quantity || 0),
+      supplierId: it.supplierId || detectedSupId || '',
+      sku: finalSku,
+      batchNumber: finalBatch,
+      supplierInvoiceNumber: it.invoiceNumber || finalInv,
+      expiryDate: it.expiryDate || '',
+      notes: it.notes || '',
+      isNewItem: it.isNewItem !== undefined ? it.isNewItem : true,
+      saved: it.saved || false,
+      showSuggestions: false
+    }));
+  };
+
+  // Save single card to catalog (creates catalog item with 0 stock)
+  const handleSaveSingleCardToCatalog = async (card) => {
+    if (!card.name || !card.name.trim()) {
+      if (showToast) showToast('Please enter an ingredient name.', 'error');
+      return;
+    }
+    try {
+      const payload = {
+        name: card.name.trim(),
+        unit: card.unit || 'KG',
+        category: card.category || 'General',
+        costPrice: parseFloat(card.costPrice) || 0,
+        stockLevel: 0, // IMPORTANT: Save to catalog creates catalog entry with 0 stock
+        minThreshold: parseFloat(card.minThreshold) || 10,
+        maxThreshold: parseFloat(card.maxThreshold) || 100,
+        sku: card.sku || null,
+        supplierId: card.supplierId ? parseInt(card.supplierId, 10) : null,
+        expiryDate: card.expiryDate ? card.expiryDate : null,
+        notes: card.notes || null
+      };
+      await api.post('/inventory', payload);
+      setIngredientCards(prev => prev.map(c => c.id === card.id ? { ...c, isNewItem: false, saved: true } : c));
+      setImportedItems(prev => prev.map(i => i.id === card.id ? { ...i, isNewItem: false, saved: true, catalogMatchName: card.name } : i));
+      if (showToast) showToast(`"${card.name}" saved to catalog! (Stock: 0)`, 'success');
+      if (onRefresh) onRefresh();
+      fetchSummary();
+    } catch (err) {
+      if (showToast) showToast(err.response?.data?.error || 'Failed to save item', 'error');
+    }
+  };
+
+  // Save all ingredient cards to catalog (creates entries with 0 stock)
+  const handleSaveAllIngredientCardsToCatalog = async () => {
+    const unsavedCards = ingredientCards.filter(c => c.name && c.name.trim() && !c.saved);
+    if (unsavedCards.length === 0) {
+      if (showToast) showToast('No unsaved items with names found to save.', 'info');
+      return;
+    }
+    setBulkSavingCatalog(true);
+    setCatalogSaveScope('card-1');
+    try {
+      const itemsPayload = unsavedCards.map((c, rowIndex) => ({
+        rowIndex,
+        name: c.name.trim(),
+        unit: c.unit || 'KG',
+        category: c.category || 'General',
+        costPrice: parseFloat(c.costPrice) || 0,
+        stockLevel: 0, // IMPORTANT: Save to catalog creates catalog entries with 0 stock
+        minThreshold: parseFloat(c.minThreshold) || 10,
+        maxThreshold: parseFloat(c.maxThreshold) || 100,
+        sku: c.sku || null,
+        supplierId: c.supplierId ? parseInt(c.supplierId, 10) : null,
+        expiryDate: c.expiryDate ? c.expiryDate : null
+      }));
+      const response = await api.post('/inventory/bulk', { items: itemsPayload });
+      const results = response.data?.results || [];
+      const succeeded = new Set(results.filter(r => r.success).map(r => Number(r.index)));
+      setIngredientCards(prev => prev.map(c => {
+        const index = unsavedCards.findIndex(row => row.id === c.id);
+        return succeeded.has(index) ? { ...c, isNewItem: false, saved: true } : c;
+      }));
+      setImportedItems(prev => prev.map(i => {
+        const index = unsavedCards.findIndex(row => row.id === i.id);
+        return succeeded.has(index) ? { ...i, isNewItem: false, saved: true } : i;
+      }));
+      const summary = response.data?.summary || {};
+      setCatalogImportResult({ summary, results, total: itemsPayload.length });
+      if (showToast) showToast(`Import summary: ${summary.total ?? itemsPayload.length} total, ${summary.imported ?? summary.savedCount ?? 0} imported, ${summary.duplicates ?? 0} duplicates skipped, ${summary.failed ?? summary.failedCount ?? 0} failed.`, (summary.failed ?? summary.failedCount ?? 0) ? 'warning' : 'success');
+      if (onRefresh) onRefresh();
+      fetchSummary();
+    } catch (err) {
+      if (showToast) showToast(err.response?.data?.error || 'Failed to save items', 'error');
+    } finally {
+      setBulkSavingCatalog(false);
+      setCatalogSaveScope(null);
+    }
+  };
+
+  // Card B & C Upload & Review State for Add New Ingredient Item
+  const [importFile, setImportFile] = useState(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
+  const [uploadError, setUploadError] = useState(null);
+  const [importedItems, setImportedItems] = useState([]);
+  const [bulkSavingCatalog, setBulkSavingCatalog] = useState(false);
+  const [catalogSaveScope, setCatalogSaveScope] = useState(null);
+  const [catalogImportResult, setCatalogImportResult] = useState(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const draftSaveLock = useRef(false);
+  const [draftSaveResult, setDraftSaveResult] = useState(null);
+  const [pendingAddSaveAction, setPendingAddSaveAction] = useState(null);
+  const [activeAddTab, setActiveAddTab] = useState('ALL'); // 'ALL' | 'PRESETS' | 'IMPORT' | 'MANUAL'
+
+  // Multi-Supplier Separate Delivery Cards State (matching Receive Stock architecture)
+  const [showMergeChoiceModal, setShowMergeChoiceModal] = useState(false);
+  const [pendingUploadData, setPendingUploadData] = useState(null);
+  const [pendingUploadRows, setPendingUploadRows] = useState(null);
+
+  // Distinct Auto Ref generator for a specific delivery card
+  const generateAutoRefForCard = (cardId) => {
+    const dateStr = getTodayCompactDate();
+    let randRef;
+    let newRef;
+    do {
+      randRef = Math.floor(1000 + Math.random() * 9000);
+      newRef = `RCV-${dateStr}-${randRef}`;
+    } while (newRef === newItem.sku || additionalDeliveryCards.some(c => c.id !== cardId && c.receivingRef === newRef));
+
+    setAdditionalDeliveryCards(prev => prev.map(c => c.id === cardId ? { ...c, receivingRef: newRef } : c));
+    if (showToast) showToast(`Reference Generated: ${newRef}`, 'info');
+  };
+
+  // Distinct Auto Batch generator for a specific delivery card
+  const generateAutoBatchForCard = (cardId) => {
+    const dateStr = getTodayCompactDate();
+    let randBatch;
+    let newBatch;
+    do {
+      randBatch = Math.floor(1000 + Math.random() * 9000);
+      newBatch = `BATCH-${dateStr}-${randBatch}`;
+    } while (newBatch === newItem.batchNumber || additionalDeliveryCards.some(c => c.id !== cardId && c.batchNumber === newBatch));
+
+    setAdditionalDeliveryCards(prev => prev.map(c => c.id === cardId ? { ...c, batchNumber: newBatch } : c));
+    if (showToast) showToast(`Batch Generated: ${newBatch}`, 'info');
+  };
+
+  // Distinct Auto Invoice generator for a specific delivery card
+  const generateAutoInvoiceForCard = (cardId) => {
+    const dateStr = getTodayCompactDate();
+    const ms = String(Date.now()).slice(-6);
+    const inv = `INV-${dateStr}-${ms}`;
+    setAdditionalDeliveryCards(prev => prev.map(c => c.id === cardId ? { ...c, supplierInvoiceNumber: inv } : c));
+    if (showToast) showToast(`Invoice # Generated: ${inv}`, 'info');
+  };
+
+  // Decision 1: Create Separate Card for [Supplier]
+  const handleCreateSeparateCard = () => {
+    if (!pendingUploadData) return;
+    const dateStr = getTodayCompactDate();
+
+    // 1. Guaranteed distinct Reference Number
+    let randRef;
+    let newRef;
+    do {
+      randRef = Math.floor(1000 + Math.random() * 9000);
+      newRef = `RCV-${dateStr}-${randRef}`;
+    } while (newRef === newItem.sku || additionalDeliveryCards.some(c => c.receivingRef === newRef));
+
+    // 2. Guaranteed distinct Shipment Batch Number
+    let randBatch;
+    let newBatch;
+    do {
+      randBatch = Math.floor(1000 + Math.random() * 9000);
+      newBatch = `BATCH-${dateStr}-${randBatch}`;
+    } while (newBatch === newItem.batchNumber || additionalDeliveryCards.some(c => c.batchNumber === newBatch));
+
+    // 3. Guaranteed distinct Supplier Invoice #
+    let newInv = pendingUploadData.invoiceNumber;
+    if (!newInv || newInv === newItem.supplierInvoiceNumber || additionalDeliveryCards.some(c => c.supplierInvoiceNumber === newInv)) {
+      const ms = String(Date.now() + 5000 + Math.floor(Math.random() * 1000)).slice(-6);
+      newInv = `INV-${dateStr}-${ms}`;
+    }
+
+    const newCard = {
+      id: 'card-' + Date.now(),
+      supplierName: pendingUploadData.supplierName || 'Different Supplier',
+      supplierId: pendingUploadData.matchedSupplierId || '',
+      supplierInvoiceNumber: newInv,
+      receivingRef: newRef,
+      batchNumber: newBatch,
+      discountAmount: parseReceivingDiscountPercent(pendingUploadData.invoiceDiscountPercent) ?? parseReceivingDiscount(pendingUploadData.invoiceDiscount),
+      discountMode: parseReceivingDiscountPercent(pendingUploadData.invoiceDiscountPercent) !== null ? 'PERCENT' : 'AMOUNT',
+      items: (pendingUploadRows || pendingUploadData.newRows || []).map(r => ({
+        ...r,
+        batchNumber: newBatch
+      }))
+    };
+
+    setAdditionalDeliveryCards(prev => [...prev, newCard]);
+    setShowMergeChoiceModal(false);
+    setPendingUploadData(null);
+    setPendingUploadRows(null);
+
+    if (showToast) {
+      showToast(
+        `Created separate Card for "${pendingUploadData.supplierName}" with independent Ref: ${newRef}, Batch: ${newBatch}, Invoice: ${newInv}!`,
+        'success'
+      );
+    }
+  };
+
+  // Add new independent Supplier Delivery Card manually
+  const handleAddNewDeliveryCard = () => {
+    const dateStr = getTodayCompactDate();
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    const ms = String(Date.now() + Math.floor(Math.random() * 1000)).slice(-6);
+    const cardId = 'card-' + Date.now();
+    const newCard = {
+      id: cardId,
+      supplierName: '',
+      supplierId: '',
+      supplierInvoiceNumber: `INV-${dateStr}-${ms}`,
+      receivingRef: `RCV-${dateStr}-${rand}`,
+      batchNumber: `BATCH-${dateStr}-${rand}`,
+      discountAmount: 0,
+      discountMode: 'AMOUNT',
+      items: [
+        {
+          id: `item_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          name: '',
+          originalDescription: '',
+          unit: 'KG',
+          category: 'General',
+          stockLevel: '0',
+          quantity: '0',
+          costPrice: '0',
+          supplierName: '',
+          supplierId: '',
+          invoiceNumber: `INV-${dateStr}-${ms}`,
+          batchNumber: `BATCH-${dateStr}-${rand}`,
+          expiryDate: '',
+          isNewItem: true,
+          saved: false,
+          showSuggestions: false
+        }
+      ]
+    };
+    setAdditionalDeliveryCards(prev => [...prev, newCard]);
+    setActiveTargetCardId(cardId);
+    if (showToast) showToast('Created New Supplier Delivery Card! Presets will now be added here.', 'success');
+  };
+
+  // Add blank item into an additional delivery card
+  const handleAdditionalCardAddItem = (cardId) => {
+    const card = additionalDeliveryCards.find(c => c.id === cardId);
+    if (!card) return;
+    const newItemObj = {
+      id: `item_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      name: '',
+      originalDescription: '',
+      unit: 'KG',
+      category: 'General',
+      stockLevel: '0',
+      quantity: '0',
+      costPrice: '0',
+      supplierName: card.supplierName,
+      supplierId: card.supplierId,
+      invoiceNumber: card.supplierInvoiceNumber,
+      batchNumber: card.batchNumber,
+      expiryDate: '',
+      isNewItem: true,
+      saved: false,
+      showSuggestions: false
+    };
+    setAdditionalDeliveryCards(prev => prev.map(c => {
+      if (c.id === cardId) {
+        return {
+          ...c,
+          items: [...(c.items || []), newItemObj]
+        };
+      }
+      return c;
+    }));
+  };
+
+  // Change field of an item in an additional delivery card
+  const handleAdditionalCardItemChange = (cardId, itemId, field, value) => {
+    setAdditionalDeliveryCards(prev => prev.map(card => {
+      if (card.id !== cardId) return card;
+      const updatedItems = (card.items || []).map(item => {
+        if (item.id !== itemId) return item;
+        const updated = { ...item, [field]: value };
+        if (field === 'quantity' || field === 'stockLevel') {
+          updated.quantity = value;
+          updated.stockLevel = value;
+        }
+        if (field === 'name') {
+          const val = value.trim().toLowerCase();
+          const exists = inventory.some(i => i.name.toLowerCase().trim() === val);
+          updated.isNewItem = !exists;
+          const matched = INGREDIENT_PRESETS.find(p => p.name.toLowerCase().trim() === val);
+          if (matched) {
+            updated.unit = matched.unit;
+            updated.category = matched.category;
+          }
+        }
+        return updated;
+      });
+      return { ...card, items: updatedItems };
+    }));
+  };
+
+  // Remove an item from an additional delivery card
+  const handleAdditionalCardRemoveItem = (cardId, itemId) => {
+    setAdditionalDeliveryCards(prev => prev.map(card => {
+      if (card.id !== cardId) return card;
+      return {
+        ...card,
+        items: (card.items || []).filter(i => i.id !== itemId)
+      };
+    }));
+  };
+
+  // Clear all items in an additional delivery card
+  const handleAdditionalCardClearAll = (cardId) => {
+    setAdditionalDeliveryCards(prev => prev.map(card => {
+      if (card.id !== cardId) return card;
+      return { ...card, items: [] };
+    }));
+    if (showToast) showToast('Cleared all items in this delivery card.', 'info');
+  };
+
+  // Save single item in an additional delivery card to catalog
+  const handleSaveAdditionalCardSingleItem = async (cardId, item) => {
+    if (!item.name || !item.name.trim()) {
+      if (showToast) showToast('Please enter an ingredient name.', 'error');
+      return;
+    }
+    const card = additionalDeliveryCards.find(c => c.id === cardId);
+    try {
+      const payload = {
+        name: item.name.trim(),
+        unit: item.unit || 'KG',
+        category: item.category || 'General',
+        costPrice: parseFloat(item.costPrice) || 0,
+        stockLevel: 0, // IMPORTANT: Save in Catalog creates entry with 0 stock
+        minThreshold: 10,
+        maxThreshold: 100,
+        sku: card?.receivingRef || null,
+        supplierId: card?.supplierId ? parseInt(card.supplierId, 10) : null,
+        expiryDate: item.expiryDate ? item.expiryDate : null
+      };
+      await api.post('/inventory', payload);
+      setAdditionalDeliveryCards(prev => prev.map(c => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            items: c.items.map(i => i.id === item.id ? { ...i, isNewItem: false, saved: true } : i)
+          };
+        }
+        return c;
+      }));
+      if (showToast) showToast(`"${item.name}" saved to catalog!`, 'success');
+      if (onRefresh) onRefresh();
+      fetchSummary();
+    } catch (err) {
+      if (showToast) showToast(err.response?.data?.error || 'Failed to save item', 'error');
+    }
+  };
+
+  // Decision 2: Merge into Card #1 Anyway
+  const handleMergeAppend = () => {
+    const rowsToAdd = pendingUploadRows || pendingUploadData?.newRows || [];
+    setImportedItems(prev => {
+      const existing = [...prev];
+      rowsToAdd.forEach(nr => {
+        const dup = existing.find(e => e.name.toLowerCase().trim() === nr.name.toLowerCase().trim() && e.unit === nr.unit);
+        if (dup) {
+          dup.quantity = (parseFloat(dup.quantity) || 0) + (parseFloat(nr.quantity) || 0);
+        } else {
+          existing.push(nr);
+        }
+      });
+      return existing;
+    });
+
+    const appendCards = mapUploadRowsToIngredientCards(rowsToAdd);
+    if (pendingUploadData?.invoiceDiscountPercent != null) setCard1DiscountFromInvoice(pendingUploadData);
+    else {
+      const mergedDiscount = parseReceivingDiscount(pendingUploadData?.invoiceDiscount);
+      if (mergedDiscount) {
+        setCard1DiscountMode('AMOUNT');
+        setCard1Discount(prev => (Number(prev) || 0) + mergedDiscount);
+      }
+    }
+    setIngredientCards(prev => {
+      const nonEmpty = prev.filter(c => c.name.trim() !== '');
+      return [...nonEmpty, ...appendCards];
+    });
+
+    setShowMergeChoiceModal(false);
+    setPendingUploadData(null);
+    setPendingUploadRows(null);
+
+    if (showToast) showToast('Merged imported items into Card #1!', 'success');
+  };
+
+  // Decision 3: Replace Card #1 with New Scanned Delivery
+  const handleMergeReplace = () => {
+    const rowsToSet = pendingUploadRows || pendingUploadData?.newRows || [];
+    const dateStr = getTodayCompactDate();
+    const autoRef = `RCV-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const autoBatch = `BATCH-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const autoInv = pendingUploadData?.invoiceNumber || `INV-${dateStr}-${String(Date.now()).slice(-6)}`;
+
+    setImportedItems(rowsToSet);
+    setCard1DiscountFromInvoice(pendingUploadData);
+    const replaceCards = mapUploadRowsToIngredientCards(
+      rowsToSet,
+      pendingUploadData?.matchedSupplierId,
+      autoInv,
+      autoRef,
+      autoBatch
+    );
+    setIngredientCards(replaceCards.length > 0 ? replaceCards : [createBlankIngredientCard()]);
+
+    setNewItem(prev => ({
+      ...prev,
+      sku: autoRef,
+      batchNumber: autoBatch,
+      supplierInvoiceNumber: autoInv,
+      supplierId: pendingUploadData?.matchedSupplierId || prev.supplierId
+    }));
+
+    setShowMergeChoiceModal(false);
+    setPendingUploadData(null);
+    setPendingUploadRows(null);
+
+    if (showToast) showToast('Replaced Card #1 items with new scanned delivery!', 'info');
+  };
+
+  // Discard an additional delivery card
+  const handleDiscardDeliveryCard = (cardId) => {
+    setAdditionalDeliveryCards(prev => prev.filter(c => c.id !== cardId));
+    if (showToast) showToast('Discarded delivery card.', 'info');
+  };
+
+  // Process response from preview APIs and detect multiple suppliers/deliveries
+  const processUploadResponse = (resData, fileName, ext, dataUrl = null) => {
+    const matched = resData?.matchedItems || [];
+    const unmatched = resData?.unmatchedItems || [];
+    const detectedSupplier = (resData?.supplierName || resData?.detectedSupplierName || '').trim();
+    const detectedInvoiceNumber = (resData?.invoiceNumber || '').trim();
+    const dateStr = getTodayCompactDate();
+
+    const matchedSup = suppliersList.find(s =>
+      detectedSupplier && (
+        s.name.toLowerCase().trim() === detectedSupplier.toLowerCase().trim() ||
+        s.name.toLowerCase().includes(detectedSupplier.toLowerCase()) ||
+        detectedSupplier.toLowerCase().includes(s.name.toLowerCase())
+      )
+    );
+
+    const combined = [];
+    matched.forEach((it, idx) => {
+      combined.push({
+        id: `matched_${idx}_${Date.now()}`,
+        originalDescription: it.rawName || it.name || it.matchedName,
+        name: it.matchedName || it.name,
+        catalogMatchId: it.inventoryItemId || null,
+        catalogMatchName: it.matchedName || it.name,
+        isNewItem: false,
+        category: it.category || inferCategoryFromItemName(it.matchedName || it.name),
+        quantity: parseFloat(it.quantity) || 0,
+        unit: (it.unit || it.systemUnit || 'KG').toUpperCase(),
+        costPrice: parseFloat(it.unitCost) || 0,
+        supplierName: it.supplierName || detectedSupplier || null,
+        invoiceNumber: it.invoiceNumber || detectedInvoiceNumber || null,
+        confidence: 'Catalog Match (High)',
+        needsReview: false,
+        saved: true
+      });
+    });
+
+    unmatched.forEach((it, idx) => {
+      combined.push({
+        id: `new_${idx}_${Date.now()}`,
+        originalDescription: it.rawName || it.name,
+        name: it.name || it.rawName,
+        catalogMatchId: null,
+        catalogMatchName: null,
+        isNewItem: true,
+        category: it.category || inferCategoryFromItemName(it.name || it.rawName),
+        quantity: parseFloat(it.quantity) || 0,
+        unit: (it.unit || 'KG').toUpperCase(),
+        costPrice: parseFloat(it.unitCost) || 0,
+        supplierName: it.supplierName || detectedSupplier || null,
+        invoiceNumber: it.invoiceNumber || detectedInvoiceNumber || null,
+        confidence: it.suggestedItem ? 'Ambiguity Warning (Needs Confirmation)' : 'NEW ITEM (Not in Catalog)',
+        needsReview: !!it.suggestedItem,
+        saved: false
+      });
+    });
+
+    // Check if the uploaded file itself contains items from multiple suppliers
+    const distinctSuppliers = [...new Set(combined.map(i => i.supplierName).filter(Boolean))];
+    const hasMultipleSuppliersInFile = distinctSuppliers.length > 1;
+
+    // Check if the uploaded file contains multiple distinct invoices
+    const distinctInvoices = [...new Set(combined.map(i => i.invoiceNumber).filter(Boolean))];
+    const hasMultipleInvoicesInFile = distinctInvoices.length > 1;
+
+    // Check if Card #1 currently has existing user-entered items
+    const currentCard1Supplier = suppliersList.find(s => String(s.id) === String(newItem.supplierId));
+    const currentCard1SupplierName = (currentCard1Supplier?.name || '').trim();
+    const hasExistingCard1Items = ingredientCards.some(c => (c.name || '').trim().length > 0) && importedItems.length > 0;
+
+    if (hasMultipleSuppliersInFile) {
+      // Split items by supplier: Supplier 1 goes to Card #1, Supplier 2 goes to modal / Card #2
+      const firstSupplier = distinctSuppliers[0];
+      const otherSuppliers = distinctSuppliers.slice(1);
+
+      const firstGroup = combined.filter(i => (i.supplierName || firstSupplier) === firstSupplier);
+      const secondGroup = combined.filter(i => otherSuppliers.includes(i.supplierName));
+      // A single detected discount is assigned to the first supplier card only, avoiding double application.
+      setCard1DiscountFromInvoice(resData);
+
+      const autoRef1 = `RCV-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const autoBatch1 = `BATCH-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const autoInv1 = firstGroup[0]?.invoiceNumber || detectedInvoiceNumber || `INV-${dateStr}-${String(Date.now()).slice(-6)}`;
+
+      setImportedItems(firstGroup);
+      const firstSupObj = suppliersList.find(s => s.name.toLowerCase().includes(firstSupplier.toLowerCase()));
+      const firstGroupCards = mapUploadRowsToIngredientCards(
+        firstGroup,
+        firstSupObj ? String(firstSupObj.id) : '',
+        autoInv1,
+        autoRef1,
+        autoBatch1
+      );
+      setIngredientCards(firstGroupCards);
+
+      setNewItem(prev => ({
+        ...prev,
+        sku: autoRef1,
+        batchNumber: autoBatch1,
+        supplierInvoiceNumber: autoInv1,
+        ...(firstSupObj ? { supplierId: String(firstSupObj.id) } : {})
+      }));
+
+      const secondSupplierName = otherSuppliers[0];
+      const matchedSecondSup = suppliersList.find(s => s.name.toLowerCase().includes(secondSupplierName.toLowerCase()));
+
+      setPendingUploadData({
+        supplierName: secondSupplierName,
+        matchedSupplierId: matchedSecondSup ? String(matchedSecondSup.id) : '',
+        invoiceNumber: secondGroup[0]?.invoiceNumber || `INV-${dateStr}-${String(Date.now()).slice(-6)}`,
+        rawInvoiceNumber: secondGroup[0]?.invoiceNumber || '',
+        estimatedTotal: secondGroup.reduce((acc, i) => acc + (i.quantity * i.costPrice), 0),
+        invoiceDiscount: 0,
+        newRows: secondGroup,
+        dataUrl,
+        fileName,
+        mimeType: ext === 'csv' ? 'text/csv' : 'application/pdf',
+        isSameSupplier: false,
+        currentSupplierName: firstSupplier
+      });
+      setPendingUploadRows(secondGroup);
+      setShowMergeChoiceModal(true);
+
+      if (showToast) {
+        showToast(`Document contains multiple suppliers! "${firstSupplier}" loaded into Card #1; review separation for "${secondSupplierName}".`, 'warning');
+      }
+    } else if (hasMultipleInvoicesInFile) {
+      // Same supplier, two different invoices: separate groups
+      const firstInvoice = distinctInvoices[0];
+      const secondInvoice = distinctInvoices[1];
+      const firstGroup = combined.filter(i => (i.invoiceNumber || firstInvoice) === firstInvoice);
+      const secondGroup = combined.filter(i => i.invoiceNumber === secondInvoice);
+      // The OCR response exposes one invoice discount, so apply it to the first invoice card only.
+      setCard1DiscountFromInvoice(resData);
+
+      const autoRef1 = `RCV-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const autoBatch1 = `BATCH-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const autoInv1 = firstInvoice || `INV-${dateStr}-${String(Date.now()).slice(-6)}`;
+
+      setImportedItems(firstGroup);
+      const firstGroupCards = mapUploadRowsToIngredientCards(
+        firstGroup,
+        matchedSup ? String(matchedSup.id) : '',
+        autoInv1,
+        autoRef1,
+        autoBatch1
+      );
+      setIngredientCards(firstGroupCards);
+
+      setNewItem(prev => ({
+        ...prev,
+        sku: autoRef1,
+        batchNumber: autoBatch1,
+        supplierInvoiceNumber: autoInv1,
+        ...(matchedSup ? { supplierId: String(matchedSup.id) } : {})
+      }));
+
+      setPendingUploadData({
+        supplierName: detectedSupplier || matchedSup?.name || 'Same Supplier',
+        matchedSupplierId: matchedSup ? String(matchedSup.id) : '',
+        invoiceNumber: secondInvoice,
+        rawInvoiceNumber: secondInvoice,
+        estimatedTotal: secondGroup.reduce((acc, i) => acc + (i.quantity * i.costPrice), 0),
+        invoiceDiscount: 0,
+        newRows: secondGroup,
+        dataUrl,
+        fileName,
+        mimeType: ext === 'csv' ? 'text/csv' : 'application/pdf',
+        isSameSupplier: true,
+        currentSupplierName: `${detectedSupplier || 'Supplier'} (Invoice #${firstInvoice})`
+      });
+      setPendingUploadRows(secondGroup);
+      setShowMergeChoiceModal(true);
+
+      if (showToast) {
+        showToast(`Multiple invoices detected from "${detectedSupplier || 'Supplier'}"! Invoice #${firstInvoice} loaded into Card #1; review separation for Invoice #${secondInvoice}.`, 'warning');
+      }
+    } else if (hasExistingCard1Items) {
+      // Compare current Card #1 supplier vs new upload supplier
+      const newSupName = (detectedSupplier || matchedSup?.name || '').trim();
+      let isSame = false;
+      if (currentCard1SupplierName && newSupName) {
+        isSame = currentCard1SupplierName.toLowerCase().includes(newSupName.toLowerCase()) ||
+                 newSupName.toLowerCase().includes(currentCard1SupplierName.toLowerCase());
+      } else if (!currentCard1SupplierName && !newSupName) {
+        isSame = true;
+      }
+
+      setPendingUploadData({
+        supplierName: detectedSupplier || 'Scanned Delivery',
+        matchedSupplierId: matchedSup ? String(matchedSup.id) : '',
+        invoiceNumber: detectedInvoiceNumber || `INV-${dateStr}-${String(Date.now()).slice(-6)}`,
+        rawInvoiceNumber: detectedInvoiceNumber || '',
+        estimatedTotal: combined.reduce((acc, i) => acc + (i.quantity * i.costPrice), 0),
+        invoiceDiscount: parseReceivingDiscount(resData?.invoiceDiscount),
+        invoiceDiscountPercent: resData?.invoiceDiscountPercent ?? null,
+        newRows: combined,
+        dataUrl,
+        fileName,
+        mimeType: ext === 'csv' ? 'text/csv' : 'application/pdf',
+        isSameSupplier: isSame,
+        currentSupplierName: currentCard1SupplierName || 'Current Receiving (Card #1)'
+      });
+      setPendingUploadRows(combined);
+      setShowMergeChoiceModal(true);
+    } else {
+      // Card #1: populate directly and auto-generate the three identifiers (Internal Reference, Shipment Batch, Supplier Invoice)
+      const autoRef = `RCV-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const autoBatch = `BATCH-${dateStr}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const autoInv = detectedInvoiceNumber || `INV-${dateStr}-${String(Date.now()).slice(-6)}`;
+
+      setImportedItems(combined);
+      setCard1DiscountFromInvoice(resData);
+      const combinedCards = mapUploadRowsToIngredientCards(
+        combined,
+        matchedSup ? String(matchedSup.id) : '',
+        autoInv,
+        autoRef,
+        autoBatch
+      );
+      setIngredientCards(combinedCards);
+
+      setNewItem(prev => ({
+        ...prev,
+        sku: autoRef,
+        batchNumber: autoBatch,
+        supplierInvoiceNumber: autoInv,
+        ...(matchedSup ? { supplierId: String(matchedSup.id) } : {})
+      }));
+
+      const newCount = combined.filter(i => i.isNewItem).length;
+      if (showToast) {
+        showToast(`Loaded ${combined.length} items (${newCount} new to catalog)${detectedSupplier ? ` from "${detectedSupplier}"` : ''}. Auto-generated Ref: ${autoRef}, Batch: ${autoBatch}, Invoice: ${autoInv}.`, 'success');
+      }
+    }
+  };
+
+  // File Upload Handler (Excel, CSV, Image, PDF)
+  const handleFileUploadForAddItem = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFile(file);
+    setUploadError(null);
+    setIsUploadingFile(true);
+    setUploadProgress('Reading file...');
+
+    try {
+      const ext = file.name.split('.').pop().toLowerCase();
+      const isExcelOrCsv = ['xlsx', 'xls', 'csv'].includes(ext);
+      const isImageOrPdf = ['jpg', 'jpeg', 'png', 'pdf'].includes(ext);
+
+      if (!isExcelOrCsv && !isImageOrPdf) {
+        throw new Error('Unsupported format. Please upload Excel (.xlsx, .xls), CSV, or Image/PDF invoice.');
+      }
+
+      const reader = new FileReader();
+
+      if (isExcelOrCsv) {
+        setUploadProgress('Parsing spreadsheet rows & detecting suppliers...');
+        reader.onload = async (event) => {
+          try {
+            const payload = ext === 'csv'
+              ? { rawText: event.target.result, fileName: file.name }
+              : { fileBase64: event.target.result, fileName: file.name };
+
+            const res = await api.post('/inventory/receivings/import/preview', payload, {
+              timeout: 120000
+            });
+            processUploadResponse(res.data, file.name, ext, null);
+            setIsUploadingFile(false);
+            setUploadProgress('');
+          } catch (err) {
+            console.error('Import parse error:', err);
+            const msg = err.response?.data?.error || (err.code === 'ECONNABORTED' ? 'Upload timed out. Please try a smaller file or retry.' : err.message) || 'Failed to parse file.';
+            setUploadError(msg);
+            setIsUploadingFile(false);
+          }
+        };
+
+        if (ext === 'csv') reader.readAsText(file);
+        else reader.readAsDataURL(file);
+      } else {
+        // Image or PDF OCR
+        setUploadProgress('Extracting invoice via AI & OCR vision...');
+        reader.onload = async (event) => {
+          try {
+            const res = await api.post('/inventory/receivings/ocr-preview', {
+              fileBase64: event.target.result,
+              fileName: file.name
+            }, {
+              timeout: 120000
+            });
+            processUploadResponse(res.data, file.name, ext, event.target.result);
+            setIsUploadingFile(false);
+            setUploadProgress('');
+          } catch (err) {
+            console.error('OCR preview error:', err);
+            const msg = err.response?.data?.error || (err.code === 'ECONNABORTED' ? 'Invoice processing timed out. Please retry.' : (err.message === 'Network Error' ? 'Network error: could not connect to server or payload was too large. Please retry.' : err.message)) || 'Failed to extract items from invoice.';
+            setUploadError(msg);
+            setIsUploadingFile(false);
+          }
+        };
+
+        reader.readAsDataURL(file);
+      }
+    } catch (err) {
+      setUploadError(err.message);
+      setIsUploadingFile(false);
+    }
+  };
+
+  // Single Item Save to Catalog (Creates record with 0 stock, no stock receipt)
+  const handleSaveImportedItemToCatalog = async (item, cardSupplierId = null) => {
+    try {
+      const payload = {
+        name: item.name.trim(),
+        unit: item.unit,
+        category: item.category || 'General',
+        costPrice: parseFloat(item.costPrice) || 0,
+        stockLevel: 0, // IMPORTANT: Save to catalog does NOT increase stock
+        minThreshold: 10,
+        maxThreshold: 100,
+        supplierId: cardSupplierId ? parseInt(cardSupplierId, 10) : (newItem.supplierId ? parseInt(newItem.supplierId, 10) : null)
+      };
+      await api.post('/inventory', payload);
+      setImportedItems(prev => prev.map(i => i.id === item.id ? { ...i, isNewItem: false, saved: true, catalogMatchName: item.name } : i));
+      setAdditionalDeliveryCards(prev => prev.map(card => ({
+        ...card,
+        items: card.items.map(i => i.id === item.id ? { ...i, isNewItem: false, saved: true, catalogMatchName: item.name } : i)
+      })));
+      if (showToast) showToast(`"${item.name}" saved to catalog! (Stock: 0)`, 'success');
+      if (onRefresh) onRefresh();
+      fetchSummary();
+    } catch (err) {
+      if (showToast) showToast(err.response?.data?.error || 'Failed to save item', 'error');
+    }
+  };
+
+  // Save All New Items in Catalog for Card #1
+  const handleSaveAllImportedToCatalog = async () => {
+    const unsavedNew = importedItems.filter(i => i.isNewItem && !i.saved);
+    if (unsavedNew.length === 0) {
+      if (showToast) showToast('No unsaved new items in Card #1.', 'info');
+      return;
+    }
+    setBulkSavingCatalog(true);
+    setCatalogSaveScope('card-1');
+    try {
+      const itemsPayload = unsavedNew.map((i, rowIndex) => ({
+        rowIndex,
+        name: i.name.trim(),
+        unit: i.unit,
+        category: i.category || 'General',
+        costPrice: parseFloat(i.costPrice) || 0,
+        stockLevel: 0, // Bulk catalog creation with 0 initial stock
+        minThreshold: 10,
+        maxThreshold: 100,
+        supplierId: newItem.supplierId ? parseInt(newItem.supplierId, 10) : null
+      }));
+      const response = await api.post('/inventory/bulk', { items: itemsPayload });
+      const results = response.data?.results || [];
+      const succeeded = new Set(results.filter(r => r.success).map(r => Number(r.index)));
+      setImportedItems(prev => prev.map(i => {
+        const index = unsavedNew.findIndex(row => row.id === i.id);
+        return succeeded.has(index) ? { ...i, isNewItem: false, saved: true, catalogMatchName: i.name } : i;
+      }));
+      const summary = response.data?.summary || {};
+      setCatalogImportResult({ summary, results, total: itemsPayload.length });
+      if (showToast) showToast(`Import summary: ${summary.total ?? itemsPayload.length} total, ${summary.imported ?? summary.savedCount ?? 0} imported, ${summary.duplicates ?? 0} duplicates skipped, ${summary.failed ?? summary.failedCount ?? 0} failed.`, (summary.failed ?? summary.failedCount ?? 0) ? 'warning' : 'success');
+      if (onRefresh) onRefresh();
+      fetchSummary();
+    } catch (err) {
+      if (showToast) showToast(err.response?.data?.error || 'Failed to save new items', 'error');
+    } finally {
+      setBulkSavingCatalog(false);
+      setCatalogSaveScope(null);
+    }
+  };
+
+  // Save All New Items in Catalog for a specific Additional Delivery Card
+  const handleSaveDeliveryCardToCatalog = async (cardId) => {
+    const card = additionalDeliveryCards.find(c => c.id === cardId);
+    if (!card) return;
+    const unsavedNew = (card.items || []).filter(i => i.name && i.name.trim() && !i.saved);
+    if (unsavedNew.length === 0) {
+      if (showToast) showToast(`No unsaved new items for this delivery card.`, 'info');
+      return;
+    }
+    setBulkSavingCatalog(true);
+    setCatalogSaveScope(cardId);
+    try {
+      const itemsPayload = unsavedNew.map((i, rowIndex) => ({
+        rowIndex,
+        name: i.name.trim(),
+        unit: i.unit || 'KG',
+        category: i.category || 'General',
+        costPrice: parseFloat(i.costPrice) || 0,
+        // Catalog creation must not post received quantity to stock.
+        stockLevel: 0,
+        minThreshold: 10,
+        maxThreshold: 100,
+        sku: card.receivingRef || null,
+        supplierId: card.supplierId ? parseInt(card.supplierId, 10) : null,
+        expiryDate: i.expiryDate ? i.expiryDate : null
+      }));
+      const response = await api.post('/inventory/bulk', { items: itemsPayload });
+      const results = response.data?.results || [];
+      const succeeded = new Set(results.filter(r => r.success).map(r => Number(r.index)));
+      setAdditionalDeliveryCards(prev => prev.map(c => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            items: c.items.map(i => {
+              const index = unsavedNew.findIndex(row => row.id === i.id);
+              return succeeded.has(index) ? { ...i, isNewItem: false, saved: true, catalogMatchName: i.name } : i;
+            })
+          };
+        }
+        return c;
+      }));
+      const supLabel = card.supplierName || 'this delivery';
+      const summary = response.data?.summary || {};
+      setCatalogImportResult({ summary, results, total: itemsPayload.length });
+      if (showToast) showToast(`Import summary: ${summary.total ?? itemsPayload.length} total, ${summary.imported ?? summary.savedCount ?? 0} imported, ${summary.duplicates ?? 0} duplicates skipped, ${summary.failed ?? summary.failedCount ?? 0} failed.`, (summary.failed ?? summary.failedCount ?? 0) ? 'warning' : 'success');
+      if (onRefresh) onRefresh();
+      fetchSummary();
+    } catch (err) {
+      if (showToast) showToast(err.response?.data?.error || 'Failed to save card items', 'error');
+    } finally {
+      setBulkSavingCatalog(false);
+      setCatalogSaveScope(null);
+    }
+  };
+
+  // Save All Deliveries in Catalog (Card 1 + all additional delivery cards)
+  const handleSaveAllDeliveriesToCatalog = async () => {
+    const allUnsaved = [];
+
+    // Pull from ingredientCards or importedItems
+    const card1Unsaved = ingredientCards.length > 0
+      ? ingredientCards.filter(c => c.name && c.name.trim() && !c.saved)
+      : importedItems.filter(i => i.isNewItem && !i.saved);
+
+    card1Unsaved.forEach(i => {
+      allUnsaved.push({
+        name: i.name.trim(),
+        unit: i.unit || 'KG',
+        category: i.category || 'General',
+        costPrice: parseFloat(i.costPrice) || 0,
+        stockLevel: 0, // IMPORTANT: Catalog entries are saved with 0 stock
+        minThreshold: parseFloat(i.minThreshold) || 10,
+        maxThreshold: parseFloat(i.maxThreshold) || 100,
+        sku: newItem.sku || null,
+        supplierId: i.supplierId ? parseInt(i.supplierId, 10) : (newItem.supplierId ? parseInt(newItem.supplierId, 10) : null),
+        expiryDate: i.expiryDate ? i.expiryDate : null
+      });
+    });
+
+    additionalDeliveryCards.forEach(card => {
+      (card.items || []).filter(i => i.name && i.name.trim() && !i.saved).forEach(i => {
+        allUnsaved.push({
+          name: i.name.trim(),
+          unit: i.unit || 'KG',
+          category: i.category || 'General',
+          costPrice: parseFloat(i.costPrice) || 0,
+          stockLevel: 0, // IMPORTANT: Catalog entries are saved with 0 stock
+          minThreshold: 10,
+          maxThreshold: 100,
+          sku: card.receivingRef || null,
+          supplierId: card.supplierId ? parseInt(card.supplierId, 10) : null,
+          expiryDate: i.expiryDate ? i.expiryDate : null
+        });
+      });
+    });
+
+    if (allUnsaved.length === 0) {
+      if (showToast) showToast('All items across all deliveries are already saved in the catalog.', 'info');
+      return;
+    }
+
+    setBulkSavingCatalog(true);
+    setCatalogSaveScope('all');
+    try {
+      const response = await api.post('/inventory/bulk', { items: allUnsaved.map((item, rowIndex) => ({ ...item, rowIndex })) });
+      const results = response.data?.results || [];
+      const savedNames = new Set(results.filter(r => r.success).map(r => String(r.name || '').toLowerCase().trim()));
+      setIngredientCards(prev => prev.map(c => savedNames.has(String(c.name || '').toLowerCase().trim()) ? { ...c, isNewItem: false, saved: true } : c));
+      setImportedItems(prev => prev.map(i => savedNames.has(String(i.name || '').toLowerCase().trim()) ? { ...i, isNewItem: false, saved: true } : i));
+      setAdditionalDeliveryCards(prev => prev.map(c => ({ ...c, items: c.items.map(i => savedNames.has(String(i.name || '').toLowerCase().trim()) ? { ...i, isNewItem: false, saved: true } : i) })));
+      const summary = response.data?.summary || {};
+      setCatalogImportResult({ summary, results, total: allUnsaved.length });
+      if (showToast) showToast(`Import summary: ${summary.total ?? allUnsaved.length} total, ${summary.imported ?? summary.savedCount ?? 0} imported, ${summary.duplicates ?? 0} duplicates skipped, ${summary.failed ?? summary.failedCount ?? 0} failed.`, (summary.failed ?? summary.failedCount ?? 0) ? 'warning' : 'success');
+      if (onRefresh) onRefresh();
+      fetchSummary();
+    } catch (err) {
+      if (showToast) showToast(err.response?.data?.error || 'Failed to save all items', 'error');
+    } finally {
+      setBulkSavingCatalog(false);
+      setCatalogSaveScope(null);
+    }
+  };
+
+  // Save Draft (supplier-wise) from Add Ingredient modal → /inventory/receivings DRAFT
+  // Draft save does NOT add items to catalog immediately.
+  // Known catalog items go in `items[]`; truly new items go in `draftNewItems[]`.
+  // New items are materialized into catalog+stock only when confirmed from Receiving History.
+  const handleSaveDraftFromAddForm = async () => {
+    if (draftSaveLock.current || savingDraft || bulkSavingCatalog) return;
+    const invalidPrimaryItem = ingredientCards.find(item => item.name?.trim() && !(Number.parseFloat(item.stockLevel) > 0));
+    const invalidAdditional = additionalDeliveryCards.map((card, index) => ({
+      card,
+      cardNumber: index + 2,
+      item: (card.items || []).find(entry => entry.name?.trim() && !(Number.parseFloat(entry.stockLevel ?? entry.quantity) > 0))
+    })).find(entry => entry.item);
+    if (invalidPrimaryItem || invalidAdditional) {
+      const label = invalidPrimaryItem ? `Card #1 item “${invalidPrimaryItem.name.trim()}”` : `Card #${invalidAdditional.cardNumber} item “${invalidAdditional.item.name.trim()}”`;
+      const message = `${label} needs a quantity greater than zero. No supplier drafts were saved; correct the quantity and try again.`;
+      setDraftSaveResult({ success: false, message });
+      showToast?.(message, 'error');
+      return;
+    }
+    draftSaveLock.current = true;
+    setSavingDraft(true);
+    let draftCount = 0;
+    let draftAttempts = 0;
+    try {
+      // ── Step 1: Fetch existing inventory to resolve IDs ──
+      const invRes = await api.get('/inventory');
+      const freshInventory = invRes.data?.items || invRes.data || [];
+      const findId = (name) => {
+        const match = freshInventory.find(i => i.name.toLowerCase().trim() === (name || '').toLowerCase().trim());
+        return match?.id || null;
+      };
+
+      // ── Step 2: Card #1 draft ──
+      const card1ValidItems = ingredientCards.filter(c => c.name && c.name.trim());
+      if (card1ValidItems.length > 0) {
+        const card1KnownItems = [];
+        const card1NewItems = [];
+        card1ValidItems.forEach(c => {
+          const id = findId(c.name);
+          const qty = parseFloat(c.stockLevel) || 0;
+          if (id && qty > 0) {
+            card1KnownItems.push({
+              inventoryItemId: id,
+              quantity: qty,
+              unit: c.unit || 'KG',
+              unitCost: parseFloat(c.costPrice) || 0,
+              batchNumber: newItem.batchNumber?.trim() || null,
+              expiryDate: c.expiryDate || null,
+              notes: null
+            });
+          } else if (!id && qty > 0) {
+            card1NewItems.push({
+              name: c.name.trim(),
+              quantity: qty,
+              unit: c.unit || 'KG',
+              costPrice: parseFloat(c.costPrice) || 0,
+              category: c.category || 'General',
+              expiryDate: c.expiryDate || null,
+              batchNumber: newItem.batchNumber?.trim() || null,
+            });
+          }
+        });
+
+        if (card1KnownItems.length > 0 || card1NewItems.length > 0) {
+          draftAttempts++;
+          await api.post('/inventory/receivings', {
+            supplierId: newItem.supplierId ? parseInt(newItem.supplierId, 10) : null,
+            receivingRef: newItem.sku?.trim() || '',
+            invoiceNumber: newItem.supplierInvoiceNumber?.trim() || null,
+            batchNumber: newItem.batchNumber?.trim() || null,
+            receivingDate: newItem.receivingDate || new Date().toISOString().slice(0, 10),
+            notes: null,
+            status: 'DRAFT',
+            discount: calculateCardDiscount(sumInventorySubtotals(card1ValidItems), card1Discount, card1DiscountMode),
+            discountPercent: card1DiscountMode === 'PERCENT' ? Number(card1Discount) || 0 : null,
+            items: card1KnownItems,
+            draftNewItems: card1NewItems
+          });
+          draftCount++;
+        }
+      }
+
+      // ── Step 3: Additional delivery card drafts ──
+      for (const card of additionalDeliveryCards) {
+        const cardKnownItems = [];
+        const cardNewItems = [];
+        (card.items || []).filter(i => i.name && i.name.trim()).forEach(i => {
+          const id = findId(i.name);
+          const qty = parseFloat(i.stockLevel ?? i.quantity) || 0;
+          if (id && qty > 0) {
+            cardKnownItems.push({
+              inventoryItemId: id,
+              quantity: qty,
+              unit: i.unit || 'KG',
+              unitCost: parseFloat(i.costPrice) || 0,
+              batchNumber: card.batchNumber?.trim() || null,
+              expiryDate: i.expiryDate || null,
+              notes: null
+            });
+          } else if (!id && qty > 0) {
+            cardNewItems.push({
+              name: i.name.trim(),
+              quantity: qty,
+              unit: i.unit || 'KG',
+              costPrice: parseFloat(i.costPrice) || 0,
+              category: i.category || 'General',
+              expiryDate: i.expiryDate || null,
+              batchNumber: card.batchNumber?.trim() || null,
+            });
+          }
+        });
+
+        if (cardKnownItems.length > 0 || cardNewItems.length > 0) {
+          draftAttempts++;
+          await api.post('/inventory/receivings', {
+            supplierId: card.supplierId ? parseInt(card.supplierId, 10) : null,
+            receivingRef: card.receivingRef?.trim() || '',
+            invoiceNumber: card.supplierInvoiceNumber?.trim() || null,
+            batchNumber: card.batchNumber?.trim() || null,
+            receivingDate: card.receivingDate || new Date().toISOString().slice(0, 10),
+            notes: null,
+            status: 'DRAFT',
+            discount: calculateCardDiscount(sumInventorySubtotals(card.items || []), card.discountAmount, card.discountMode),
+            discountPercent: card.discountMode === 'PERCENT' ? Number(card.discountAmount) || 0 : null,
+            items: cardKnownItems,
+            draftNewItems: cardNewItems
+          });
+          draftCount++;
+        }
+      }
+
+      if (draftCount > 0) {
+        setDraftSaveResult({ success: true, message: `Saved ${draftCount} supplier draft${draftCount === 1 ? '' : 's'}. Stock has not changed.` });
+        if (showToast) showToast(
+          `Saved ${draftCount} draft receiving${draftCount > 1 ? 's' : ''} successfully! New items will be added to catalog when confirmed.`,
+          'success'
+        );
+        fetchReceivings();
+      } else {
+        setDraftSaveResult({ success: false, message: 'No items with a valid name and quantity were found. Your entries are still available to edit.' });
+        if (showToast) showToast('No items with valid quantities found to save as draft.', 'warning');
+      }
+      if (onRefresh) onRefresh();
+      fetchSummary();
+    } catch (err) {
+      const reason = err.response?.data?.error || 'Draft could not be saved.';
+      if (draftCount > 0) {
+        if (onRefresh) onRefresh();
+        fetchReceivings();
+      }
+      setDraftSaveResult({ success: false, message: draftCount > 0
+        ? `${draftCount} of ${draftAttempts} supplier drafts were saved. Stock was not changed. Remaining form data is kept. Failure: ${reason}`
+        : `${reason} Your entered data has been kept.` });
+      if (showToast) showToast(err.response?.data?.error || 'Failed to save draft. Please try again.', 'error');
+    } finally {
+      draftSaveLock.current = false;
+      setSavingDraft(false);
+    }
+  };
+
+  const confirmAddSaveAction = () => {
+    const { action, cardId = null } = pendingAddSaveAction || {};
+    setPendingAddSaveAction(null);
+    if (action === 'DRAFT') {
+      if (cardId) handleSaveDraftSingleCard(cardId);
+      else handleSaveDraftFromAddForm();
+      return;
+    }
+    if (cardId === 'card-1') {
+      handleSaveAllIngredientCardsToCatalog();
+      return;
+    }
+    if (cardId) {
+      handleSaveDeliveryCardToCatalog(cardId);
+      return;
+    }
+    if (additionalDeliveryCards.length > 0) {
+      handleSaveAllDeliveriesToCatalog();
+    } else {
+      handleSaveAllIngredientCardsToCatalog();
+    }
+  };
+
+  // Save Draft for a SINGLE supplier card (Card #1 or any additional card)
+  // Known catalog items → items[]; new/unsaved items → draftNewItems[] (deferred to confirm).
+  const handleSaveDraftSingleCard = async (cardId) => {
+    if (draftSaveLock.current || savingDraft || bulkSavingCatalog) return;
+    const isCard1 = cardId === 'card-1';
+    const card = isCard1 ? null : additionalDeliveryCards.find(c => c.id === cardId);
+    const rawItems = isCard1 ? ingredientCards : (card?.items || []);
+    const invalidItem = rawItems.find(item => item.name?.trim() && !(Number.parseFloat(item.stockLevel ?? item.quantity) > 0));
+    if (invalidItem) {
+      const cardLabel = isCard1 ? 'Card #1' : `Card #${additionalDeliveryCards.findIndex(c => c.id === cardId) + 2}`;
+      const message = `${cardLabel} item “${invalidItem.name.trim()}” needs a quantity greater than zero. This draft was not saved.`;
+      setDraftSaveResult({ success: false, message });
+      showToast?.(message, 'error');
+      return;
+    }
+    draftSaveLock.current = true;
+    setSavingDraft(true);
+    try {
+      const namedItems = rawItems.filter(i => i.name && i.name.trim());
+
+      // Fetch existing inventory to resolve IDs
+      const invRes = await api.get('/inventory');
+      const freshInventory = invRes.data?.items || invRes.data || [];
+      const findId = (name) => {
+        const match = freshInventory.find(i => i.name.toLowerCase().trim() === (name || '').toLowerCase().trim());
+        return match?.id || null;
+      };
+
+      const knownItems = [];
+      const newItems = [];
+      const batchNum = isCard1 ? (newItem.batchNumber?.trim() || null) : (card?.batchNumber?.trim() || null);
+
+      namedItems.forEach(i => {
+        const id = findId(i.name);
+        const qty = parseFloat(i.stockLevel ?? i.quantity) || 0;
+        if (id && qty > 0) {
+          knownItems.push({
+            inventoryItemId: id,
+            quantity: qty,
+            unit: i.unit || 'KG',
+            unitCost: parseFloat(i.costPrice) || 0,
+            batchNumber: batchNum,
+            expiryDate: i.expiryDate || null,
+            notes: null
+          });
+        } else if (!id && qty > 0) {
+          newItems.push({
+            name: i.name.trim(),
+            quantity: qty,
+            unit: i.unit || 'KG',
+            costPrice: parseFloat(i.costPrice) || 0,
+            category: i.category || 'General',
+            expiryDate: i.expiryDate || null,
+            batchNumber: batchNum,
+          });
+        }
+      });
+
+      if (knownItems.length === 0 && newItems.length === 0) {
+        if (showToast) showToast('No items with valid quantities found to save as draft.', 'warning');
+        return;
+      }
+
+      await api.post('/inventory/receivings', {
+        supplierId: isCard1
+          ? (newItem.supplierId ? parseInt(newItem.supplierId, 10) : null)
+          : (card?.supplierId ? parseInt(card.supplierId, 10) : null),
+        receivingRef: isCard1 ? (newItem.sku?.trim() || '') : (card?.receivingRef?.trim() || ''),
+        invoiceNumber: isCard1
+          ? (newItem.supplierInvoiceNumber?.trim() || null)
+          : (card?.supplierInvoiceNumber?.trim() || null),
+        batchNumber: batchNum,
+        receivingDate: isCard1
+          ? (newItem.receivingDate || new Date().toISOString().slice(0, 10))
+          : (card?.receivingDate || new Date().toISOString().slice(0, 10)),
+        notes: null,
+        status: 'DRAFT',
+        discount: isCard1
+          ? calculateCardDiscount(sumInventorySubtotals(rawItems), card1Discount, card1DiscountMode)
+          : calculateCardDiscount(sumInventorySubtotals(rawItems), card?.discountAmount, card?.discountMode),
+        discountPercent: isCard1
+          ? (card1DiscountMode === 'PERCENT' ? Number(card1Discount) || 0 : null)
+          : (card?.discountMode === 'PERCENT' ? Number(card.discountAmount) || 0 : null),
+        items: knownItems,
+        draftNewItems: newItems
+      });
+
+      const cardLabel = isCard1 ? 'Card #1' : `Card #${additionalDeliveryCards.findIndex(c => c.id === cardId) + 2}`;
+      if (showToast) showToast(
+        `Draft saved for ${cardLabel} successfully! New items will be added to catalog when confirmed.`,
+        'success'
+      );
+      setDraftSaveResult({ success: true, message: `Draft saved for ${cardLabel}. Stock has not changed.` });
+      if (onRefresh) onRefresh();
+      fetchSummary();
+    } catch (err) {
+      setDraftSaveResult({ success: false, message: err.response?.data?.error || 'Draft could not be saved. Your entered data has been kept.' });
+      if (showToast) showToast(err.response?.data?.error || 'Failed to save draft. Please try again.', 'error');
+    } finally {
+      draftSaveLock.current = false;
+      setSavingDraft(false);
+    }
   };
 
   // Supplier modal
@@ -559,15 +2072,70 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
     }
   };
 
-  const handleDeleteItem = async (itemId, itemName) => {
-    if (!window.confirm(`Are you sure you want to delete "${itemName}" from catalog?`)) return;
+  const handleToggleSelect = (id) => {
+    setSelectedInventoryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedInventoryIds.size === paginatedStock.length && paginatedStock.length > 0) {
+      setSelectedInventoryIds(new Set());
+    } else {
+      setSelectedInventoryIds(new Set(paginatedStock.map((i) => i.id)));
+    }
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedInventoryIds(new Set());
+    setSelectionMode((active) => !active);
+  };
+
+  const handleDeleteItem = (itemId, itemName) => {
+    setItemToDelete({ id: itemId, name: itemName });
+    setIsBulkDeleting(false);
+    setDeleteModalOpen(true);
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedInventoryIds.size === 0) return;
+    setIsBulkDeleting(true);
+    setItemToDelete(null);
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    setDeleteLoading(true);
     try {
-      await api.delete(`/inventory/${itemId}`);
-      if (showToast) showToast(`Deleted "${itemName}" from catalog.`);
+      if (isBulkDeleting) {
+        const res = await api.delete('/inventory/items/bulk', {
+          data: { ids: Array.from(selectedInventoryIds) }
+        });
+        if (showToast) showToast(res.data?.message || 'Selected items deleted successfully.');
+        setSelectedInventoryIds(new Set());
+      } else if (itemToDelete) {
+        await api.delete(`/inventory/${itemToDelete.id}`);
+        if (showToast) showToast(`Deleted "${itemToDelete.name}" from catalog.`);
+      }
+      setDeleteModalOpen(false);
+      setItemToDelete(null);
+      if (selectedItemForDetails && itemToDelete && selectedItemForDetails.id === itemToDelete.id) {
+        setSelectedItemForDetails(null);
+      }
       if (onRefresh) onRefresh();
       fetchSummary();
     } catch (err) {
-      if (showToast) showToast(err.response?.data?.error || 'Failed to delete item', 'error');
+      console.error('Delete inventory error:', err);
+      const msg = err.response?.data?.error || 'Failed to delete item(s).';
+      if (showToast) showToast(msg, 'error');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -611,10 +2179,10 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
         </div>
 
         {/* Action Buttons: + Add Item, Receive Stock, Import Excel */}
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-nowrap items-center gap-1.5 w-full sm:w-auto overflow-x-auto">
           <button
             onClick={() => setShowAddItemModal(true)}
-            className="px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            className="shrink-0 px-2.5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center gap-1 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Add Item</span>
@@ -622,7 +2190,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
 
           <button
             onClick={() => setActiveTab('STOCK_IN')}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            className="shrink-0 px-2.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center gap-1 cursor-pointer"
           >
             <Truck className="w-4 h-4" />
             <span>Receive Stock</span>
@@ -630,7 +2198,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
 
           <button
             onClick={handleExportCSV}
-            className="px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] hover:border-orange-500/50 text-[var(--text-main)] rounded-2xl text-xs font-extrabold transition-all cursor-pointer flex items-center space-x-1.5"
+            className="shrink-0 px-2.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] hover:border-orange-500/50 text-[var(--text-main)] rounded-2xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
@@ -872,9 +2440,22 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
 
             {/* Sorting & Results Count Row */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2 border-t border-[var(--border-color)]/60 text-xs">
-              <span className="text-[var(--text-muted)] font-medium">
-                Showing <strong className="text-[var(--text-main)]">{filteredAndSortedStock.length}</strong> items
-              </span>
+              <div className="flex items-center space-x-3">
+                <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedInventoryIds.size} />
+                <span className="text-[var(--text-muted)] font-medium">
+                  Showing <strong className="text-[var(--text-main)]">{filteredAndSortedStock.length}</strong> items
+                </span>
+                {selectionMode && selectedInventoryIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleBulkDelete}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-md shadow-rose-900/30 transition-all cursor-pointer animate-scale-up"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Selected ({selectedInventoryIds.size})</span>
+                  </button>
+                )}
+              </div>
 
               <div className="flex items-center space-x-2 w-full sm:w-auto">
                 <span className="text-[10px] font-black uppercase text-[var(--text-muted)] tracking-wider shrink-0">
@@ -920,6 +2501,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
+                        {selectionMode && <th className="p-4 w-10">
+                          <input
+                            type="checkbox"
+                            checked={paginatedStock.length > 0 && selectedInventoryIds.size === paginatedStock.length}
+                            onChange={handleToggleSelectAll}
+                            className="rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500/20 cursor-pointer"
+                          />
+                        </th>}
                         <th className="p-4">Item</th>
                         <th className="p-4">Category</th>
                         <th className="p-4">Stock Level</th>
@@ -934,9 +2523,25 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
                         const stockVal = parseFloat(item.stockLevel) || 0;
                         const minVal = parseFloat(item.minThreshold) || 10;
                         const percent = Math.min(100, Math.max(10, (stockVal / (minVal * 3)) * 100));
+                        const isSelected = selectedInventoryIds.has(item.id);
 
                         return (
-                          <tr key={item.id} className="hover:bg-[var(--bg-color)]/40 transition-colors">
+                          <tr
+                            key={item.id}
+                            className={`transition-colors ${
+                              isSelected
+                                ? 'bg-orange-500/10 hover:bg-orange-500/15'
+                                : 'hover:bg-[var(--bg-color)]/40'
+                            }`}
+                          >
+                            {selectionMode && <td className="p-4 w-10">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleSelect(item.id)}
+                                className="rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500/20 cursor-pointer"
+                              />
+                            </td>}
                             
                             {/* Item Name & Subtitle */}
                             <td className="p-4">
@@ -1060,12 +2665,24 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
                   return (
                     <div
                       key={item.id}
-                      className="p-4 rounded-2xl bg-[var(--card-bg)] border border-[var(--border-color)] space-y-3 shadow-sm"
+                      className={`p-4 rounded-2xl border space-y-3 shadow-sm transition-colors ${
+                        selectedInventoryIds.has(item.id)
+                          ? 'bg-orange-500/10 border-orange-500/30'
+                          : 'bg-[var(--card-bg)] border-[var(--border-color)]'
+                      }`}
                     >
                       <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="text-xs font-black text-[var(--text-main)]">{item.name}</h4>
-                          <span className="text-[10px] text-orange-400 font-bold uppercase">{item.category || 'General'}</span>
+                        <div className="flex items-start space-x-2.5">
+                          {selectionMode && <input
+                            type="checkbox"
+                            checked={selectedInventoryIds.has(item.id)}
+                            onChange={() => handleToggleSelect(item.id)}
+                            className="mt-0.5 rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500/20 cursor-pointer"
+                          />}
+                          <div>
+                            <h4 className="text-xs font-black text-[var(--text-main)]">{item.name}</h4>
+                            <span className="text-[10px] text-orange-400 font-bold uppercase">{item.category || 'General'}</span>
+                          </div>
                         </div>
 
                         <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border ${
@@ -1111,6 +2728,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
                           >
                             Adjust
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteItem(item.id, item.name)}
+                            className="p-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                            title="Delete Item"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1152,15 +2777,15 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
         </div>
       )}
 
-      {/* TAB 2: STOCK IN RECEIVING */}
-      {activeTab === 'STOCK_IN' && (
+      {/* TAB 2: STOCK IN RECEIVING (Kept mounted to preserve scanned invoice and review table state across tabs) */}
+      <div className={activeTab === 'STOCK_IN' ? 'block' : 'hidden'}>
         <AdminInventoryReceivingView
           inventory={inventory}
           suppliers={suppliersList}
           onRefresh={onRefresh}
           showToast={showToast}
         />
-      )}
+      </div>
 
       {/* TAB 3: RECIPES */}
       {activeTab === 'RECIPES' && (
@@ -1208,6 +2833,8 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
         <AdminActivityLogsView
           logs={logs}
           receivings={receivingsList}
+          onRefresh={() => { fetchLogs(); fetchReceivings(); if (onRefresh) onRefresh(); }}
+          showToast={showToast}
         />
       )}
 
@@ -1466,462 +3093,1660 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast })
         document.body
       )}
 
-      {/* Add New Item Modal — Portal to document.body for true screen centering */}
+      {/* Add New Item Modal — Professional 4-Card Interface (Card A: Presets, Card B: Import, Card C: Review, Card D: Manual) */}
       {showAddItemModal && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-xl w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-scale-up my-auto max-h-[92vh] flex flex-col">
+        <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-5xl w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-scale-up my-auto max-h-[92vh] flex flex-col">
             
             {/* Modal Header */}
-            <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3 shrink-0">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-[var(--border-color)] pb-3.5 shrink-0">
               <div>
-                <h3 className="text-base font-black text-[var(--text-main)] font-display flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-black text-[var(--text-main)] font-display flex items-center gap-2">
                   <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">📦</span>
                   Add New Ingredient Item
                 </h3>
                 <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                  Pick from catalog presets below or type custom item details.
+                  Pick standard catalog presets, import via Excel/invoice OCR, or type custom details manually.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddItemModal(false);
-                  setIngredientSearch('');
-                  setShowSuggestions(false);
-                }}
-                className="p-2 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer border border-[var(--border-color)]"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              {/* Mode switch pills */}
+              <div className="flex items-center gap-1.5 bg-[var(--bg-color)] p-1 rounded-2xl border border-[var(--border-color)] text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setActiveAddTab('ALL')}
+                  className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${activeAddTab === 'ALL' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
+                >
+                  All Sections
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAddTab('PRESETS')}
+                  className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${activeAddTab === 'PRESETS' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
+                >
+                  ⚡ Presets
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAddTab('IMPORT')}
+                  className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${activeAddTab === 'IMPORT' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
+                >
+                  📤 Import
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAddTab('MANUAL')}
+                  className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${activeAddTab === 'MANUAL' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
+                >
+                  ✍️ Manual Form
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddItemModal(false);
+                    setIngredientSearch('');
+                    setShowSuggestions(false);
+                  }}
+                  className="p-1 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] ml-1 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Scrollable Form Body */}
-            <form onSubmit={handleCreateItem} className="space-y-4 text-xs overflow-y-auto pr-1 flex-1">
-              
-              {/* Field 1: Ingredient Name with Live Autocomplete */}
-              <div className="relative">
-                <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px] flex justify-between">
-                  <span>Ingredient Name *</span>
-                  <span className="text-[10px] text-orange-400 font-normal lowercase">Type to search presets or enter custom</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    value={newItem.name}
-                    onFocus={() => setShowSuggestions(true)}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setNewItem({ ...newItem, name: val });
-                      setIngredientSearch(val);
-                      setShowSuggestions(true);
+            {/* Scrollable Content Container */}
+            <div className="space-y-4 overflow-y-auto pr-1 flex-1 text-xs">
 
-                      const matched = INGREDIENT_PRESETS.find(
-                        p => p.name.toLowerCase().trim() === val.toLowerCase().trim()
-                      );
-                      if (matched) {
-                        setNewItem(prev => ({
-                          ...prev,
-                          name: matched.name,
-                          unit: matched.unit,
-                          category: matched.category
-                        }));
-                      }
-                    }}
-                    placeholder="Search or type ingredient name (e.g. Chicken, Aloo, Oil)..."
-                    className="w-full pl-9 pr-4 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500 font-bold tracking-wide"
-                  />
-                  <Search className="w-4 h-4 absolute left-3 top-3 text-[var(--text-muted)]" />
-                </div>
-
-                {/* Autocomplete Suggestions Dropdown */}
-                {showSuggestions && ingredientSearch.trim().length > 0 && (
-                  <div className="absolute z-50 left-0 right-0 mt-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl max-h-52 overflow-y-auto divide-y divide-[var(--border-color)]">
-                    {(() => {
-                      const query = ingredientSearch.toLowerCase().trim();
-                      const matches = INGREDIENT_PRESETS.filter(p => 
-                        p.name.toLowerCase().includes(query) ||
-                        p.label.toLowerCase().includes(query) ||
-                        p.category.toLowerCase().includes(query) ||
-                        (p.aliases && p.aliases.some(a => a.toLowerCase().includes(query)))
-                      );
-
-                      if (matches.length === 0) {
-                        return (
-                          <div className="p-3 text-center text-[var(--text-muted)] text-[11px]">
-                            No preset matching "<span className="text-[var(--text-main)] font-semibold">{ingredientSearch}</span>". Custom item will be created! ✨
-                          </div>
-                        );
-                      }
-
-                      return matches.slice(0, 10).map((item, idx) => {
-                        const exists = inventory.some(i => i.name.toLowerCase().trim() === item.name.toLowerCase().trim());
-                        return (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => {
-                              setNewItem({
-                                ...newItem,
-                                name: item.name,
-                                unit: item.unit,
-                                category: item.category
-                              });
-                              setIngredientSearch(item.name);
-                              setShowSuggestions(false);
-                            }}
-                            className="w-full text-left px-3.5 py-2 hover:bg-orange-500/10 transition-colors flex items-center justify-between group cursor-pointer"
-                          >
-                            <div className="flex items-center space-x-2">
-                              <span className="text-sm">{item.label.split(' ')[0]}</span>
-                              <div>
-                                <span className="font-bold text-[var(--text-main)] group-hover:text-orange-400">{item.name}</span>
-                                <span className="ml-2 text-[10px] text-[var(--text-muted)]">({item.category})</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-[var(--bg-color)] text-orange-400 border border-orange-500/20">
-                                {item.unit}
-                              </span>
-                              {exists && <span className="text-[10px] text-emerald-400 font-extrabold" title="Already in catalog">✓ In Stock</span>}
-                            </div>
-                          </button>
-                        );
-                      });
-                    })()}
+              {/* ======================================================== */}
+              {/* CARD A: QUICK PICK PRESETS                               */}
+              {/* ======================================================== */}
+              {(activeAddTab === 'ALL' || activeAddTab === 'PRESETS') && (
+                <div className="bg-[var(--bg-color)]/70 border border-[var(--border-color)] p-4 rounded-2xl space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--border-color)]/60 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="p-1 rounded-lg bg-orange-500/10 text-orange-400 font-bold">⚡ Card A</span>
+                      <h4 className="font-black text-xs text-[var(--text-main)] uppercase tracking-wider">
+                        Quick Pick Presets (Click to Auto-Fill):
+                      </h4>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={quickPickSearch}
+                        onChange={(e) => setQuickPickSearch(e.target.value)}
+                        placeholder="Search 200+ presets..."
+                        className="pl-7 pr-3 py-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500 w-44 font-medium"
+                      />
+                      <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-[var(--text-muted)]" />
+                    </div>
                   </div>
-                )}
-              </div>
 
-                            {/* Quick Pick Presets Section — Categorized & Collapsible */}
-              <div className="bg-[var(--bg-color)]/60 border border-[var(--border-color)] p-3 rounded-2xl space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm">⚡</span>
-                    <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">
-                      Quick Pick Presets (Click to Auto-Fill):
+                  {/* Target Delivery / Supplier Selection Strip for Presets */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-[var(--card-bg)]/90 border border-[var(--border-color)] text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold text-[var(--text-muted)] flex items-center gap-1">
+                        <Target className="w-3.5 h-3.5 text-orange-400" />
+                        <span>Add Presets into:</span>
+                      </span>
+
+                      {/* Card #1 Selector Pill */}
+                      <button
+                        type="button"
+                        onClick={() => setActiveTargetCardId('card-1')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          activeTargetCardId === 'card-1'
+                            ? 'bg-orange-500 text-white shadow-sm ring-2 ring-orange-500/30'
+                            : 'bg-[var(--bg-color)] text-[var(--text-main)] hover:bg-orange-500/10 border border-[var(--border-color)]'
+                        }`}
+                      >
+                        <span>📋 Card #1</span>
+                        <span className="text-[10px] opacity-80">
+                          ({suppliersList.find(s => String(s.id) === String(newItem.supplierId))?.name || 'Local / Supplier 1'})
+                        </span>
+                        {activeTargetCardId === 'card-1' && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
+                      </button>
+
+                      {/* Additional Delivery Cards Selector Pills */}
+                      {additionalDeliveryCards.map((card, cIdx) => (
+                        <button
+                          key={card.id}
+                          type="button"
+                          onClick={() => setActiveTargetCardId(card.id)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                            activeTargetCardId === card.id
+                              ? 'bg-orange-600 text-white shadow-sm ring-2 ring-orange-500/30'
+                              : 'bg-[var(--bg-color)] text-[var(--text-main)] hover:bg-orange-500/10 border border-[var(--border-color)]'
+                          }`}
+                        >
+                          <span>🏢 Card #{cIdx + 2}</span>
+                          <span className="text-[10px] opacity-80">
+                            ({card.supplierName || 'Different Supplier'})
+                          </span>
+                          {activeTargetCardId === card.id && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
+                        </button>
+                      ))}
+
+                      {/* Quick Add Supplier Card from Presets bar */}
+                      <button
+                        type="button"
+                        onClick={handleAddNewDeliveryCard}
+                        className="px-2 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 text-[10px] font-bold border border-orange-500/20 flex items-center gap-1 transition-all cursor-pointer"
+                        title="Add another delivery card for a different supplier"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>New Supplier</span>
+                      </button>
+                    </div>
+
+                    <span className="text-[10px] text-orange-400 font-medium hidden sm:inline">
+                      Click any preset below to add directly into the selected supplier card.
                     </span>
                   </div>
-                  <input
-                    type="text"
-                    value={quickPickSearch}
-                    onChange={(e) => setQuickPickSearch(e.target.value)}
-                    placeholder="Filter presets..."
-                    className="px-2.5 py-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg text-[10px] text-[var(--text-main)] focus:outline-none focus:border-orange-500 w-32 font-medium"
-                  />
+
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {QUICK_PICK_GROUPS.map((group, gIdx) => {
+                      const groupItems = INGREDIENT_PRESETS.filter(p => p.category === group.category);
+                      const filtered = groupItems.filter(p =>
+                        !quickPickSearch ||
+                        p.label.toLowerCase().includes(quickPickSearch.toLowerCase()) ||
+                        p.name.toLowerCase().includes(quickPickSearch.toLowerCase()) ||
+                        (p.aliases && p.aliases.some(a => a.toLowerCase().includes(quickPickSearch.toLowerCase())))
+                      );
+
+                      if (quickPickSearch && filtered.length === 0) return null;
+                      const isExpanded = quickPickSearch ? true : (expandedCategories[group.category] ?? (gIdx === 0));
+
+                      return (
+                        <div key={gIdx} className="border border-[var(--border-color)]/60 rounded-xl overflow-hidden bg-[var(--card-bg)]/40">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedCategories(prev => ({ ...prev, [group.category]: !isExpanded }))}
+                            className="w-full px-3 py-1.5 flex items-center justify-between text-[11px] font-bold text-[var(--text-main)] hover:bg-orange-500/5 transition-colors cursor-pointer"
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <span>{group.icon}</span>
+                              <span>{group.label}</span>
+                              <span className="text-[9px] font-normal text-[var(--text-muted)]">({filtered.length})</span>
+                            </span>
+                            <span className="text-[10px] text-[var(--text-muted)] font-mono">{isExpanded ? '▲' : '▼'}</span>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="p-2 border-t border-[var(--border-color)]/40 flex flex-wrap gap-1.5 bg-[var(--bg-color)]/30">
+                              {filtered.map((preset, pIdx) => {
+                                const exists = inventory.some(i => i.name.toLowerCase().trim() === preset.name.toLowerCase().trim());
+                                return (
+                                  <button
+                                    key={pIdx}
+                                    type="button"
+                                    onClick={() => handleSelectPresetForCard(preset)}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center space-x-1 border ${
+                                      exists
+                                        ? 'bg-[var(--card-bg)] text-[var(--text-muted)] border-[var(--border-color)] opacity-70'
+                                        : 'bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20 hover:scale-105'
+                                    }`}
+                                  >
+                                    <span>{preset.label}</span>
+                                    {exists && <span className="text-[9px] text-emerald-400 font-extrabold ml-1">✓ In Stock</span>}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
+              )}
 
-                <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
-                  {QUICK_PICK_GROUPS.map((group, gIdx) => {
-                    const groupItems = INGREDIENT_PRESETS.filter(p => p.category === group.category);
-                    const filtered = groupItems.filter(p => 
-                      !quickPickSearch || 
-                      p.label.toLowerCase().includes(quickPickSearch.toLowerCase()) || 
-                      p.name.toLowerCase().includes(quickPickSearch.toLowerCase()) ||
-                      (p.aliases && p.aliases.some(a => a.toLowerCase().includes(quickPickSearch.toLowerCase())))
-                    );
+              {/* ======================================================== */}
+              {/* CARD B: IMPORT ITEMS (EXCEL, CSV, IMAGE, PDF)            */}
+              {/* ======================================================== */}
+              {(activeAddTab === 'ALL' || activeAddTab === 'IMPORT') && (
+                <div className="bg-[var(--bg-color)]/70 border border-[var(--border-color)] p-4 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between border-b border-[var(--border-color)]/60 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="p-1 rounded-lg bg-emerald-500/10 text-emerald-400 font-bold">📥 Card B</span>
+                      <h4 className="font-black text-xs text-[var(--text-main)] uppercase tracking-wider">
+                        Import Items (Excel, CSV, Image, PDF):
+                      </h4>
+                    </div>
+                    <span className="text-[10px] text-[var(--text-muted)] font-mono">
+                      XLSX, XLS, CSV, JPG, PNG, PDF
+                    </span>
+                  </div>
 
-                    if (quickPickSearch && filtered.length === 0) return null;
+                  {/* Drag-and-drop or Click Upload Area */}
+                  <label className="border-2 border-dashed border-[var(--border-color)] hover:border-orange-500/50 bg-[var(--card-bg)]/40 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-all hover:bg-orange-500/5 group text-center">
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv,.png,.jpg,.jpeg,.pdf"
+                      onChange={handleFileUploadForAddItem}
+                      className="hidden"
+                      disabled={isUploadingFile}
+                    />
+                    <div className="p-2.5 rounded-2xl bg-orange-500/10 text-orange-400 group-hover:scale-110 transition-transform">
+                      {isUploadingFile ? <RefreshCw className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <div className="font-black text-xs text-[var(--text-main)]">
+                        {isUploadingFile ? uploadProgress : 'Click or Drag & Drop Invoices / Stock Sheets'}
+                      </div>
+                      <div className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                        Supports English, Urdu script, Roman Urdu, and mixed documents. Extracts items, units, and suggested categories automatically.
+                      </div>
+                    </div>
+                  </label>
 
-                    const isExpanded = quickPickSearch ? true : (expandedCategories[group.category] ?? (gIdx === 0));
+                  {/* Error Notification */}
+                  {uploadError && (
+                    <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>{uploadError}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
-                    return (
-                      <div key={gIdx} className="border border-[var(--border-color)]/60 rounded-xl overflow-hidden bg-[var(--card-bg)]/40">
+              {/* ======================================================== */}
+              {/* CARD C: IMPORTED ITEMS REVIEW                            */}
+              {/* ======================================================== */}
+              {/* CARD C: IMPORTED ITEMS REVIEW & MULTI-DELIVERY CARDS     */}
+              {/* ======================================================== */}
+              {/* ======================================================== */}
+              {/* CARD C: DYNAMIC MULTI-ITEM INGREDIENT CARDS             */}
+              {/* ======================================================== */}
+              {(activeAddTab === 'ALL' || activeAddTab === 'MANUAL' || activeAddTab === 'IMPORT') && (
+                <div className="space-y-4">
+
+                  {/* Master Summary Banner when Multiple Deliveries are Active */}
+                  {additionalDeliveryCards.length > 0 && (
+                    <div className="p-3.5 rounded-2xl bg-[var(--card-bg)] border border-orange-500/35 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md relative overflow-hidden">
+                      <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-orange-500 to-amber-400" />
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-xl bg-orange-500/10 text-orange-500 border border-orange-500/15">
+                          <Layers className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-black text-xs text-[var(--text-main)]">
+                            {additionalDeliveryCards.length + 1} Separate Deliveries Active
+                          </div>
+                          <div className="text-[10px] text-[var(--text-muted)]">
+                            Multiple suppliers/invoices detected. Each delivery card maintains independent Ref#, Batch#, and Invoice#.
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex w-full sm:w-auto flex-col sm:flex-row gap-2">
                         <button
                           type="button"
-                          onClick={() => setExpandedCategories(prev => ({ ...prev, [group.category]: !isExpanded }))}
-                          className="w-full px-3 py-1.5 flex items-center justify-between text-[11px] font-bold text-[var(--text-main)] hover:bg-orange-500/5 transition-colors cursor-pointer"
+                          onClick={() => setPendingAddSaveAction({ action: 'DRAFT' })}
+                          disabled={bulkSavingCatalog || savingDraft}
+                          className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-600 border border-orange-500/35 font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
-                          <span className="flex items-center gap-1.5">
-                            <span>{group.icon}</span>
-                            <span>{group.label}</span>
-                            <span className="text-[9px] font-normal text-[var(--text-muted)]">({filtered.length})</span>
+                          {savingDraft ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                          <span>Save All Deliveries to Draft</span>
+                        </button>
+                        {(ingredientCards.some(c => c.isNewItem && !c.saved && c.name?.trim()) || additionalDeliveryCards.some(card => (card.items || []).some(i => i.isNewItem && !i.saved && i.name?.trim()))) && <button
+                          type="button"
+                          onClick={() => setPendingAddSaveAction({ action: 'CATALOG' })}
+                          disabled={bulkSavingCatalog || savingDraft}
+                          className="w-full sm:w-auto px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black text-xs transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          {catalogSaveScope === 'all' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                          <span>{catalogSaveScope === 'all' ? 'Saving items…' : `Save All New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length + additionalDeliveryCards.reduce((count, card) => count + (card.items || []).filter(i => i.isNewItem && !i.saved && i.name?.trim()).length, 0)}`}</span>
+                        </button>
+                        }
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Primary Delivery Card (Card #1) */}
+                  <div className={`bg-[var(--bg-color)]/70 border p-4 rounded-2xl space-y-4 shadow-md transition-all ${
+                    activeTargetCardId === 'card-1'
+                      ? 'border-orange-500/80 ring-2 ring-orange-500/20'
+                      : 'border-orange-500/30'
+                  }`}>
+
+                    {/* Header Bar: Card #1, Summary Metrics & Action Buttons */}
+                    <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-[var(--border-color)]/60 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400 font-bold shrink-0">📋 Card #1</span>
+                        <div>
+                          <h4 className="font-black text-xs text-[var(--text-main)] uppercase tracking-wider flex flex-wrap items-center gap-2">
+                            <span>Delivery Card #1 — Supplier &amp; Items</span>
+                            {suppliersList.find(s => String(s.id) === String(newItem.supplierId))?.name && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-500/15 text-orange-400 border border-orange-500/20">
+                                {suppliersList.find(s => String(s.id) === String(newItem.supplierId)).name}
+                              </span>
+                            )}
+                          </h4>
+                          <span className="text-[10px] text-[var(--text-muted)]">
+                            Select supplier and add items below. Reference, batch, and invoice apply to this delivery.
                           </span>
-                          <span className="text-[10px] text-[var(--text-muted)] font-mono">{isExpanded ? '▲' : '▼'}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Target Delivery button for Presets */}
+                        <button
+                          type="button"
+                          onClick={() => setActiveTargetCardId('card-1')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 border ${
+                            activeTargetCardId === 'card-1'
+                              ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                              : 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border-orange-500/20'
+                          }`}
+                          title="Click to route all Quick Pick Presets into Card #1"
+                        >
+                          <Target className="w-3.5 h-3.5" />
+                          <span>{activeTargetCardId === 'card-1' ? '● Target for Presets' : 'Add Presets Here'}</span>
                         </button>
 
-                        {isExpanded && (
-                          <div className="p-2 border-t border-[var(--border-color)]/40 flex flex-wrap gap-1.5 bg-[var(--bg-color)]/30">
-                            {filtered.map((preset, pIdx) => {
-                              const exists = inventory.some(i => i.name.toLowerCase().trim() === preset.name.toLowerCase().trim());
-                              return (
-                                <button
-                                  key={pIdx}
-                                  type="button"
-                                  onClick={() => {
-                                    setNewItem({
-                                      ...newItem,
-                                      name: preset.name,
-                                      unit: preset.unit,
-                                      category: preset.category
-                                    });
-                                    setIngredientSearch(preset.name);
-                                    setShowSuggestions(false);
-                                    if (exists && showToast) {
-                                      showToast(`"${preset.name}" is already in catalog!`, 'info');
-                                    }
-                                  }}
-                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center space-x-1 border ${
-                                    exists
-                                      ? 'bg-[var(--card-bg)] text-[var(--text-muted)] border-[var(--border-color)] opacity-60'
-                                      : 'bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20 hover:scale-105'
-                                  }`}
-                                >
-                                  <span>{preset.label}</span>
-                                  {exists && <span className="text-[9px] text-emerald-400 font-extrabold ml-1">✓</span>}
-                                </button>
-                              );
-                            })}
+                        <button
+                          type="button"
+                          onClick={handleClearAllIngredientCards}
+                          className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-extrabold transition-all cursor-pointer flex items-center space-x-1 border border-rose-500/20"
+                          title="Reset to a single blank item"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Clear All</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddIngredientCard()}
+                          className="px-3.5 py-1.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/25 text-orange-400 text-xs font-extrabold transition-all cursor-pointer flex items-center space-x-1.5 border border-orange-500/30"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add Item</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Card #1 Supplier & Delivery Details Bar */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-3.5 rounded-2xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs shadow-sm">
+                      <div>
+                        <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5 text-orange-400" />
+                            <span>Supplier for Card #1</span>
+                          </span>
+                          <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(applies to items)</span>
+                        </label>
+                        <select
+                          value={newItem.supplierId || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setNewItem(prev => ({ ...prev, supplierId: val }));
+                            setIngredientCards(prev => prev.map(c => ({ ...c, supplierId: val })));
+                          }}
+                          className="w-full px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                        >
+                          <option value="">Select Supplier (e.g. Metro, Local Market)...</option>
+                          {suppliersList.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
+                          Internal Reference
+                        </label>
+                        <div className="relative flex items-center">
+                          <input
+                            type="text"
+                            value={newItem.sku || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewItem(prev => ({ ...prev, sku: val }));
+                              setIngredientCards(prev => prev.map(c => ({ ...c, sku: val })));
+                            }}
+                            placeholder="Click 🔄 to generate..."
+                            className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={generateAutoSKU}
+                            title="Generate Reference"
+                            className="absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
+                          Shipment Batch
+                        </label>
+                        <div className="relative flex items-center">
+                          <input
+                            type="text"
+                            value={newItem.batchNumber || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewItem(prev => ({ ...prev, batchNumber: val }));
+                              setIngredientCards(prev => prev.map(c => ({ ...c, batchNumber: val })));
+                            }}
+                            placeholder="Click 🔄 to generate..."
+                            className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={generateAutoBatch}
+                            title="Generate Batch #"
+                            className="absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
+                          Supplier Invoice # (Optional)
+                        </label>
+                        <div className="relative flex items-center">
+                          <input
+                            type="text"
+                            value={newItem.supplierInvoiceNumber || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewItem(prev => ({ ...prev, supplierInvoiceNumber: val }));
+                              setIngredientCards(prev => prev.map(c => ({ ...c, supplierInvoiceNumber: val })));
+                            }}
+                            placeholder="Click 🔄 to generate..."
+                            className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-orange-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={generateAutoInvoiceNum}
+                            title="Generate Supplier Invoice #"
+                            className="absolute right-1.5 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 cursor-pointer"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Metrics Strip */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0"></span>
+                          <span className="font-black text-[var(--text-main)]">
+                            {ingredientCards.length} Total {ingredientCards.length === 1 ? 'Card' : 'Cards'}
+                          </span>
+                        </div>
+                        <span className="text-[var(--text-muted)] text-xs">|</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
+                          <span className="font-black text-emerald-400">
+                            {ingredientCards.filter(c => c.saved || !c.isNewItem).length} In Catalog
+                          </span>
+                        </div>
+                        <span className="text-[var(--text-muted)] text-xs">|</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
+                          <span className="font-black text-amber-400">
+                            {ingredientCards.filter(c => c.isNewItem && !c.saved).length} New Items
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-[var(--text-muted)] italic">
+                        Tip: Click any preset above or "+ Add Another Card" to add more items.
+                      </span>
+                    </div>
+
+                    {/* List of Items in Card #1 (Clean Receive-Stock Style) */}
+                    <div className="space-y-3">
+                      {ingredientCards.length === 0 && (
+                        <div className="py-10 px-4 text-center rounded-2xl border-2 border-dashed border-[var(--border-color)] bg-[var(--bg-color)]/30 flex flex-col items-center justify-center space-y-2.5">
+                          <div className="p-3 rounded-2xl bg-orange-500/10 text-orange-400">
+                            <Package className="w-6 h-6" />
                           </div>
-                        )}
+                          <div>
+                            <h4 className="text-xs font-black text-[var(--text-main)]">Card #1 is Empty</h4>
+                            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                              Click "+ Add Item" below or pick any Quick Pick Preset from Card A above to add items to this supplier.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleAddIngredientCard()}
+                            className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 shadow-md active:scale-95"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Add Item</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {ingredientCards.map((card, idx) => {
+                        const inCatalog = !card.isNewItem || card.saved;
+                        const lineSubtotal = inventoryLineSubtotal(card.stockLevel, card.costPrice);
+
+                        return (
+                          <div
+                            key={card.id}
+                            className={`p-3.5 sm:p-4 rounded-2xl bg-[var(--card-bg)]/80 border space-y-3 relative transition-all shadow-sm ${
+                              card.saved
+                                ? 'border-emerald-500/50 bg-emerald-500/5'
+                                : inCatalog
+                                ? 'border-blue-500/30'
+                                : 'border-[var(--border-color)] hover:border-orange-500/40'
+                            }`}
+                          >
+                            {/* Card Top: Number, Ingredient Name Input with Live Autocomplete, Badges & Actions */}
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                              <div className="flex items-center space-x-2.5 w-full sm:w-auto flex-1">
+                                <span className="w-6 h-6 rounded-full bg-orange-500/15 text-orange-400 font-extrabold text-[11px] flex items-center justify-center shrink-0">
+                                  {idx + 1}
+                                </span>
+
+                                {/* Searchable / Autocomplete Ingredient Name Input */}
+                                <div className="relative flex-1">
+                                  <input
+                                    type="text"
+                                    value={card.name}
+                                    onFocus={() => handleIngredientCardChange(card.id, 'showSuggestions', true)}
+                                    onBlur={() => {
+                                      setTimeout(() => {
+                                        handleIngredientCardChange(card.id, 'showSuggestions', false);
+                                      }, 250);
+                                    }}
+                                    onChange={(e) => handleIngredientCardChange(card.id, 'name', e.target.value)}
+                                    placeholder="Search preset or type ingredient name (e.g. Chicken, Aloo, Pyaz, Oil)..."
+                                    className="w-full pl-8 pr-3 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 font-sans"
+                                  />
+                                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[var(--text-muted)]" />
+
+                                  {/* Autocomplete Dropdown List */}
+                                  {card.showSuggestions && (card.name || '').trim().length > 0 && (
+                                    <div className="absolute z-50 left-0 right-0 mt-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl max-h-52 overflow-y-auto divide-y divide-[var(--border-color)]">
+                                      {(() => {
+                                        const query = (card.name || '').toLowerCase().trim();
+                                        const matches = INGREDIENT_PRESETS.filter(p =>
+                                          p.name.toLowerCase().includes(query) ||
+                                          p.label.toLowerCase().includes(query) ||
+                                          p.category.toLowerCase().includes(query) ||
+                                          (p.aliases && p.aliases.some(a => a.toLowerCase().includes(query)))
+                                        );
+
+                                        if (matches.length === 0) {
+                                          return (
+                                            <div className="p-3 text-center text-[var(--text-muted)] text-[11px]">
+                                              No preset matching "<span className="text-[var(--text-main)] font-semibold">{card.name}</span>". Custom ingredient will be created! ✨
+                                            </div>
+                                          );
+                                        }
+
+                                        return matches.slice(0, 10).map((item, pIdx) => {
+                                          const exists = inventory.some(i => i.name.toLowerCase().trim() === item.name.toLowerCase().trim());
+                                          return (
+                                            <button
+                                              key={pIdx}
+                                              type="button"
+                                              onMouseDown={(e) => e.preventDefault()}
+                                              onClick={() => {
+                                                handleIngredientCardChange(card.id, 'name', item.name);
+                                                handleIngredientCardChange(card.id, 'unit', item.unit);
+                                                handleIngredientCardChange(card.id, 'category', item.category);
+                                                handleIngredientCardChange(card.id, 'isNewItem', !exists);
+                                                handleIngredientCardChange(card.id, 'showSuggestions', false);
+                                              }}
+                                              className="w-full text-left px-3.5 py-2 hover:bg-orange-500/10 transition-colors flex items-center justify-between group cursor-pointer"
+                                            >
+                                              <div className="flex items-center space-x-2">
+                                                <span className="text-sm">{item.label.split(' ')[0]}</span>
+                                                <div>
+                                                  <span className="font-bold text-[var(--text-main)] group-hover:text-orange-400">{item.name}</span>
+                                                  <span className="ml-2 text-[10px] text-[var(--text-muted)]">({item.category})</span>
+                                                </div>
+                                              </div>
+                                              <div className="flex items-center space-x-2">
+                                                <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-[var(--bg-color)] text-orange-400 border border-orange-500/20">
+                                                  {item.unit}
+                                                </span>
+                                                {exists && <span className="text-[10px] text-emerald-400 font-extrabold">✓ In Stock</span>}
+                                              </div>
+                                            </button>
+                                          );
+                                        });
+                                      })()}
+                                    </div>
+                                  )}
+
+                                  {card.originalDescription && card.originalDescription !== card.name && (
+                                    <span className="text-[10px] text-[var(--text-muted)] block mt-0.5 italic">
+                                      Scanned: "{card.originalDescription}"
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Badges & Actions */}
+                              <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto shrink-0">
+                                {card.saved ? (
+                                  <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30 flex items-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3" /> Saved to Catalog
+                                  </span>
+                                ) : !card.isNewItem ? (
+                                  <span className="px-2.5 py-1 rounded-xl bg-blue-500/15 text-blue-400 text-[10px] font-black uppercase tracking-wider border border-blue-500/30 flex items-center gap-1">
+                                    <Check className="w-3 h-3" /> In Catalog ({card.category})
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-400 text-[10px] font-black uppercase tracking-wider border border-amber-500/30 flex items-center gap-1">
+                                    <AlertTriangle className="w-3 h-3" /> New Item
+                                  </span>
+                                )}
+
+                                {!card.saved && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveSingleCardToCatalog(card)}
+                                    className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black shadow-sm transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                                    title="Save this single ingredient to catalog immediately"
+                                  >
+                                    <Save className="w-3 h-3" />
+                                    <span>Save in Catalog</span>
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveIngredientCard(card.id)}
+                                  className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer border border-rose-500/20"
+                                  title="Remove item"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Clean Fields Grid (Receive Stock Style): Quantity, Unit, Category, Cost per Unit, Expiry Date (Optional), Subtotal */}
+                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 items-center pt-2 border-t border-[var(--border-color)]/60 text-xs">
+                              {/* Quantity / Initial Stock */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
+                                  Qty / Stock *
+                                </label>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  min="0"
+                                  value={card.stockLevel}
+                                  onChange={(e) => handleIngredientCardChange(card.id, 'stockLevel', e.target.value)}
+                                  placeholder="0"
+                                  className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                                />
+                              </div>
+
+                              {/* Unit */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
+                                  Unit *
+                                </label>
+                                <select
+                                  value={card.unit}
+                                  onChange={(e) => handleIngredientCardChange(card.id, 'unit', e.target.value)}
+                                  className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                >
+                                  <option value="KG">KG</option>
+                                  <option value="G">G</option>
+                                  <option value="L">L</option>
+                                  <option value="ML">ML</option>
+                                  <option value="PCS">PCS</option>
+                                  <option value="DOZEN">DOZEN</option>
+                                  <option value="BOX">BOX</option>
+                                  <option value="PACK">PACK</option>
+                                  <option value="BOTTLE">BOTTLE</option>
+                                </select>
+                              </div>
+
+                              {/* Category */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
+                                  Category *
+                                </label>
+                                <select
+                                  value={card.category}
+                                  onChange={(e) => handleIngredientCardChange(card.id, 'category', e.target.value)}
+                                  className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                >
+                                  <option value="General">General</option>
+                                  <option value="Meat & Protein">Meat & Protein</option>
+                                  <option value="Vegetables">Vegetables</option>
+                                  <option value="Dry Goods">Dry Goods</option>
+                                  <option value="Spices">Spices</option>
+                                  <option value="Sauces & Condiments">Sauces & Condiments</option>
+                                  <option value="Dairy">Dairy</option>
+                                  <option value="Bakery">Bakery</option>
+                                  <option value="Beverages">Beverages</option>
+                                  <option value="Cooking Oil">Cooking Oil</option>
+                                  <option value="Packaging">Packaging</option>
+                                  <option value="Kitchen Supplies">Kitchen Supplies</option>
+                                  <option value="Desserts">Desserts</option>
+                                </select>
+                              </div>
+
+                              {/* Cost per Unit (Rs.) */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
+                                  Cost / Unit (Rs.)
+                                </label>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  min="0"
+                                  value={card.costPrice}
+                                  onChange={(e) => handleIngredientCardChange(card.id, 'costPrice', e.target.value)}
+                                  placeholder="0"
+                                  className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-amber-400 focus:outline-none focus:border-orange-500"
+                                />
+                              </div>
+
+                              {/* Expiry Date (Optional) */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 flex justify-between">
+                                  <span>Expiry Date</span>
+                                  <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(Optional)</span>
+                                </label>
+                                <input
+                                  type="date"
+                                  value={card.expiryDate || ''}
+                                  onChange={(e) => handleIngredientCardChange(card.id, 'expiryDate', e.target.value)}
+                                  className="w-full px-2 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono text-[11px] font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                />
+                              </div>
+
+                              {/* Subtotal */}
+                              <div className="flex flex-col items-start sm:items-end justify-center bg-[var(--bg-color)]/70 px-3 py-1.5 rounded-xl border border-[var(--border-color)]">
+                                <span className="text-[9px] font-bold uppercase text-[var(--text-muted)]">Subtotal</span>
+                                <span className="text-xs font-black text-orange-400 font-mono">
+                                  Rs. {lineSubtotal.toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {ingredientCards.some(c => c.name?.trim()) && <div className="bg-[var(--bg-color)]/80 border border-[var(--border-color)] p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3">
+                      <div>
+                        <span className="text-[10px] font-black uppercase text-[var(--text-muted)] block">Card #1 Summary</span>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          <span className="text-xs font-bold text-[var(--text-main)]">{ingredientCards.filter(c => c.name?.trim()).length} named items</span>
+                          <span className="text-xs font-mono font-bold text-orange-400">Subtotal: Rs. {sumInventorySubtotals(ingredientCards).toLocaleString()}</span>
+                          <label className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--text-muted)]">Discount
+                            <select value={card1DiscountMode} onChange={e => setCard1DiscountMode(e.target.value)} aria-label="Card 1 discount type" className="rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-1.5 py-1.5 text-xs text-[var(--text-main)]"><option value="PERCENT">%</option><option value="AMOUNT">Rs.</option></select>
+                            <input type="number" min="0" max={card1DiscountMode === 'PERCENT' ? 100 : undefined} step="0.01" value={card1Discount} onChange={e => setCard1Discount(e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0))} aria-label="Card 1 discount value" className="w-24 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 font-mono text-xs text-[var(--text-main)]" />
+                            {card1DiscountMode === 'PERCENT' && <span>Rs. {calculateCardDiscount(sumInventorySubtotals(ingredientCards), card1Discount, card1DiscountMode).toLocaleString()}</span>}
+                          </label>
+                          <span className="text-sm font-mono font-black text-emerald-500">Total: Rs. {Math.max(0, roundInventoryMoney(sumInventorySubtotals(ingredientCards) - calculateCardDiscount(sumInventorySubtotals(ingredientCards), card1Discount, card1DiscountMode))).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+                        <button type="button" onClick={() => setPendingAddSaveAction({ action: 'DRAFT', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
+                          <Save className="mr-1.5 inline h-4 w-4" />Save Draft
+                        </button>
+                        {ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
+                          {catalogSaveScope === 'card-1' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'card-1' ? 'Saving…' : `Save New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length})`}
+                        </button>}
+                      </div>
+                    </div>}
+                  </div>
+
+                  {/* Additional Delivery Cards (Different Suppliers / Invoices from upload or manual creation) */}
+                  {/* Additional Delivery Cards (Different Suppliers / Invoices from upload or manual creation) */}
+                  {additionalDeliveryCards.map((card, cardIdx) => {
+                    const cardSupplier = suppliersList.find(s => String(s.id) === String(card.supplierId));
+                    const isTargetActive = activeTargetCardId === card.id;
+                    const items = card.items || [];
+                    const inCatalogCount = items.filter(i => i.saved || !i.isNewItem).length;
+                    const newItemsCount = items.filter(i => i.isNewItem && !i.saved && (i.name || '').trim()).length;
+
+                    return (
+                      <div
+                        key={card.id}
+                        className={`bg-[var(--bg-color)]/70 border p-4 rounded-2xl space-y-4 shadow-md transition-all animate-in fade-in ${
+                          isTargetActive
+                            ? 'border-orange-500/80 ring-2 ring-orange-500/30'
+                            : 'border-orange-500/30 hover:border-orange-500/50'
+                        }`}
+                      >
+                        {/* Header Bar: Card #{N}, Supplier name, Metrics & Actions */}
+                        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-[var(--border-color)]/60 pb-3">
+                          <div className="flex items-center gap-2.5">
+                            <span className="p-1.5 rounded-xl bg-orange-500/15 text-orange-300 font-bold shrink-0">
+                              🏢 Card #{cardIdx + 2}
+                            </span>
+                            <div>
+                              <h4 className="font-black text-xs text-[var(--text-main)] uppercase tracking-wider flex flex-wrap items-center gap-2">
+                                <span>Delivery Card #{cardIdx + 2} — Supplier &amp; Items</span>
+                                {cardSupplier?.name && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-500/15 text-orange-300 border border-orange-500/20">
+                                    {cardSupplier.name}
+                                  </span>
+                                )}
+                              </h4>
+                              <span className="text-[10px] text-[var(--text-muted)]">
+                                Select supplier and add items below. Reference, batch, and invoice apply to this delivery.
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Preset Target Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTargetCardId(card.id);
+                                if (showToast) showToast(`Presets target switched to Card #${cardIdx + 2} (${cardSupplier?.name || 'Supplier ' + (cardIdx + 2)})!`, 'info');
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 border ${
+                                isTargetActive
+                                  ? 'bg-orange-600 text-white border-orange-600 shadow-sm ring-2 ring-orange-500/30'
+                                  : 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border-orange-500/20'
+                              }`}
+                              title="Click to route all Quick Pick Presets into this delivery card"
+                            >
+                              <Target className="w-3.5 h-3.5" />
+                              <span>{isTargetActive ? '● Target for Presets' : 'Send Presets Here'}</span>
+                            </button>
+
+                            {/* Clear All button */}
+                            <button
+                              type="button"
+                              onClick={() => handleAdditionalCardClearAll(card.id)}
+                              className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-extrabold transition-all cursor-pointer flex items-center space-x-1 border border-rose-500/20"
+                              title="Reset all items in this delivery card"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Clear All</span>
+                            </button>
+
+                            {/* Add Item Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleAdditionalCardAddItem(card.id)}
+                              className="px-3.5 py-1.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/25 text-orange-300 text-xs font-extrabold transition-all cursor-pointer flex items-center space-x-1.5 border border-orange-500/30"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Add Item</span>
+                            </button>
+
+                            {/* Delete Delivery Card */}
+                            <button
+                              type="button"
+                              onClick={() => handleDiscardDeliveryCard(card.id)}
+                              className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer"
+                              title="Discard this delivery card"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 4-Column Delivery Details Bar (Identical to Card #1) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-3.5 rounded-2xl bg-[var(--card-bg)] border border-orange-500/20 text-xs shadow-sm">
+                          <div>
+                            <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider flex items-center justify-between">
+                              <span className="flex items-center gap-1.5">
+                                <Building2 className="w-3.5 h-3.5 text-orange-400" />
+                                <span>Supplier for Card #{cardIdx + 2}</span>
+                              </span>
+                              <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(applies to items)</span>
+                            </label>
+                            <select
+                              value={card.supplierId || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const sObj = suppliersList.find(s => String(s.id) === String(val));
+                                setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? {
+                                  ...c,
+                                  supplierId: val,
+                                  supplierName: sObj?.name || 'Selected Supplier',
+                                  items: (c.items || []).map(i => ({ ...i, supplierId: val, supplierName: sObj?.name }))
+                                } : c));
+                              }}
+                              className="w-full px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                            >
+                              <option value="">Select Supplier (e.g. Metro, Local Market)...</option>
+                              {suppliersList.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
+                              Internal Reference
+                            </label>
+                            <div className="relative flex items-center">
+                              <input
+                                type="text"
+                                value={card.receivingRef || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, receivingRef: val } : c));
+                                }}
+                                placeholder="Click 🔄 to generate..."
+                                className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => generateAutoRefForCard(card.id)}
+                                title="Generate Reference"
+                                className="absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
+                              Shipment Batch
+                            </label>
+                            <div className="relative flex items-center">
+                              <input
+                                type="text"
+                                value={card.batchNumber || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, batchNumber: val } : c));
+                                }}
+                                placeholder="Click 🔄 to generate..."
+                                className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => generateAutoBatchForCard(card.id)}
+                                title="Generate Batch #"
+                                className="absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
+                              Supplier Invoice # (Optional)
+                            </label>
+                            <div className="relative flex items-center">
+                              <input
+                                type="text"
+                                value={card.supplierInvoiceNumber || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, supplierInvoiceNumber: val } : c));
+                                }}
+                                placeholder="e.g. INV-45892"
+                                className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-orange-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => generateAutoInvoiceForCard(card.id)}
+                                title="Generate Invoice #"
+                                className="absolute right-1.5 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 cursor-pointer"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Metrics Strip */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-orange-500 shrink-0"></span>
+                              <span className="font-black text-[var(--text-main)]">
+                                {items.length} Total {items.length === 1 ? 'Item' : 'Items'}
+                              </span>
+                            </div>
+                            <span className="text-[var(--text-muted)] text-xs">|</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
+                              <span className="font-black text-emerald-400">
+                                {inCatalogCount} In Catalog
+                              </span>
+                            </div>
+                            <span className="text-[var(--text-muted)] text-xs">|</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
+                              <span className="font-black text-amber-400">
+                                {newItemsCount} New Items
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-[10px] text-[var(--text-muted)] italic">
+                            Tip: Pick any preset above or click "+ Add Item" to add items to this delivery card.
+                          </span>
+                        </div>
+
+                        {/* List of Items in this Additional Delivery Card (Exact same UI as Card #1) */}
+                        <div className="space-y-3">
+                          {items.length === 0 && (
+                            <div className="py-10 px-4 text-center rounded-2xl border-2 border-dashed border-[var(--border-color)] bg-[var(--bg-color)]/30 flex flex-col items-center justify-center space-y-2.5">
+                              <div className="p-3 rounded-2xl bg-orange-500/10 text-orange-400">
+                                <Package className="w-6 h-6" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-[var(--text-main)]">Card #{cardIdx + 2} is Empty</h4>
+                                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                                  Click "+ Add Item" below or pick any Quick Pick Preset from Card A above to add items to this supplier.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleAdditionalCardAddItem(card.id)}
+                                className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 shadow-md active:scale-95"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Add Item</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {items.map((item, idx) => {
+                            const inCatalog = !item.isNewItem || item.saved;
+                            const lineSubtotal = inventoryLineSubtotal(item.stockLevel ?? item.quantity, item.costPrice);
+
+                            return (
+                              <div
+                                key={item.id}
+                                className={`p-3.5 sm:p-4 rounded-2xl bg-[var(--card-bg)]/80 border space-y-3 relative transition-all shadow-sm ${
+                                  item.saved
+                                    ? 'border-emerald-500/50 bg-emerald-500/5'
+                                    : inCatalog
+                                    ? 'border-blue-500/30'
+                                    : 'border-[var(--border-color)] hover:border-orange-500/40'
+                                }`}
+                              >
+                                {/* Card Top: Number, Autocomplete Search, Badges & Actions */}
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                                  <div className="flex items-center space-x-2.5 w-full sm:w-auto flex-1">
+                                    <span className="w-6 h-6 rounded-full bg-orange-500/15 text-orange-300 font-extrabold text-[11px] flex items-center justify-center shrink-0">
+                                      {idx + 1}
+                                    </span>
+
+                                    {/* Searchable / Autocomplete Item Input */}
+                                    <div className="relative flex-1">
+                                      <input
+                                        type="text"
+                                        value={item.name}
+                                        onFocus={() => handleAdditionalCardItemChange(card.id, item.id, 'showSuggestions', true)}
+                                        onBlur={() => {
+                                          setTimeout(() => {
+                                            handleAdditionalCardItemChange(card.id, item.id, 'showSuggestions', false);
+                                          }, 250);
+                                        }}
+                                        onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'name', e.target.value)}
+                                        placeholder="Search preset or type ingredient name (e.g. Chicken, Aloo, Pyaz, Oil)..."
+                                        className="w-full pl-8 pr-3 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 font-sans"
+                                      />
+                                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[var(--text-muted)]" />
+
+                                      {/* Autocomplete Dropdown */}
+                                      {item.showSuggestions && (item.name || '').trim().length > 0 && (
+                                        <div className="absolute z-50 left-0 right-0 mt-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl max-h-52 overflow-y-auto divide-y divide-[var(--border-color)]">
+                                          {(() => {
+                                            const query = (item.name || '').toLowerCase().trim();
+                                            const matches = INGREDIENT_PRESETS.filter(p =>
+                                              p.name.toLowerCase().includes(query) ||
+                                              p.label.toLowerCase().includes(query) ||
+                                              p.category.toLowerCase().includes(query) ||
+                                              (p.aliases && p.aliases.some(a => a.toLowerCase().includes(query)))
+                                            );
+
+                                            if (matches.length === 0) {
+                                              return (
+                                                <div className="p-3 text-center text-[var(--text-muted)] text-[11px]">
+                                                  No preset matching "<span className="text-[var(--text-main)] font-semibold">{item.name}</span>". Custom ingredient will be created! ✨
+                                                </div>
+                                              );
+                                            }
+
+                                            return matches.slice(0, 10).map((preset, pIdx) => {
+                                              const exists = inventory.some(i => i.name.toLowerCase().trim() === preset.name.toLowerCase().trim());
+                                              return (
+                                                <button
+                                                  key={pIdx}
+                                                  type="button"
+                                                  onMouseDown={(e) => e.preventDefault()}
+                                                  onClick={() => {
+                                                    handleAdditionalCardItemChange(card.id, item.id, 'name', preset.name);
+                                                    handleAdditionalCardItemChange(card.id, item.id, 'unit', preset.unit);
+                                                    handleAdditionalCardItemChange(card.id, item.id, 'category', preset.category);
+                                                    handleAdditionalCardItemChange(card.id, item.id, 'isNewItem', !exists);
+                                                    handleAdditionalCardItemChange(card.id, item.id, 'showSuggestions', false);
+                                                  }}
+                                                  className="w-full text-left px-3.5 py-2 hover:bg-orange-500/10 transition-colors flex items-center justify-between group cursor-pointer"
+                                                >
+                                                  <div className="flex items-center space-x-2">
+                                                    <span className="text-sm">{preset.label.split(' ')[0]}</span>
+                                                    <div>
+                                                      <span className="font-bold text-[var(--text-main)] group-hover:text-orange-300">{preset.name}</span>
+                                                      <span className="ml-2 text-[10px] text-[var(--text-muted)]">({preset.category})</span>
+                                                    </div>
+                                                  </div>
+                                                  <div className="flex items-center space-x-2">
+                                                    <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-[var(--bg-color)] text-orange-300 border border-orange-500/20">
+                                                      {preset.unit}
+                                                    </span>
+                                                    {exists && <span className="text-[10px] text-emerald-400 font-extrabold">✓ In Stock</span>}
+                                                  </div>
+                                                </button>
+                                              );
+                                            });
+                                          })()}
+                                        </div>
+                                      )}
+
+                                      {item.originalDescription && item.originalDescription !== item.name && (
+                                        <span className="text-[10px] text-[var(--text-muted)] block mt-0.5 italic">
+                                          Scanned: "{item.originalDescription}"
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Badges & Actions */}
+                                  <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto shrink-0">
+                                    {item.saved ? (
+                                      <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30 flex items-center gap-1">
+                                        <CheckCircle2 className="w-3 h-3" /> Saved to Catalog
+                                      </span>
+                                    ) : !item.isNewItem ? (
+                                      <span className="px-2.5 py-1 rounded-xl bg-blue-500/15 text-blue-400 text-[10px] font-black uppercase tracking-wider border border-blue-500/30 flex items-center gap-1">
+                                        <Check className="w-3 h-3" /> In Catalog ({item.category})
+                                      </span>
+                                    ) : (
+                                      <span className="px-2.5 py-1 rounded-xl bg-orange-500/20 text-orange-300 text-[10px] font-black uppercase tracking-wider border border-orange-500/30 flex items-center gap-1">
+                                        <AlertTriangle className="w-3 h-3" /> New Item
+                                      </span>
+                                    )}
+
+                                    {!item.saved && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveAdditionalCardSingleItem(card.id, item)}
+                                        className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black shadow-sm transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                                        title="Save this single ingredient to catalog immediately"
+                                      >
+                                        <Save className="w-3 h-3" />
+                                        <span>Save in Catalog</span>
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAdditionalCardRemoveItem(card.id, item.id)}
+                                      className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer border border-rose-500/20"
+                                      title="Remove item"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Clean Fields Grid: Quantity, Unit, Category, Cost per Unit, Expiry Date (Optional), Subtotal */}
+                                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 items-center pt-2 border-t border-[var(--border-color)]/60 text-xs">
+                                  {/* Quantity / Initial Stock */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
+                                      Qty / Stock *
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      min="0"
+                                      value={item.stockLevel ?? item.quantity ?? 0}
+                                      onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'stockLevel', e.target.value)}
+                                      placeholder="0"
+                                      className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                                    />
+                                  </div>
+
+                                  {/* Unit */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
+                                      Unit *
+                                    </label>
+                                    <select
+                                      value={item.unit}
+                                      onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'unit', e.target.value)}
+                                      className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                    >
+                                      <option value="KG">KG</option>
+                                      <option value="G">G</option>
+                                      <option value="L">L</option>
+                                      <option value="ML">ML</option>
+                                      <option value="PCS">PCS</option>
+                                      <option value="DOZEN">DOZEN</option>
+                                      <option value="BOX">BOX</option>
+                                      <option value="PACK">PACK</option>
+                                      <option value="BOTTLE">BOTTLE</option>
+                                    </select>
+                                  </div>
+
+                                  {/* Category */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
+                                      Category *
+                                    </label>
+                                    <select
+                                      value={item.category}
+                                      onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'category', e.target.value)}
+                                      className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                    >
+                                      <option value="General">General</option>
+                                      <option value="Meat & Protein">Meat & Protein</option>
+                                      <option value="Vegetables">Vegetables</option>
+                                      <option value="Dry Goods">Dry Goods</option>
+                                      <option value="Spices">Spices</option>
+                                      <option value="Sauces & Condiments">Sauces & Condiments</option>
+                                      <option value="Dairy">Dairy</option>
+                                      <option value="Bakery">Bakery</option>
+                                      <option value="Beverages">Beverages</option>
+                                      <option value="Cooking Oil">Cooking Oil</option>
+                                      <option value="Packaging">Packaging</option>
+                                      <option value="Kitchen Supplies">Kitchen Supplies</option>
+                                      <option value="Desserts">Desserts</option>
+                                    </select>
+                                  </div>
+
+                                  {/* Cost per Unit (Rs.) */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
+                                      Cost / Unit (Rs.)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      min="0"
+                                      value={item.costPrice}
+                                      onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'costPrice', e.target.value)}
+                                      placeholder="0"
+                                      className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-amber-400 focus:outline-none focus:border-orange-500"
+                                    />
+                                  </div>
+
+                                  {/* Expiry Date (Optional) */}
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 flex justify-between">
+                                      <span>Expiry Date</span>
+                                      <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(Optional)</span>
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={item.expiryDate || ''}
+                                      onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'expiryDate', e.target.value)}
+                                      className="w-full px-2 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono text-[11px] font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                    />
+                                  </div>
+
+                                  {/* Subtotal */}
+                                  <div className="flex flex-col items-start sm:items-end justify-center bg-[var(--bg-color)]/70 px-3 py-1.5 rounded-xl border border-[var(--border-color)]">
+                                    <span className="text-[9px] font-bold uppercase text-[var(--text-muted)]">Subtotal</span>
+                                    <span className="text-xs font-black text-orange-300 font-mono">
+                                      Rs. {lineSubtotal.toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {items.some(i => i.name?.trim()) && <div className="bg-[var(--bg-color)]/80 border border-[var(--border-color)] p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3">
+                          <div>
+                            <span className="text-[10px] font-black uppercase text-[var(--text-muted)] block">Card #{cardIdx + 2} Summary</span>
+                            <div className="flex items-center gap-3 mt-0.5">
+                              <span className="text-xs font-bold text-[var(--text-main)]">{items.filter(i => i.name?.trim()).length} named items</span>
+                              <span className="text-xs font-mono font-bold text-orange-400">Subtotal: Rs. {sumInventorySubtotals(items).toLocaleString()}</span>
+                              <label className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--text-muted)]">Discount
+                                <select value={card.discountMode || 'AMOUNT'} onChange={e => setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, discountMode: e.target.value } : c))} aria-label={`Card ${cardIdx + 2} discount type`} className="rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-1.5 py-1.5 text-xs text-[var(--text-main)]"><option value="PERCENT">%</option><option value="AMOUNT">Rs.</option></select>
+                                <input type="number" min="0" max={card.discountMode === 'PERCENT' ? 100 : undefined} step="0.01" value={card.discountAmount ?? 0} onChange={e => setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, discountAmount: e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0) } : c))} aria-label={`Card ${cardIdx + 2} discount value`} className="w-24 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 font-mono text-xs text-[var(--text-main)]" />
+                                {card.discountMode === 'PERCENT' && <span>Rs. {calculateCardDiscount(sumInventorySubtotals(items), card.discountAmount, card.discountMode).toLocaleString()}</span>}
+                              </label>
+                              <span className="text-sm font-mono font-black text-emerald-500">Total: Rs. {Math.max(0, roundInventoryMoney(sumInventorySubtotals(items) - calculateCardDiscount(sumInventorySubtotals(items), card.discountAmount, card.discountMode))).toLocaleString()}</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+                            <button type="button" onClick={() => setPendingAddSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
+                              <Save className="mr-1.5 inline h-4 w-4" />Save Draft
+                            </button>
+                            {newItemsCount > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
+                              {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Saving…' : `Save New Item Names (${newItemsCount})`}
+                            </button>}
+                          </div>
+                        </div>}
                       </div>
                     );
                   })}
-                </div>
-              </div>
-              {/* Field 2, 3 & 4: Unit, Category, and Supplier */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
-                    Unit *
-                  </label>
-                  <select
-                    value={newItem.unit}
-                    onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
-                  >
-                    <option value="KG">KG (Kilograms)</option>
-                    <option value="G">G (Grams)</option>
-                    <option value="L">L (Liters)</option>
-                    <option value="ML">ML (Milliliters)</option>
-                    <option value="PCS">PCS (Pieces)</option>
-                    <option value="DOZEN">DOZEN</option>
-                    <option value="BOX">BOX</option>
-                    <option value="PACK">PACK</option>
-                    <option value="BOTTLE">BOTTLE</option>
-                  </select>
-                </div>
 
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
-                    Category *
-                  </label>
-                  <select
-                    value={newItem.category}
-                    onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
-                  >
-                    <option value="General">General</option>
-                    <option value="Meat & Protein">Meat & Protein</option>
-                    <option value="Vegetables">Vegetables</option>
-                    <option value="Dry Goods">Dry Goods</option>
-                    <option value="Spices">Spices</option>
-                    <option value="Sauces & Condiments">Sauces & Condiments</option>
-                    <option value="Dairy">Dairy</option>
-                    <option value="Bakery">Bakery</option>
-                    <option value="Beverages">Beverages</option>
-                    <option value="Cooking Oil">Cooking Oil</option>
-                    <option value="Packaging">Packaging</option>
-                    <option value="Kitchen Supplies">Kitchen Supplies</option>
-                  </select>
-                </div>
+                  {/* Actions Footer */}
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-[var(--border-color)] shrink-0">
+                    {/* Left: Add Supplier / New Delivery Card + Save Draft */}
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={handleAddNewDeliveryCard}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/25 text-orange-300 text-xs font-black transition-all cursor-pointer flex items-center justify-center space-x-1.5 border border-orange-500/30"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Supplier / New Delivery Card</span>
+                      </button>
+                    </div>
 
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px] flex justify-between">
-                    <span>Supplier</span>
-                    <span className="text-[10px] text-[var(--text-muted)] font-normal lowercase">(Optional)</span>
-                  </label>
-                  <select
-                    value={newItem.supplierId}
-                    onChange={(e) => setNewItem({ ...newItem, supplierId: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
-                  >
-                    <option value="">Select Supplier (Optional)...</option>
-                    {suppliersList.map((sup) => (
-                      <option key={sup.id} value={sup.id}>
-                        {sup.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Stock & Cost Grid */}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
-                    Initial Stock
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={newItem.stockLevel}
-                    onChange={(e) => setNewItem({ ...newItem, stockLevel: e.target.value })}
-                    placeholder="0"
-                    className="w-full px-3 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono text-[var(--text-main)]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
-                    Minimum Stock
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={newItem.minThreshold}
-                    onChange={(e) => setNewItem({ ...newItem, minThreshold: e.target.value })}
-                    placeholder="10"
-                    className="w-full px-3 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono text-[var(--text-main)]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
-                    Cost per Unit (Rs.)
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={newItem.costPrice}
-                    onChange={(e) => setNewItem({ ...newItem, costPrice: e.target.value })}
-                    placeholder="0"
-                    className="w-full px-3 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono text-[var(--text-main)]"
-                  />
-                </div>
-              </div>
-
-              {/* Batch Number, Item SKU / Reference & Supplier Invoice # Generators */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-[var(--border-color)]/60">
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px] flex justify-between items-center">
-                    <span>Batch Number</span>
-                    <span className="text-[10px] text-orange-400 font-normal lowercase">(Optional)</span>
-                  </label>
-                  <div className="relative flex items-center">
-                    <input
-                      type="text"
-                      value={newItem.batchNumber || ''}
-                      onChange={(e) => setNewItem({ ...newItem, batchNumber: e.target.value })}
-                      placeholder="Click 🔄 to generate..."
-                      className="w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={generateAutoBatch}
-                      title="Generate unique Batch Number"
-                      className="absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddItemModal(false)}
+                        className="px-4 py-2.5 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-muted)] cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPendingAddSaveAction({ action: 'DRAFT' })}
+                        disabled={bulkSavingCatalog || savingDraft}
+                        className="px-4 py-2.5 rounded-xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-600 border border-orange-500/35 text-xs font-bold cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>Save All Deliveries to Draft</span>
+                      </button>
+                      {(ingredientCards.some(c => c.isNewItem && !c.saved && c.name?.trim()) || additionalDeliveryCards.some(card => (card.items || []).some(i => i.isNewItem && !i.saved && i.name?.trim()))) && <button
+                        type="button"
+                        onClick={() => setPendingAddSaveAction({ action: 'CATALOG' })}
+                        disabled={bulkSavingCatalog || savingDraft}
+                        className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black shadow-md cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        {catalogSaveScope === 'all' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        <span>Save All New Item Names ({ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length + additionalDeliveryCards.reduce((count, card) => count + (card.items || []).filter(i => i.isNewItem && !i.saved && i.name?.trim()).length, 0)})</span>
+                      </button>
+                      }
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px] flex justify-between items-center">
-                    <span>Internal Reference</span>
-                    <span className="text-[10px] text-orange-400 font-normal lowercase">(Optional)</span>
-                  </label>
-                  <div className="relative flex items-center">
-                    <input
-                      type="text"
-                      value={newItem.sku || ''}
-                      onChange={(e) => setNewItem({ ...newItem, sku: e.target.value })}
-                      placeholder="Click 🔄 to generate..."
-                      className="w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={generateAutoSKU}
-                      title="Generate unique Item Reference SKU"
-                      className="absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
 
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px] flex justify-between items-center">
-                    <span>Supplier Invoice #</span>
-                    <span className="text-[10px] text-emerald-400 font-normal lowercase">(Optional)</span>
-                  </label>
-                  <div className="relative flex items-center">
-                    <input
-                      type="text"
-                      value={newItem.supplierInvoiceNumber || ''}
-                      onChange={(e) => setNewItem({ ...newItem, supplierInvoiceNumber: e.target.value })}
-                      placeholder="Click 🔄 to generate..."
-                      className="w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-emerald-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={generateAutoInvoiceNum}
-                      title="Generate unique Supplier Invoice #"
-                      className="absolute right-2 p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Optional Expiry Date & Notes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px] flex justify-between">
-                    <span>Expiry Date (Optional)</span>
-                    <span className="text-[10px] text-[var(--text-muted)] font-normal lowercase">(Optional)</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={newItem.expiryDate || ''}
-                    onChange={(e) => setNewItem({ ...newItem, expiryDate: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer font-bold"
-                  />
-                  <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                    Enter if printed on package.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px] flex justify-between">
-                    <span>Notes</span>
-                    <span className="text-[10px] text-[var(--text-muted)] font-normal lowercase">(Optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={newItem.notes || ''}
-                    onChange={(e) => setNewItem({ ...newItem, notes: e.target.value })}
-                    placeholder="Optional notes or storage instructions..."
-                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500 font-medium"
-                  />
-                </div>
-              </div>
-
-              {/* Actions Footer */}
-              <div className="flex justify-end items-center space-x-2 pt-3 border-t border-[var(--border-color)] shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowAddItemModal(false)}
-                  className="px-4 py-2.5 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-muted)]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black shadow-md cursor-pointer"
-                >
-                  Save Ingredient
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Upload Choice Modal (Same Supplier Merge vs Different Supplier Separate Card) */}
+      {showMergeChoiceModal && (pendingUploadData || pendingUploadRows) && createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl p-6 shadow-2xl max-w-lg w-full mx-4 space-y-5 animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
+              <div className="flex items-center gap-3">
+                {pendingUploadData?.isSameSupplier ? (
+                  <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-2xl bg-orange-500/15 text-orange-400 border border-orange-500/30">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-base font-black text-[var(--text-main)] font-display">
+                    {pendingUploadData?.isSameSupplier
+                      ? 'Same Supplier Detected'
+                      : 'Different Supplier Invoice Detected!'}
+                  </h3>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    {pendingUploadData?.isSameSupplier
+                      ? `Both invoices match "${pendingUploadData.supplierName}"`
+                      : 'Separate delivery record recommended for accurate stock tracking'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Comparison Details if Different Supplier */}
+            {!pendingUploadData?.isSameSupplier && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-[var(--bg-color)]/80 border border-[var(--border-color)] text-xs">
+                {/* Existing Delivery Box */}
+                <div className="space-y-1.5 border-b sm:border-b-0 sm:border-r border-[var(--border-color)]/60 pb-2 sm:pb-0 sm:pr-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Card #1 (Current)</span>
+                    <span className="text-[10px] text-[var(--text-muted)]">{importedItems.length} items</span>
+                  </div>
+                  <p className="font-extrabold text-[var(--text-main)] truncate" title={pendingUploadData?.currentSupplierName}>
+                    {pendingUploadData?.currentSupplierName || 'Current Receiving'}
+                  </p>
+                  <div className="text-[10px] text-[var(--text-muted)] font-mono space-y-0.5">
+                    <div>Ref: <span className="text-[var(--text-main)] font-bold">{newItem.sku || 'Auto-assigned'}</span></div>
+                    <div>Batch: <span className="text-[var(--text-main)] font-bold">{newItem.batchNumber || 'Auto-assigned'}</span></div>
+                    <div>Inv: <span className="text-[var(--text-main)] font-bold">{newItem.supplierInvoiceNumber || 'Auto-assigned'}</span></div>
+                  </div>
+                </div>
+
+                {/* Newly Scanned Delivery Box */}
+                <div className="space-y-1.5 sm:pl-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Detected Delivery — Card #{additionalDeliveryCards.length + 2}</span>
+                    <span className="text-[10px] text-orange-400 font-bold">{pendingUploadData?.newRows?.length || pendingUploadRows?.length || 0} items</span>
+                  </div>
+                  <p className="font-extrabold text-orange-300 truncate" title={pendingUploadData?.supplierName}>
+                    {pendingUploadData?.supplierName || 'New Supplier'}
+                  </p>
+                  <div className="text-[10px] text-[var(--text-muted)] font-mono space-y-0.5">
+                    <div>Inv: <span className="text-emerald-400 font-bold">{pendingUploadData?.invoiceNumber}</span></div>
+                    <div>Ref: <span className="text-orange-400 font-bold">Auto-assigned unique</span></div>
+                    <div>Batch: <span className="text-orange-400 font-bold">Auto-assigned unique</span></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Description */}
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+              {pendingUploadData?.isSameSupplier ? (
+                <>
+                  Card #1 already contains <strong className="text-[var(--text-main)] font-black">{importedItems.length} items</strong> from <strong className="text-emerald-400 font-black">{pendingUploadData.supplierName}</strong>. You can merge the <strong className="text-emerald-400 font-black">{pendingUploadRows?.length || pendingUploadData.newRows?.length} newly imported items</strong> (duplicate items will combine quantities automatically).
+                </>
+              ) : (
+                <>
+                  Separate delivery records are recommended for accurate supplier, batch, invoice, and inventory tracking.
+                </>
+              )}
+            </p>
+
+            {/* Action Buttons matching Receive Stock 4 decisions */}
+            <div className="space-y-2.5 pt-1">
+              {!pendingUploadData?.isSameSupplier ? (
+                <>
+                  {/* Button 1: Create Separate Card for [Supplier] (RECOMMENDED) */}
+                  <button
+                    type="button"
+                    onClick={handleCreateSeparateCard}
+                    className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 hover:from-orange-500 hover:to-amber-400 text-white font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-600/25 active:scale-[0.98]"
+                  >
+                    <Layers className="w-4 h-4" />
+                    <span>Create Separate Card for {pendingUploadData?.supplierName || 'Supplier'} (Independent Ref#, Batch#, Inv#)</span>
+                  </button>
+
+                  {/* Button 2: Merge into Card #1 anyway */}
+                  <button
+                    type="button"
+                    onClick={handleMergeAppend}
+                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/40 text-[var(--text-main)] font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-[var(--border-color)]"
+                  >
+                    <Plus className="w-4 h-4 text-emerald-400" />
+                    <span>Merge into Card #1 Anyway</span>
+                  </button>
+
+                  {/* Button 3: Replace Card #1 */}
+                  <button
+                    type="button"
+                    onClick={handleMergeReplace}
+                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-400 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-orange-500/20"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Replace Card #1 with New Scanned Delivery</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* Same Supplier: Merge Items */}
+                  <button
+                    type="button"
+                    onClick={handleMergeAppend}
+                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Merge Items into Card #1 (Combine Quantities &amp; Avoid Duplicates)</span>
+                  </button>
+
+                  {/* Same Supplier: Create Separate Card anyway */}
+                  <button
+                    type="button"
+                    onClick={handleCreateSeparateCard}
+                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-300 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-orange-500/20"
+                  >
+                    <Layers className="w-4 h-4 text-orange-400" />
+                    <span>Keep as Separate Delivery Card (Independent Ref#, Batch#, Inv#)</span>
+                  </button>
+
+                  {/* Same Supplier: Replace */}
+                  <button
+                    type="button"
+                    onClick={handleMergeReplace}
+                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-400 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-orange-500/20"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Replace All (Start Fresh with New Items)</span>
+                  </button>
+                </>
+              )}
+
+              {/* Button 4: Cancel Import */}
+              <button
+                type="button"
+                onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
+                className="w-full py-2.5 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-muted)] font-bold text-xs transition-all cursor-pointer border border-[var(--border-color)]"
+              >
+                Cancel Import
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Global Delete Modal */}
+      <GlobalDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setItemToDelete(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        title={isBulkDeleting ? 'Delete Selected Items' : 'Delete Inventory Item'}
+        message={
+          isBulkDeleting
+            ? 'This will permanently remove the selected raw material / catalog items from your inventory catalog.'
+            : 'This will permanently remove this item from your inventory catalog.'
+        }
+        itemName={isBulkDeleting ? undefined : itemToDelete?.name}
+        itemCount={isBulkDeleting ? selectedInventoryIds.size : 1}
+        isBulk={isBulkDeleting}
+        confirmButtonText={isBulkDeleting ? `Delete ${selectedInventoryIds.size} Items` : 'Delete Item'}
+        loading={deleteLoading}
+        dangerLevel="danger"
+        warningNotes={[
+          'Deleting an item also permanently removes its recipe links, inventory logs, and receiving batches.',
+          'This action cannot be undone. Review the selected item(s) before confirming.'
+        ]}
+      />
+
+      {pendingAddSaveAction && createPortal(
+        <div className="fixed inset-0 z-[125] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !savingDraft && !bulkSavingCatalog) setPendingAddSaveAction(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="add-save-confirm-title" className="w-full max-w-md rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl">
+            <div className={`mb-3 flex h-11 w-11 items-center justify-center rounded-full ${pendingAddSaveAction.action === 'DRAFT' ? 'bg-amber-500/15 text-amber-600' : 'bg-orange-500/15 text-orange-600'}`}>
+              <Save className="h-5 w-5" />
+            </div>
+            <h3 id="add-save-confirm-title" className="text-lg font-bold text-[var(--text-main)]">
+              {pendingAddSaveAction.action === 'DRAFT'
+                ? (pendingAddSaveAction.cardId ? `Save ${pendingAddSaveAction.cardId === 'card-1' ? 'Card #1' : `Card #${additionalDeliveryCards.findIndex(c => c.id === pendingAddSaveAction.cardId) + 2}`} as a draft?` : 'Save all deliveries as drafts?')
+                : (pendingAddSaveAction.cardId ? `Save ${pendingAddSaveAction.cardId === 'card-1' ? 'Card #1' : `Card #${additionalDeliveryCards.findIndex(c => c.id === pendingAddSaveAction.cardId) + 2}`} new items to the catalog?` : 'Save current items to the catalog?')}
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+              {pendingAddSaveAction.action === 'DRAFT'
+                ? (pendingAddSaveAction.cardId
+                  ? 'This saves only this supplier card as a separate draft in Receiving History. New items stay in the draft, and stock and catalog will not change until the receiving is confirmed.'
+                  : `This saves each supplier delivery separately (${additionalDeliveryCards.length + 1} delivery cards). New items stay in their drafts; stock and catalog will not change until a receiving is confirmed.`)
+                : (pendingAddSaveAction.cardId
+                  ? 'This saves only this card’s new item names to the inventory catalog with zero stock. Receiving quantities are not posted.'
+                  : 'This saves new item names from the current deliveries to the inventory catalog with zero stock. Receiving quantities are not posted.')}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" disabled={savingDraft || bulkSavingCatalog} onClick={() => setPendingAddSaveAction(null)} className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] px-4 py-2.5 text-sm font-semibold text-[var(--text-muted)] disabled:opacity-50">Cancel</button>
+              <button type="button" disabled={savingDraft || bulkSavingCatalog} onClick={confirmAddSaveAction} className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-500 disabled:opacity-50">
+                {(savingDraft || bulkSavingCatalog) && <RefreshCw className="h-4 w-4 animate-spin" />}
+                {pendingAddSaveAction.action === 'DRAFT'
+                  ? (pendingAddSaveAction.cardId ? 'Save Draft' : 'Save All Drafts')
+                  : (pendingAddSaveAction.cardId ? 'Save New Items' : 'Save to Catalog')}
+              </button>
+            </div>
+          </section>
+        </div>, document.body
+      )}
+
+      {catalogImportResult && createPortal(
+        <div className="fixed inset-0 z-[119] flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setCatalogImportResult(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="catalog-import-result-title" className="w-full max-w-lg rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl">
+            <h3 id="catalog-import-result-title" className="text-lg font-bold text-[var(--text-main)]">Ingredient import summary</h3>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
+              {[
+                ['Total', catalogImportResult.summary.total ?? catalogImportResult.total],
+                ['Imported', catalogImportResult.summary.imported ?? catalogImportResult.summary.savedCount ?? 0],
+                ['Skipped', catalogImportResult.summary.skipped ?? catalogImportResult.summary.duplicates ?? 0],
+                ['Duplicates', catalogImportResult.summary.duplicates ?? 0],
+                ['Failed', catalogImportResult.summary.failed ?? catalogImportResult.summary.failedCount ?? 0],
+              ].map(([label, value]) => <div key={label} className="rounded-xl border border-[var(--border-color)] p-2"><div className="text-[10px] font-semibold uppercase text-[var(--text-muted)]">{label}</div><div className="mt-1 font-bold text-[var(--text-main)]">{value}</div></div>)}
+            </div>
+            {(catalogImportResult.results || []).some(r => !r.success) && <div className="mt-4 max-h-48 space-y-2 overflow-y-auto rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-sm">
+              <div className="font-semibold text-red-500">Items needing correction</div>
+              {catalogImportResult.results.filter(r => !r.success).map((r, i) => <div key={`${r.index}-${i}`} className="text-[var(--text-main)]"><span className="font-semibold">{r.name || `Row ${Number(r.index) + 1}`}:</span> <span className="text-[var(--text-muted)]">{r.error || 'Unknown failure'}</span></div>)}
+            </div>}
+            <button type="button" autoFocus onClick={() => setCatalogImportResult(null)} className="mt-5 w-full rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-bold text-white">Close</button>
+          </section>
+        </div>, document.body
+      )}
+
+      {draftSaveResult && createPortal(
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setDraftSaveResult(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="ingredient-draft-result-title" className="w-full max-w-md rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl">
+            <div className={`mb-3 flex h-11 w-11 items-center justify-center rounded-full ${draftSaveResult.success ? 'bg-emerald-500/15 text-emerald-500' : 'bg-red-500/15 text-red-500'}`}>
+              {draftSaveResult.success ? <CheckCircle2 className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}
+            </div>
+            <h3 id="ingredient-draft-result-title" className="text-lg font-bold text-[var(--text-main)]">{draftSaveResult.success ? 'Draft saved' : 'Draft not saved'}</h3>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">{draftSaveResult.message}</p>
+            <button type="button" autoFocus onClick={() => setDraftSaveResult(null)} className="mt-5 w-full rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-bold text-white">Close</button>
+          </section>
+        </div>, document.body
       )}
 
     </div>

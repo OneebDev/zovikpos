@@ -102,6 +102,11 @@ const submitTransactionId = async (req, res) => {
     return res.status(400).json({ error: 'Order ID, payment method, and transaction ID are required.' });
   }
 
+  const normalizedPaymentMethod = String(paymentMethod).trim().toUpperCase();
+  if (!['EASYPAISA', 'JAZZCASH'].includes(normalizedPaymentMethod)) {
+    return res.status(400).json({ error: 'Online payments currently support Easypaisa and JazzCash.' });
+  }
+
   const cleanTxId = String(paymentTxId).trim();
 
   try {
@@ -146,7 +151,7 @@ const submitTransactionId = async (req, res) => {
     const updatedOrder = await prisma.order.update({
       where: { id: order.id },
       data: {
-        paymentMethod,
+        paymentMethod: normalizedPaymentMethod === 'EASYPAISA' ? 'Easypaisa' : 'JazzCash',
         paymentTxId: cleanTxId,
         paymentStatus: 'PENDING_VERIFICATION',
         status: 'PAYMENT_PENDING',

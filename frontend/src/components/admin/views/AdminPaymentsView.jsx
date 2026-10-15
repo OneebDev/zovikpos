@@ -9,15 +9,43 @@ import {
   Download,
   Printer,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
+import DateRangeFilterBar, { getPresetRange } from '../../common/DateRangeFilterBar';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
 import api from '../../../services/api';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
+import { paymentMethodLabel } from '../../../utils/paymentMethods';
+
+const toDateStr = (d) => {
+  if (!d) return '';
+  const dt = new Date(d);
+  const year = dt.getFullYear();
+  const month = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
   const [methodTab, setMethodTab] = useState('ALL');
   const [statusTab, setStatusTab] = useState('ALL');
+  const [viewMode] = useState('TABLE'); // TABLE only – calendar removed
   const [searchTerm, setSearchTerm] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Date range filter state
+  const [datePreset, setDatePreset] = useState('ALL');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  // Global Delete State for Payment Orders
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [paymentToDelete, setPaymentToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState(new Set());
 
   const payments = useMemo(() => {
     return orders.map((o) => ({
@@ -28,15 +56,26 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
       tableId: o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway'),
       tableNumber: o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway'),
       amount: o.total,
-      method: o.paymentMethod,
+      method: paymentMethodLabel(o.paymentMethod),
       orderStatus: o.status,
       paymentStatus: o.paymentStatus || (o.status === 'PAID' ? 'VERIFIED' : 'PENDING'),
       transactionId: o.payment?.transactionId || 'N/A',
       proofImage: o.payment?.proofImage,
       paymentId: o.payment?.id,
       createdAt: o.createdAt,
+      rawData: o,
     }));
   }, [orders]);
+
+  // Active date range computed from preset or custom
+  const activeDateRange = useMemo(() => {
+    if (datePreset === 'CUSTOM') {
+      if (customFrom || customTo) return { from: customFrom || '', to: customTo || '' };
+      return null;
+    }
+    if (datePreset === 'ALL') return null;
+    return getPresetRange(datePreset);
+  }, [datePreset, customFrom, customTo]);
 
   const filteredPayments = useMemo(() => {
     return payments.filter((p) => {
@@ -55,9 +94,52 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
         p.transactionId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         String(p.tableId).includes(searchTerm);
 
-      return matchesMethod && matchesStatus && matchesSearch;
+      let matchesDate = true;
+      if (activeDateRange) {
+        const pDate = toDateStr(p.createdAt);
+        if (activeDateRange.from && activeDateRange.to) {
+          matchesDate = pDate >= activeDateRange.from && pDate <= activeDateRange.to;
+        } else if (activeDateRange.from) {
+          matchesDate = pDate >= activeDateRange.from;
+        } else if (activeDateRange.to) {
+          matchesDate = pDate <= activeDateRange.to;
+        }
+      }
+
+      return matchesMethod && matchesStatus && matchesSearch && matchesDate;
     });
-  }, [payments, methodTab, statusTab, searchTerm]);
+  }, [payments, methodTab, statusTab, searchTerm, activeDateRange]);
+
+  const bulkDeletablePayments = filteredPayments;
+  const allBulkDeletableSelected = bulkDeletablePayments.length > 0 && bulkDeletablePayments.every((payment) => selectedPaymentIds.has(payment.id));
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedPaymentIds(new Set());
+    setSelectionMode((active) => !active);
+  };
+
+
+
+  const handleDeleteFailedPayment = async () => {
+    if (!paymentToDelete && !isBulkDeleting) return;
+    setDeleteLoading(true);
+    try {
+      const res = isBulkDeleting
+        ? await api.delete('/orders/bulk', { data: { ids: Array.from(selectedPaymentIds) } })
+        : await api.delete(`/orders/${paymentToDelete.id}`);
+      if (showToast) showToast(res.data?.message || (isBulkDeleting ? 'Selected payment orders removed.' : 'Payment record removed.'));
+      setDeleteModalOpen(false);
+      setPaymentToDelete(null);
+      setSelectedPaymentIds(new Set());
+      setIsBulkDeleting(false);
+      await onRefresh?.();
+    } catch (err) {
+      console.error('Delete payment record error:', err);
+      if (showToast) showToast(err.response?.data?.error || 'Failed to remove payment record', 'error');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const handleVerifyPayment = async (paymentId, status) => {
     if (!paymentId) return;
@@ -69,7 +151,7 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
     } catch (err) {
       console.error(err);
       if (showToast) showToast('Failed to update payment status', 'error');
-    } fontFinally: {
+      } finally {
       setActionLoading(false);
     }
   };
@@ -148,6 +230,8 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
         </div>
 
         <div className="flex items-center space-x-2">
+
+
           <button
             onClick={handleExportCSV}
             className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
@@ -164,6 +248,18 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
           </button>
         </div>
       </div>
+
+      {/* Date Quick-Filter Bar with Dual-Click Interactive Range Popover */}
+      <DateRangeFilterBar
+        preset={datePreset}
+        onPresetChange={setDatePreset}
+        customFrom={customFrom}
+        customTo={customTo}
+        onCustomRangeChange={(from, to) => {
+          setCustomFrom(from);
+          setCustomTo(to);
+        }}
+      />
 
       {/* Tabs & Filter Bar */}
       <div className="flex flex-col sm:flex-row justify-between gap-4">
@@ -199,8 +295,42 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedPaymentIds.size} />
+        {selectionMode && (
+          <>
+            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-muted)] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={allBulkDeletableSelected}
+                disabled={bulkDeletablePayments.length === 0}
+                onChange={() => setSelectedPaymentIds((current) => {
+                  const next = new Set(current);
+                  if (allBulkDeletableSelected) bulkDeletablePayments.forEach((payment) => next.delete(payment.id));
+                  else bulkDeletablePayments.forEach((payment) => next.add(payment.id));
+                  return next;
+                })}
+                className="accent-orange-500"
+                aria-label="Select all payment orders"
+              />
+              Select all
+            </label>
+            {selectedPaymentIds.size > 0 && (
+              <button
+                type="button"
+                onClick={() => { setIsBulkDeleting(true); setPaymentToDelete(null); setDeleteModalOpen(true); }}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedPaymentIds.size})
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Payment Records Table */}
-      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden">
+      {viewMode === 'TABLE' && (
+        <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden">
         {filteredPayments.length === 0 ? (
           <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)]">
             No payment records found.
@@ -224,10 +354,29 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
                 {filteredPayments.map((p) => {
                   const isPaid = ['PAID', 'PREPARING', 'READY', 'COMPLETED'].includes(p.orderStatus);
                   const isPending = p.orderStatus === 'PAYMENT_PENDING' || p.paymentStatus === 'PENDING';
+                  const hasVerifiedPayment = ['PAID', 'VERIFIED'].includes(String(p.paymentStatus).toUpperCase());
 
                   return (
                     <tr key={p.id} className="hover:bg-[var(--bg-color)]/40 transition-colors">
-                      <td className="p-4 font-mono font-extrabold text-orange-400">{p.orderNumber}</td>
+                      <td className="p-4 font-mono font-extrabold text-orange-400">
+                        <span className="inline-flex items-center gap-2">
+                          {selectionMode && (
+                            <input
+                              type="checkbox"
+                              checked={selectedPaymentIds.has(p.id)}
+                              onChange={() => setSelectedPaymentIds((current) => {
+                                const next = new Set(current);
+                                if (next.has(p.id)) next.delete(p.id);
+                                else next.add(p.id);
+                                return next;
+                              })}
+                              className="accent-orange-500"
+                              aria-label={`Select payment order ${p.orderNumber}`}
+                            />
+                          )}
+                          {p.orderNumber}
+                        </span>
+                      </td>
                       <td className="p-4">
                         <span className="font-bold block text-[var(--text-main)]">{p.customerName}</span>
                         <span className="text-[10px] text-[var(--text-muted)] block">{p.customerEmail}</span>
@@ -254,26 +403,46 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
                         </span>
                       </td>
                       <td className="p-4 text-right">
-                        {isPending && p.paymentId ? (
-                          <div className="flex items-center justify-end space-x-1.5">
-                            <button
-                              onClick={() => handleVerifyPayment(p.paymentId, 'VERIFIED')}
-                              disabled={actionLoading}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[10px] transition-all cursor-pointer shadow-sm"
-                            >
-                              Verify
-                            </button>
-                            <button
-                              onClick={() => handleVerifyPayment(p.paymentId, 'REJECTED')}
-                              disabled={actionLoading}
-                              className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg font-bold text-[10px] transition-all cursor-pointer"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-[var(--text-muted)] italic">Verified</span>
-                        )}
+                        <div className="flex items-center justify-end space-x-1.5">
+                          {isPending && p.paymentId ? (
+                            <>
+                              <button
+                                onClick={() => handleVerifyPayment(p.paymentId, 'VERIFIED')}
+                                disabled={actionLoading}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[10px] transition-all cursor-pointer shadow-sm"
+                              >
+                                Verify
+                              </button>
+                              <button
+                                onClick={() => handleVerifyPayment(p.paymentId, 'REJECTED')}
+                                disabled={actionLoading}
+                                className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg font-bold text-[10px] transition-all cursor-pointer"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          ) : (
+                            hasVerifiedPayment || isPaid ? (
+                              <span title="Payment was verified or settled." className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)] font-bold">
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                                Verified
+                              </span>
+                            ) : <span className="text-[10px] text-[var(--text-muted)] italic">No verification action</span>
+                          )}
+
+                          <button
+                            onClick={() => {
+                              setPaymentToDelete(p);
+                              setIsBulkDeleting(false);
+                              setDeleteModalOpen(true);
+                            }}
+                            title="Delete payment order and its linked records"
+                            aria-label={`Delete payment order ${p.orderNumber}`}
+                            className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg border border-transparent hover:border-rose-500/20 transition-all cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -283,6 +452,30 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
           </div>
         )}
       </div>
+      )}
+
+      {/* Global Delete Confirmation Modal */}
+      <GlobalDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setPaymentToDelete(null);
+          setIsBulkDeleting(false);
+        }}
+        onConfirm={handleDeleteFailedPayment}
+        title={isBulkDeleting ? `Delete ${selectedPaymentIds.size} Orders` : `Delete Payment Order (${paymentToDelete?.orderNumber || ''})`}
+        message={isBulkDeleting
+          ? 'This permanently deletes the selected orders and their payment records, including verified or settled payments.'
+          : 'This permanently deletes the selected order and its payment record, including verified or settled payments.'}
+        itemName={isBulkDeleting ? `${selectedPaymentIds.size} selected orders` : (paymentToDelete ? `Order #${paymentToDelete.orderNumber} (Rs. ${paymentToDelete.amount})` : '')}
+        itemCount={isBulkDeleting ? selectedPaymentIds.size : 1}
+        isBulk={isBulkDeleting}
+        confirmButtonText={isBulkDeleting ? `Delete ${selectedPaymentIds.size} Orders` : 'Delete Record'}
+        loading={deleteLoading}
+        warningNotes={[
+          'This removes the order, payment, items, status history, and ETA record from the database. The action cannot be undone.',
+        ]}
+      />
     </div>
   );
 };

@@ -12,6 +12,7 @@ import { connectSocket, disconnectSocket } from './services/socket';
 import { Sun, Moon, Flame, CreditCard, ShieldCheck, User } from 'lucide-react';
 import DemoRestrictionModal from './components/DemoRestrictionModal';
 import RoleChangeModal from './components/RoleChangeModal';
+import BrandLogo from './components/common/BrandLogo';
 
 function App() {
   const navigate = useNavigate();
@@ -151,7 +152,7 @@ function App() {
   const isLoginRoute = location.pathname.includes('/login');
 
   return (
-    <div className="min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] flex flex-col transition-colors duration-300">
+    <div className="responsive-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] flex flex-col transition-colors duration-300">
       {/* Global Demo Restriction Alert Popup Modal */}
       <DemoRestrictionModal onLogout={handleLogout} />
       {/* Global Real-Time Account Role Change & Deactivation Alert Modal */}
@@ -159,32 +160,27 @@ function App() {
 
       {/* Top Application Header – hidden on customer routes and login pages */}
       {!isCustomerRoute && !isLoginRoute && (
-        <div className="bg-[var(--card-bg)] border-b border-[var(--border-color)] px-6 py-3 flex justify-between items-center z-40 transition-colors duration-300 shadow-sm">
-          <div className="flex items-center space-x-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse" />
-            <span className="text-xs text-orange-500 font-extrabold tracking-wider uppercase">
-              ZovikPOS System
-            </span>
-          </div>
+        <div className="bg-[var(--card-bg)] border-b border-[var(--border-color)] px-2.5 sm:px-6 py-2.5 flex flex-nowrap justify-between items-center gap-2 z-40 transition-colors duration-300 shadow-sm">
+          <BrandLogo compact className="shrink-0" />
 
-          <div className="flex items-center space-x-4 text-xs">
-            <div className="flex items-center space-x-2">
-              <span className="font-semibold text-[var(--text-main)]">{user.name}</span>
-              <span className="px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-500 text-[10px] font-bold uppercase border border-orange-500/20">
+          <div className="flex flex-nowrap items-center gap-1.5 sm:gap-3 text-xs min-w-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+              <span className="font-semibold text-[var(--text-main)] truncate max-w-[92px] sm:max-w-none">{user.name}</span>
+              <span className="shrink-0 px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-500 text-[10px] font-bold uppercase border border-orange-500/20">
                 {user.role}
               </span>
             </div>
 
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className="p-1.5 rounded-lg bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+              className="shrink-0 p-1.5 rounded-lg bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
               title="Toggle Theme"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
             {user.role === 'CUSTOMER' ? (
-              <div className="flex items-center space-x-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <Link
                   to="/kitchen/login"
                   className="flex items-center space-x-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/20 px-2.5 py-1 rounded-lg text-xs font-bold transition-all"
@@ -210,7 +206,7 @@ function App() {
             ) : (
               <button
                 onClick={handleLogout}
-                className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer"
+                className="shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-2 sm:px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer"
               >
                 Logout
               </button>

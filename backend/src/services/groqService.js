@@ -8,14 +8,27 @@ const { createWorker } = require('tesseract.js');
  * (N can be any number or suffix). To add a new key, simply add to .env:
  *   GROQ_API_KEY_11="gsk_..."
  *   GROQ_API_KEY_12="gsk_..."
- * No code changes needed.
+ * No code changes needed. Keys are picked up at runtime automatically.
  *
- * Rotation strategy: Round-robin across all available keys.
- * On 429 (rate limit) or 401 (key invalid) → automatically switches to next key.
+ * Rotation strategy:
+ *   - Round-robin across all available keys.
+ *   - Per-key 429 cooldown tracking: if a key returns 429, it is skipped for
+ *     KEY_COOLDOWN_MS milliseconds before being tried again.
+ *   - On 401 (invalid) the key is permanently blacklisted for this session.
+ *   - Vision requests: only qwen/qwen3.8-27b (vision-capable). Output capacity
+ *     is sized for long invoices; account rate limits use the normal key rotation.
+ *   - Text requests: tries preferred model, then the full fallback list.
+ *   - ALL rotation is internal — no UI/system model selector is changed.
  */
 
+const KEY_COOLDOWN_MS = 62000; // 62s cooldown after a 429 (Groq resets OTPM per minute)
+const redactGroqSecrets = (value) => getGroqKeys().reduce(
+  (message, key) => message.split(key).join('[redacted]'),
+  String(value || 'Unknown error')
+).replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [redacted]');
+
 /**
- * Dynamically discover all GROQ_API_KEY* variables from process.env
+ * Dynamically discover all GROQ_API_KEY* variables from process.env.
  * Supports: GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3, ..., GROQ_API_KEY_N
  */
 const getGroqKeys = () => {
@@ -44,24 +57,69 @@ const getGroqModel = () => {
   return process.env.GROQ_MODEL || 'qwen/qwen3.8-27b';
 };
 
-// Module-level round-robin index (persists across calls within same server session)
+// ── Runtime rotation state (persists across calls within same server session) ──
 let currentKeyIndex = 0;
+// Map<apiKey, cooldownExpiresAt(ms)> — per-key 429 cooldown tracking
+const keyCooldownMap = new Map();
+// Set<apiKey> — permanently blacklisted (401 invalid) for this session
+const keyBlacklist = new Set();
 
 /**
- * Get the next API key in round-robin rotation
+ * Get the next available API key in round-robin, skipping cooled-down or
+ * blacklisted keys. Returns null if all keys are unavailable.
  */
-const getNextGroqKey = () => {
+const getNextGroqKey = (skipKeys = new Set()) => {
   const keys = getGroqKeys();
   if (keys.length === 0) return null;
-  const key = keys[currentKeyIndex % keys.length];
-  currentKeyIndex = (currentKeyIndex + 1) % keys.length;
-  return key;
+
+  const now = Date.now();
+  const total = keys.length;
+
+  for (let i = 0; i < total; i++) {
+    const idx = (currentKeyIndex + i) % total;
+    const key = keys[idx];
+
+    // Skip blacklisted (permanently invalid) keys
+    if (keyBlacklist.has(key)) continue;
+    // Skip keys in 429 cooldown
+    const cooldownUntil = keyCooldownMap.get(key) || 0;
+    if (cooldownUntil > now) continue;
+    // Skip explicitly requested skip list (already tried in this call)
+    if (skipKeys.has(key)) continue;
+
+    // Found a usable key — advance index for next call
+    currentKeyIndex = (idx + 1) % total;
+    return key;
+  }
+
+  return null; // All keys exhausted / cooling down
+};
+
+/**
+ * Mark a key as rate-limited (429) — enter cooldown for KEY_COOLDOWN_MS
+ */
+const markKeyCooling = (key) => {
+  keyCooldownMap.set(key, Date.now() + KEY_COOLDOWN_MS);
+  console.warn(`[GroqService] An API key is cooling down for ${KEY_COOLDOWN_MS / 1000}s (429 rate limit).`);
+};
+
+/**
+ * Mark a key as permanently invalid (401) for this session
+ */
+const markKeyBlacklisted = (key) => {
+  keyBlacklist.add(key);
+  console.warn('[GroqService] An API key was rejected (401) and disabled for this server session.');
 };
 
 /**
  * ─── CORE GROQ API CALLER ────────────────────────────────────────────────────
  * Calls Groq Chat Completions API.
- * Automatically rotates keys and models on 429 (rate limit), 401, or 503 errors.
+ *
+ * Key rotation: round-robin across all 16+ keys, with per-key 429 cooldown
+ * tracking and 401 blacklisting. All happens at runtime — no UI changes.
+ *
+ * Model rotation: vision requests use only qwen/qwen3.8-27b (only vision model).
+ * Text requests try the preferred model, then fallback list.
  */
 const callGroqAPI = async (payload, retries = null) => {
   const keys = getGroqKeys();
@@ -70,12 +128,13 @@ const callGroqAPI = async (payload, retries = null) => {
   }
 
   // Detect if this request contains an image (Vision API)
-  const isVisionRequest = Array.isArray(payload.messages) && payload.messages.some(m => 
+  const isVisionRequest = Array.isArray(payload.messages) && payload.messages.some(m =>
     Array.isArray(m.content) && m.content.some(c => c && c.type === 'image_url')
   );
 
   // Vision requests must ONLY use vision-capable models (qwen/qwen3.8-27b).
   // Text-only models will throw HTTP 400 Bad Request on image_url content.
+  // For text requests, try preferred model first, then rotate through fallbacks.
   const fallbackModels = isVisionRequest
     ? ['qwen/qwen3.8-27b']
     : [
@@ -89,19 +148,25 @@ const callGroqAPI = async (payload, retries = null) => {
   let lastError = null;
 
   for (const modelCandidate of fallbackModels) {
-    // OTPM (Output Tokens Per Minute) is a rate limit, not a per-request cap.
-    // Key rotation already handles 429 rate-limit errors, so let callers set their own max_tokens.
-    const tokenLimit = payload.max_tokens || (isVisionRequest ? 4096 : 4096);
+    // Keep image extraction large enough for long invoices (100 compact item rows fit comfortably).
+    // This is a per-response ceiling; account OTPM limits are handled by normal 429 key rotation.
+    const tokenLimit = isVisionRequest ? Math.min(payload.max_tokens || 4096, 4096) : (payload.max_tokens || 4096);
     const currentPayload = {
       ...payload,
       model: modelCandidate,
       max_tokens: tokenLimit
     };
 
-    const maxAttempts = retries !== null ? Math.min(retries, keys.length) : keys.length;
+    // Try ALL available keys for this model before moving to next model
+    const triedKeysForModel = new Set();
+    const maxKeysToTry = Math.min(keys.length, retries !== null ? retries : keys.length);
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const apiKey = getNextGroqKey();
+    for (let attempt = 0; attempt < maxKeysToTry; attempt++) {
+      const apiKey = getNextGroqKey(triedKeysForModel);
+
+      if (!apiKey) break; // Keys are invalid, cooling down, or already tried; report the failure promptly.
+
+      triedKeysForModel.add(apiKey);
 
       try {
         const response = await axios.post(
@@ -119,17 +184,30 @@ const callGroqAPI = async (payload, retries = null) => {
       } catch (err) {
         lastError = err;
         const status = err.response?.status;
-        const errMsg = err.response?.data?.error?.message || err.message;
-        console.warn(`[GroqService] Key attempt ${attempt + 1}/${maxAttempts} (HTTP ${status}) for model ${modelCandidate}: ${errMsg}`);
-        if (status === 429 || status === 401 || status === 503 || status === 404) {
-          continue; // Rotate to next API key
+        const errMsg = redactGroqSecrets(err.response?.data?.error?.message || err.message);
+        console.warn(`[GroqService] Request failed for model ${modelCandidate} (HTTP ${status || 'network'}): ${errMsg.substring(0, 120)}`);
+
+        if (status === 429) {
+          // Rate limited: put this key in cooldown and try next key
+          markKeyCooling(apiKey);
+          continue;
         }
-        break; // For fatal errors, stop retrying this model
+        if (status === 401) {
+          // Invalid key: blacklist permanently for this session
+          markKeyBlacklisted(apiKey);
+          continue;
+        }
+        if (status === 503 || status === 502 || status === 500 || status === 408 || !status) {
+          // Transient provider/network failure: try another key, then the next model.
+          continue;
+        }
+        // Invalid model/request (404, 400, 422, etc.): move to the next model.
+        break;
       }
     }
   }
 
-  console.error('[GroqService] All Groq API key and model candidates exhausted.');
+  console.error(`[GroqService] All ${keys.length} API keys and ${fallbackModels.length} models exhausted.`);
   throw lastError;
 };
 
@@ -152,9 +230,30 @@ const extractTextFromImageOCR = async (imageBase64Data) => {
     return rawText.replace(/[^\x20-\x7E\r\n\t]/g, '');
   } catch (err) {
     if (worker) await worker.terminate().catch(() => {});
-    console.error('[GroqService] Tesseract OCR error:', err.message);
+    console.error('[GroqService] Tesseract OCR error:', redactGroqSecrets(err.message));
     return '';
   }
+};
+
+const invoiceRowNumber = (item) => Number.parseInt(item.sourceRowNumber ?? item.rowNumber ?? item.row ?? item.r, 10) || null;
+const hasSequentialInvoiceRows = (items) => {
+  const numbers = items.map(invoiceRowNumber);
+  return numbers.length > 0 && numbers.every(Number.isInteger) && new Set(numbers).size === numbers.length &&
+    [...numbers].sort((a, b) => a - b).every((number, index) => number === index + 1);
+};
+
+// When parsers disagree, a complete numbered OCR sequence is the most reliable
+// source for the number of invoice rows. Otherwise keep the numbered vision list
+// when both passes agree, and let the existing fuzzy merge handle unnumbered files.
+const preferCompleteNumberedInvoiceItems = (visionItems, ocrItems) => {
+  const visionNumbered = hasSequentialInvoiceRows(visionItems);
+  const ocrNumbered = hasSequentialInvoiceRows(ocrItems);
+  if (ocrNumbered && (!visionNumbered || ocrItems.length !== visionItems.length)) return ocrItems;
+  if (visionNumbered && ocrNumbered) return visionItems;
+  // A complete numbered sequence is already a count-checked invoice list.
+  // Do not merge unnumbered OCR guesses into it (for example, a phantom 11th row).
+  if (visionNumbered) return visionItems;
+  return null;
 };
 
 /**
@@ -162,65 +261,31 @@ const extractTextFromImageOCR = async (imageBase64Data) => {
  * Parse a purchase receipt or invoice image (printed, handwritten, or mixed).
  */
 const analyzeInvoiceImageWithGroq = async (imageBase64Data) => {
-  const invoicePrompt = `You are an expert Restaurant POS Invoice & Receipt Parser AI.
-Your job is to accurately extract ALL purchased items, quantities, costs, and metadata from this supplier invoice/receipt (which may be printed, handwritten, or mixed format).
+  // Ultra-compact JSON format to ensure 50+ items easily fit within token limits
+  const invoicePrompt = `You are a high-accuracy receipt & invoice vision parser.
+Notice: The invoice may have TWO COLUMNS of items (e.g., items 1 to 17 on the left, and items 18 to 33 on the right).
+You MUST extract EVERY SINGLE item from BOTH columns from top to bottom.
+Never stop early, never skip, never summarize. If there are 33 items, output all 33 items. If there are 50, output all 50.
+Do NOT invent placeholder items or duplicate any item. Treat the printed Sr. No. as the source row identity: return each numbered row exactly once, and never create an item from subtotal, discount, notes, or a repeated OCR reading.
+If the invoice prints a discount percentage, return its numeric value in discPct (without %). If it prints a fixed currency discount, return that exact amount in disc. If both appear, return both. Do not mistake a percentage for a currency amount. Ignore subtotal and final total values for application.
 
-CRITICAL EXTRACTION RULES:
-1. ACCURACY & FIDELITY:
-   - Extract the actual values visible on the invoice.
-   - Preserve original product names/descriptions as written (e.g. "Chicken Boneless", "Fresh Tomatoes", "Cooking Oil 5L").
-   - DO NOT fabricate missing items, quantities, or prices.
-   - Never confuse invoice numbers, phone numbers, tax IDs, or dates with product rows.
+Output strictly valid JSON with no markdown tags or explanatory text:
+{"s":null,"inv":null,"d":null,"sub":null,"disc":null,"discPct":null,"tot":null,"items":[{"r":1,"n":"Item Name","q":1,"u":"KG","p":0}]}`;
 
-2. EXTRACT EVERY SINGLE LINE ITEM — NO LIMIT:
-   - You MUST extract ALL product rows present in the invoice. Do NOT stop at 10 items.
-   - If the invoice has 5, 15, 25, 40, or more product rows, extract ALL of them.
-   - Do NOT summarize, skip, or omit any product rows. Every visible product row must appear in the "items" array.
-   - Include items near the bottom of the invoice — do not cut off early.
-
-3. DISTINGUISH LINE ITEMS VS SUMMARY/TOTALS:
-   - Extract ONLY actual purchased product rows into "items".
-   - DO NOT include summary rows such as "Subtotal", "Total", "Net Amount", "GST/Tax", "Discount", "Delivery Charges", "Previous Balance", or "Paid Amount" as items.
-
-4. HANDWRITTEN & MIXED INVOICES:
-   - Carefully read handwritten numbers and cursive text. Pay special attention to digit disambiguation (e.g. 1 vs 7, 0 vs 6 vs 8, 4 vs 9, 3 vs 5).
-   - If a handwritten item name, quantity, or price is ambiguous or partially illegible, extract your best interpretation, but set "needsReview": true and specify "reviewReason": "Unclear handwriting on [field]".
-   - DO NOT silently change digits or invent prices.
-
-5. QUANTITY, UNIT, UNIT COST, LINE TOTAL:
-   - Quantity: Number of units purchased (e.g., 5, 2.5, 10).
-   - Unit: Normalize to standard units: KG, G, L, ML, PCS, DOZEN, BOX, PACK, BOTTLE, BAG, or ROLL. If not specified, default to PCS or KG based on context.
-   - Unit Cost: The price for ONE unit. If only Line Total is shown, calculate unitCost = lineTotal / quantity.
-   - Line Total: The total price for this line (quantity * unitCost).
-
-6. OUTPUT FORMAT (strictly valid JSON with no markdown wrapping):
-{
-  "supplierName": "Supplier or vendor name if visible, else null",
-  "invoiceNumber": "Invoice/Bill Number if visible, else null",
-  "date": "YYYY-MM-DD if visible, else null",
-  "invoiceTotal": 12500,
-  "items": [
-    {
-      "rawName": "Exact item name as written",
-      "quantity": 5,
-      "unit": "KG",
-      "unitCost": 450,
-      "totalCost": 2250,
-      "batchNumber": "Batch or Lot # if visible, else null",
-      "expiryDate": "YYYY-MM-DD if visible, else null",
-      "needsReview": false,
-      "reviewReason": null
-    }
-  ]
-}
-
-IMPORTANT: Output the COMPLETE items array with ALL product rows. Do not truncate.`;
+  let visionItems = [];
+  let detectedSupplierName = null;
+  let extractedInvoiceNumber = null;
+  let extractedDate = null;
+  let detectedTotal = null;
+  let detectedSubtotal = null;
+  let detectedDiscount = null;
+  let detectedDiscountPercent = null;
+  const extractionWarnings = [];
 
   // ── Strategy 1: Groq Vision API (direct multimodal image understanding) ────
   try {
     console.log('[GroqService] Attempting Groq Vision API for invoice image...');
 
-    // Ensure the image has a proper data URL prefix for vision API
     const imageUrl = imageBase64Data.startsWith('data:')
       ? imageBase64Data
       : `data:image/jpeg;base64,${imageBase64Data}`;
@@ -241,9 +306,9 @@ IMPORTANT: Output the COMPLETE items array with ALL product rows. Do not truncat
     if (resData) {
       const content = resData.choices?.[0]?.message?.content || '';
       const finishReason = resData.choices?.[0]?.finish_reason;
+      if (finishReason === 'length') extractionWarnings.push('Vision model output reached its token limit; review the last extracted rows against the invoice.');
       const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
-      // Attempt to parse the JSON, with truncation recovery
       let parsed = null;
       try {
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -251,66 +316,153 @@ IMPORTANT: Output the COMPLETE items array with ALL product rows. Do not truncat
           parsed = JSON.parse(jsonMatch[0]);
         }
       } catch (parseErr) {
-        // JSON may be truncated (finish_reason === 'length'). Attempt repair.
-        console.warn(`[GroqService] Vision JSON parse failed (finish_reason=${finishReason}), attempting repair...`);
         try {
           let repaired = cleaned;
-          // Find the start of the JSON object
           const objStart = repaired.indexOf('{');
           if (objStart >= 0) {
             repaired = repaired.substring(objStart);
-            // Try to close any truncated items array: remove last incomplete item, close array and object
-            // Find the last complete item (ends with })
             const lastCompleteItem = repaired.lastIndexOf('}');
             if (lastCompleteItem > 0) {
               repaired = repaired.substring(0, lastCompleteItem + 1);
-              // Count open brackets
               const openBraces = (repaired.match(/\{/g) || []).length;
               const closeBraces = (repaired.match(/\}/g) || []).length;
               const openBrackets = (repaired.match(/\[/g) || []).length;
               const closeBrackets = (repaired.match(/\]/g) || []).length;
-              // Close any unclosed brackets/braces
               for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += ']';
               for (let i = 0; i < openBraces - closeBraces; i++) repaired += '}';
               parsed = JSON.parse(repaired);
-              console.log(`[GroqService] ✓ Repaired truncated JSON successfully.`);
             }
           }
-        } catch (repairErr) {
-          console.warn('[GroqService] JSON repair also failed:', repairErr.message);
-        }
+        } catch (_) {}
       }
 
-      if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
-        // Flag if response was truncated
-        if (finishReason === 'length') {
-          console.warn(`[GroqService] ⚠ Response was truncated (finish_reason=length). Extracted ${parsed.items.length} items but invoice may contain more.`);
-          parsed._truncated = true;
+      if (parsed) {
+        detectedSupplierName = parsed.supplierName || parsed.s || null;
+        extractedInvoiceNumber = parsed.invoiceNumber || parsed.inv || null;
+        extractedDate = parsed.date || parsed.d || null;
+        detectedTotal = parsed.invoiceTotal || parsed.tot || null;
+        detectedSubtotal = parsed.subtotal ?? parsed.sub ?? null;
+        detectedDiscount = parsed.discount ?? parsed.disc ?? null;
+        detectedDiscountPercent = parsed.discountPercent ?? parsed.discountPercentage ?? parsed.discPct ?? null;
+
+        if (Array.isArray(parsed.items)) {
+          visionItems = parsed.items.map(it => {
+            const rawName = it.rawName || it.name || it.n || it.item || '';
+            const parsedQty = Number.parseFloat(it.quantity ?? it.qty ?? it.q);
+            const qty = Number.isFinite(parsedQty) && parsedQty >= 0 ? parsedQty : 0;
+            const cost = parseFloat(it.unitCost || it.price || it.rate || it.cost || it.p) || 0;
+            const tot = parseFloat(it.totalCost || it.total) || (qty * cost);
+            return {
+              sourceRowNumber: Number.parseInt(it.sourceRowNumber ?? it.rowNumber ?? it.row ?? it.r, 10) || null,
+              rawName: String(rawName).trim(),
+              quantity: qty,
+              unit: (it.unit || it.u || 'KG').toUpperCase(),
+              unitCost: cost,
+              totalCost: tot,
+              batchNumber: it.batchNumber || null,
+              expiryDate: it.expiryDate || null,
+              needsReview: Boolean(it.needsReview) || !(qty > 0) || (cost <= 0),
+              reviewReason: it.reviewReason || (!(qty > 0) ? 'Quantity missing or invalid; verify before receiving' : cost <= 0 ? 'Zero or missing unit price' : null)
+            };
+          }).filter(it => it.rawName && it.rawName.length > 0 && it.rawName.toLowerCase() !== 'item name');
+
+          console.log(`[GroqService] Vision API extracted ${visionItems.length} items (finish_reason: ${finishReason}).`);
         }
-        console.log(`[GroqService] ✓ Vision API extracted ${parsed.items.length} items from invoice.`);
-        return parsed;
       }
     }
   } catch (visionErr) {
-    console.warn('[GroqService] Vision API failed, falling back to Tesseract OCR + LLM:', visionErr.message);
+    console.warn('[GroqService] Vision API failed, continuing to OCR:', redactGroqSecrets(visionErr.message));
   }
 
-  // ── Strategy 2: Tesseract OCR → Groq text LLM (fallback) ───────────────────
+  // ── Strategy 2: Tesseract OCR + Text LLM Merging ───────────────────────────
+  // If Vision extracted items, check if OCR found any additional items from the document
   try {
-    console.log('[GroqService] Fallback: Running Tesseract OCR on invoice image...');
     const extractedText = await extractTextFromImageOCR(imageBase64Data);
 
-    if (!extractedText || extractedText.trim().length < 10) {
-      console.warn('[GroqService] Tesseract OCR yielded empty or too-short text.');
-      return null;
-    }
+    if (extractedText && extractedText.trim().length >= 10) {
+      console.log(`[GroqService] Running Tesseract OCR + LLM pass to catch any missed items...`);
+      const ocrResult = await parseInvoiceTextWithGroq(extractedText);
 
-    console.log(`[GroqService] OCR text (${extractedText.length} chars), sending to Groq LLM...`);
-    return await parseInvoiceTextWithGroq(extractedText);
-  } catch (err) {
-    console.error('[GroqService] Invoice scan failed (both strategies):', err.message);
-    return null;
+      if (ocrResult && Array.isArray(ocrResult.items) && ocrResult.items.length > 0) {
+        if (visionItems.length === 0) {
+          return ocrResult;
+        }
+
+        const numberedItems = preferCompleteNumberedInvoiceItems(visionItems, ocrResult.items);
+        if (numberedItems) {
+          const countWarning = visionItems.length !== ocrResult.items.length
+            ? [`Image and OCR passes found ${visionItems.length} and ${ocrResult.items.length} rows; kept the complete numbered row sequence.`]
+            : [];
+          return {
+            supplierName: detectedSupplierName || ocrResult.supplierName,
+            invoiceNumber: extractedInvoiceNumber || ocrResult.invoiceNumber,
+            date: extractedDate || ocrResult.date,
+            invoiceTotal: detectedTotal || ocrResult.invoiceTotal,
+            subtotal: detectedSubtotal ?? ocrResult.subtotal ?? null,
+            discount: detectedDiscount ?? ocrResult.discount ?? null,
+            discountPercent: detectedDiscountPercent ?? ocrResult.discountPercent ?? null,
+            items: numberedItems,
+            warnings: [...extractionWarnings, ...countWarning, ...(ocrResult.warnings || [])]
+          };
+        }
+
+        const normalize = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const merged = [...visionItems];
+        const seenNorms = new Set(visionItems.map(v => normalize(v.rawName)));
+
+        for (const oItem of ocrResult.items) {
+          const oNorm = normalize(oItem.rawName);
+          if (!oNorm) continue;
+          const oRowNumber = invoiceRowNumber(oItem);
+          if (oRowNumber && merged.some((item) => invoiceRowNumber(item) === oRowNumber)) continue;
+
+          // Deduplicate accurately: only skip if same or close prefix match
+          const alreadyFound = seenNorms.has(oNorm) ||
+            [...seenNorms].some(sn => (sn.length >= 5 && oNorm.length >= 5 && (sn.startsWith(oNorm.slice(0, 6)) || oNorm.startsWith(sn.slice(0, 6)))));
+          if (!alreadyFound) {
+            merged.push(oItem);
+            seenNorms.add(oNorm);
+          }
+        }
+
+        const newlyFound = merged.length - visionItems.length;
+        if (newlyFound > 0) {
+          console.log(`[GroqService] ✓ DUAL-PASS: Recovered ${newlyFound} missed item(s) from OCR! Total=${merged.length} items.`);
+        }
+
+        return {
+          supplierName: detectedSupplierName || ocrResult.supplierName,
+          invoiceNumber: extractedInvoiceNumber || ocrResult.invoiceNumber,
+          date: extractedDate || ocrResult.date,
+          invoiceTotal: detectedTotal || ocrResult.invoiceTotal,
+          subtotal: detectedSubtotal ?? ocrResult.subtotal ?? null,
+          discount: detectedDiscount ?? ocrResult.discount ?? null,
+          discountPercent: detectedDiscountPercent ?? ocrResult.discountPercent ?? null,
+          items: merged,
+          warnings: [...extractionWarnings, ...(ocrResult.warnings || [])]
+        };
+      }
+    }
+  } catch (ocrErr) {
+    console.warn('[GroqService] OCR pass encountered issue:', redactGroqSecrets(ocrErr.message));
   }
+
+  // Return whatever vision extracted
+  if (visionItems.length > 0) {
+    return {
+      supplierName: detectedSupplierName,
+      invoiceNumber: extractedInvoiceNumber,
+      date: extractedDate,
+      invoiceTotal: detectedTotal,
+      subtotal: detectedSubtotal,
+      discount: detectedDiscount,
+      discountPercent: detectedDiscountPercent,
+      items: visionItems,
+      warnings: extractionWarnings
+    };
+  }
+
+  return null;
 };
 
 /**
@@ -322,48 +474,32 @@ const parseInvoiceTextWithGroq = async (invoiceText) => {
     return null;
   }
 
+  // Highly token-efficient prompt capable of extracting 100+ items without hitting limits
+  const maxInvoiceTextLength = 35000;
+  const inputWasTruncated = invoiceText.length > maxInvoiceTextLength;
   const textPrompt = `You are an expert Restaurant POS Invoice & Receipt Parser AI.
-Analyze the following text extracted from a supplier invoice/bill/receipt and extract ALL item details and metadata.
+Extract ALL line items and metadata from this invoice text. Never omit or summarize any items. If there are 33, 50, or 100 items, extract EVERY SINGLE item.
 
 CRITICAL RULES:
-1. ACCURACY: Extract exact product names, quantities, and prices. Preserve descriptions as written.
-2. DO NOT include "Subtotal", "Total", "Tax/GST", "Discount", "Delivery", or "Paid" as items.
-3. EXTRACT EVERY SINGLE LINE ITEM — NO LIMIT. If the invoice has 5, 15, 25, 40+ items, extract ALL of them. Do NOT stop early or summarize.
-4. If an item name, quantity, or price is ambiguous or incomplete, set "needsReview": true and "reviewReason": "reason".
-5. Output strictly valid JSON with no markdown formatting.
+1. Extract exact item name, quantity, unit, price/rate, and line total.
+2. DO NOT include "Subtotal", "Total", "Grand Total", "Tax", "Discount", or "Paid" as items.
+3. Ignore noise, stamps, headers. Only extract actual product rows.
+4. Output strictly valid JSON without markdown. Preserve the printed serial number as "r" and do not add an unnumbered item when the source is numbered:
 
-JSON FORMAT:
-{
-  "supplierName": "Supplier / store name if found, else null",
-  "invoiceNumber": "Invoice / Bill Number if found, else null",
-  "date": "YYYY-MM-DD if found, else null",
-  "invoiceTotal": 12500,
-  "items": [
-    {
-      "rawName": "Full item name as written",
-      "quantity": 10,
-      "unit": "KG, G, L, ML, PCS, BOX, DOZEN, or BAG",
-      "unitCost": 450,
-      "totalCost": 4500,
-      "batchNumber": null,
-      "expiryDate": null,
-      "needsReview": false,
-      "reviewReason": null
-    }
-  ]
-}
+5. If a discount percentage is printed, return its numeric value in discPct without the % sign. If a fixed currency discount is printed, return its exact amount in disc. If both appear, return both. Never confuse a percentage with a currency amount. Subtotal and final total must not be used to calculate or replace item-based totals.
 
-IMPORTANT: Output the COMPLETE items array with ALL product rows. Do not truncate or omit any items.
+FORMAT:
+{"s":"Supplier","inv":"Inv#","d":"YYYY-MM-DD","sub":null,"disc":null,"discPct":null,"tot":null,"items":[{"r":1,"n":"Item Name","q":1,"u":"KG","p":100,"t":100,"b":null,"exp":null}]}
 
 INVOICE TEXT:
 """
-${invoiceText.substring(0, 12000)}
+${invoiceText.substring(0, maxInvoiceTextLength)}
 """`;
 
   const resData = await callGroqAPI({
     model: 'openai/gpt-oss-120b',
     messages: [
-      { role: 'system', content: 'You are a precise POS Invoice Parser that outputs JSON. Extract ALL items — no limit.' },
+      { role: 'system', content: 'You are an ultra-precise POS Invoice Parser that outputs compact JSON. Extract ALL items without limit.' },
       { role: 'user', content: textPrompt }
     ],
     temperature: 0.05,
@@ -408,13 +544,48 @@ ${invoiceText.substring(0, 12000)}
     }
   }
 
-  if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
-    if (finishReason === 'length') {
-      console.warn(`[GroqService] ⚠ Text LLM response truncated (finish_reason=length). Extracted ${parsed.items.length} items but invoice may contain more.`);
-      parsed._truncated = true;
+  if (parsed) {
+    const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+    const normalizedItems = rawItems.map(it => {
+      const rawName = it.rawName || it.name || it.n || it.item || '';
+      const parsedQty = Number.parseFloat(it.quantity ?? it.qty ?? it.q);
+      const qty = Number.isFinite(parsedQty) && parsedQty >= 0 ? parsedQty : 0;
+      const cost = parseFloat(it.unitCost || it.price || it.rate || it.cost || it.p) || 0;
+      const tot = parseFloat(it.totalCost || it.total || it.t) || (qty * cost);
+      return {
+        sourceRowNumber: Number.parseInt(it.sourceRowNumber ?? it.rowNumber ?? it.row ?? it.r, 10) || null,
+        rawName: String(rawName).trim(),
+        quantity: qty,
+        unit: (it.unit || it.u || 'KG').toUpperCase(),
+        unitCost: cost,
+        totalCost: tot,
+        batchNumber: it.batchNumber || it.b || null,
+        expiryDate: it.expiryDate || it.exp || null,
+        needsReview: Boolean(it.needsReview) || !(qty > 0) || (cost <= 0),
+        reviewReason: it.reviewReason || (!(qty > 0) ? 'Quantity missing or invalid; verify before receiving' : cost <= 0 ? 'Zero or missing unit price' : null)
+      };
+    }).filter(it => it.rawName && it.rawName.length > 0 && !/^(subtotal|total|grand total|tax|gst|discount)$/i.test(it.rawName));
+
+    if (normalizedItems.length > 0) {
+      if (finishReason === 'length') {
+        console.warn(`[GroqService] ⚠ Text LLM response truncated (finish_reason=length). Extracted ${normalizedItems.length} items.`);
+      }
+      console.log(`[GroqService] ✓ Extracted ${normalizedItems.length} items from invoice text.`);
+      return {
+        supplierName: parsed.supplierName || parsed.s || null,
+        invoiceNumber: parsed.invoiceNumber || parsed.inv || null,
+        date: parsed.date || parsed.d || null,
+        invoiceTotal: parsed.invoiceTotal ?? parsed.tot ?? null,
+        subtotal: parsed.subtotal ?? parsed.sub ?? null,
+        discount: parsed.discount ?? parsed.disc ?? null,
+        discountPercent: parsed.discountPercent ?? parsed.discountPercentage ?? parsed.discPct ?? null,
+        items: normalizedItems,
+        warnings: [
+          ...(inputWasTruncated ? ['Invoice text exceeded the parser input limit; later source text was not sent.'] : []),
+          ...(finishReason === 'length' ? ['AI response reached its token limit; review extracted rows against the source invoice.'] : [])
+        ]
+      };
     }
-    console.log(`[GroqService] ✓ Extracted ${parsed.items.length} items from text.`);
-    return parsed;
   }
 
   // Last resort: try direct parse
@@ -486,7 +657,7 @@ Respond ONLY with valid JSON.`;
     }
     return JSON.parse(cleaned);
   } catch (err) {
-    console.error('[GroqService] AI Insights generation failed:', err.message);
+    console.error('[GroqService] AI Insights generation failed:', redactGroqSecrets(err.message));
     return null;
   }
 };
@@ -498,5 +669,6 @@ module.exports = {
   generateRealAIInsightsWithGroq,
   callGroqAPI,
   getGroqModel,
-  getGroqKeys
+  getGroqKeys,
+  preferCompleteNumberedInvoiceItems
 };

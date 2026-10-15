@@ -15,8 +15,16 @@ import {
   CreditCard,
   X,
   FileText,
+  Calendar as CalendarIcon,
+  Trash2,
+  List,
 } from 'lucide-react';
 import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
+import DateRangeFilterBar, { getPresetRange } from '../../common/DateRangeFilterBar';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
+import { paymentMethodKey, paymentMethodLabel } from '../../../utils/paymentMethods';
+import api from '../../../services/api';
 
 const statusBadges = {
   PENDING: { label: 'PENDING', bg: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
@@ -32,11 +40,41 @@ const statusBadges = {
 
 const lifecycleSteps = ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY', 'COMPLETED'];
 
-const AdminOrdersView = ({ orders = [], loading, onRefresh }) => {
+// Date range quick-filter helper (local)
+const toDateStr = (d) => {
+  if (!d) return '';
+  const dt = new Date(d);
+  return dt.toISOString().split('T')[0];
+};
+
+const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
   const [activeTab, setActiveTab] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('ALL');
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
+
+  // Date filter state
+  const [datePreset, setDatePreset] = useState('ALL'); // ALL | TODAY | YESTERDAY | LAST_7 | THIS_MONTH | LAST_MONTH | CUSTOM
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  // Global Delete State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Active date range computed from preset or custom
+  const activeDateRange = useMemo(() => {
+    if (datePreset === 'CUSTOM') {
+      if (customFrom || customTo) return { from: customFrom || '', to: customTo || '' };
+      return null;
+    }
+    if (datePreset === 'ALL') return null;
+    return getPresetRange(datePreset);
+  }, [datePreset, customFrom, customTo]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -46,11 +84,24 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh }) => {
         order.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         String(order.tableId).includes(searchTerm);
-      const matchesMethod = paymentMethodFilter === 'ALL' || order.paymentMethod === paymentMethodFilter;
+      const matchesMethod = paymentMethodFilter === 'ALL' || paymentMethodKey(order.paymentMethod) === paymentMethodKey(paymentMethodFilter);
 
-      return matchesTab && matchesSearch && matchesMethod;
+      // Date range filter
+      let matchesDate = true;
+      if (activeDateRange) {
+        const orderDate = toDateStr(new Date(order.createdAt));
+        if (activeDateRange.from && activeDateRange.to) {
+          matchesDate = orderDate >= activeDateRange.from && orderDate <= activeDateRange.to;
+        } else if (activeDateRange.from) {
+          matchesDate = orderDate >= activeDateRange.from;
+        } else if (activeDateRange.to) {
+          matchesDate = orderDate <= activeDateRange.to;
+        }
+      }
+
+      return matchesTab && matchesSearch && matchesMethod && matchesDate;
     });
-  }, [orders, activeTab, searchTerm, paymentMethodFilter]);
+  }, [orders, activeTab, searchTerm, paymentMethodFilter, activeDateRange]);
 
   const handleExportCSV = () => {
     const csvData = filteredOrders.map((o) => ({
@@ -59,7 +110,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh }) => {
       Email: o.user?.email || 'N/A',
       TableNumber: o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway'),
       TotalAmount: o.total,
-      PaymentMethod: o.paymentMethod,
+      PaymentMethod: paymentMethodLabel(o.paymentMethod),
       PaymentStatus: o.paymentStatus,
       OrderStatus: o.status,
       CreatedAt: new Date(o.createdAt).toLocaleString(),
@@ -101,7 +152,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh }) => {
               <td>${o.user?.name || o.user?.email || 'Guest'}</td>
               <td>${o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway')}</td>
               <td>Rs. ${Number(o.total || 0).toFixed(2)}</td>
-              <td>${o.paymentMethod}</td>
+              <td>${paymentMethodLabel(o.paymentMethod)}</td>
               <td><span class="badge badge-success">${o.status}</span></td>
               <td>${new Date(o.createdAt).toLocaleString()}</td>
             </tr>
@@ -114,16 +165,105 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh }) => {
     printPDFReport('Orders & Transactions Report', tableHtml);
   };
 
+
+
+  // Single Order Delete Handler
+  const handleConfirmSingleDelete = async () => {
+    if (!orderToDelete) return;
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete(`/orders/${orderToDelete.id}`);
+      if (showToast) showToast(res.data?.message || 'Order deleted successfully.');
+      setDeleteModalOpen(false);
+      setOrderToDelete(null);
+      if (selectedOrder?.id === orderToDelete.id) setSelectedOrder(null);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error('Delete order error:', err);
+      if (showToast) showToast(err.response?.data?.error || 'Failed to delete order', 'error');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Bulk Delete Cancelled / Failed Orders
+  const handleConfirmBulkDelete = async () => {
+    setDeleteLoading(true);
+    try {
+      const selectedIds = Array.from(selectedOrderIds);
+      const res = await api.delete('/orders/bulk', {
+        data: selectedIds.length
+          ? { ids: selectedIds }
+          : { scope: activeTab === 'CANCELLED' ? 'CANCELLED' : 'PAYMENT_FAILED' }
+      });
+      if (showToast) showToast(res.data?.message || 'Orders deleted successfully.');
+      setDeleteModalOpen(false);
+      setIsBulkDeleting(false);
+      setSelectedOrderIds(new Set());
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error('Bulk delete orders error:', err);
+      if (showToast) showToast(err.response?.data?.error || 'Failed to bulk delete orders', 'error');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const cancellableOrFailedCount = useMemo(() => {
+    return orders.filter(o => o.status === 'CANCELLED' || o.status === 'PAYMENT_FAILED').length;
+  }, [orders]);
+
+  const selectableOrders = filteredOrders;
+  const allSelectableOrdersSelected = selectableOrders.length > 0 && selectableOrders.every((order) => selectedOrderIds.has(order.id));
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedOrderIds(new Set());
+    setSelectionMode((active) => !active);
+  };
+  const toggleOrderSelection = (id) => {
+    setSelectedOrderIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
         <div>
           <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">Orders Management</h2>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5">Filter, inspect, and export complete dining order lifecycles.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">Filter, inspect, calendar timeline, and export complete dining order lifecycles.</p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedOrderIds.size} />
+          {selectionMode && selectedOrderIds.size > 0 && (
+            <button
+              type="button"
+              onClick={() => { setIsBulkDeleting(true); setDeleteModalOpen(true); }}
+              className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedOrderIds.size})
+            </button>
+          )}
+
+
+          {/* Delete All Cancelled Scoped Action */}
+          {!selectionMode && (activeTab === 'CANCELLED' || activeTab === 'PAYMENT_FAILED' || cancellableOrFailedCount > 0) && (
+            <button
+              onClick={() => {
+                setIsBulkDeleting(true);
+                setDeleteModalOpen(true);
+              }}
+              className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Cancelled ({cancellableOrFailedCount})</span>
+            </button>
+          )}
+
           <button
             onClick={handleExportCSV}
             className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
@@ -140,6 +280,10 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh }) => {
           </button>
         </div>
       </div>
+
+      {selectionMode && selectableOrders.length === 0 && (
+        <p className="text-xs text-[var(--text-muted)]" role="status">No orders match the current filters.</p>
+      )}
 
       {/* Filter Tabs */}
       <div className="flex items-center overflow-x-auto p-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl gap-1 custom-scrollbar">
@@ -167,6 +311,17 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh }) => {
           </button>
         ))}
       </div>
+      {/* Date Quick-Filter Bar with Dual-Click Interactive Range Popover */}
+      <DateRangeFilterBar
+        preset={datePreset}
+        onPresetChange={setDatePreset}
+        customFrom={customFrom}
+        customTo={customTo}
+        onCustomRangeChange={(from, to) => {
+          setCustomFrom(from);
+          setCustomTo(to);
+        }}
+      />
 
       {/* Search & Sub-Filter Bar */}
       <div className="grid sm:grid-cols-12 gap-4">
@@ -191,85 +346,136 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh }) => {
             <option value="COD">Pay at Counter (COD)</option>
             <option value="EASYPAISA">Easypaisa</option>
             <option value="JAZZCASH">JazzCash</option>
-            <option value="CARD">Credit / Debit Card</option>
           </select>
         </div>
       </div>
 
+      {/* Result Count Info */}
+      <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] font-medium">
+        <span>
+          Showing <strong className="text-[var(--text-main)]">{filteredOrders.length}</strong> of <strong className="text-[var(--text-main)]">{orders.length}</strong> orders
+          {activeDateRange && (
+            <span className="ml-2 text-orange-400 font-bold">
+              • {datePreset === 'TODAY' ? 'Today' : datePreset === 'YESTERDAY' ? 'Yesterday' : datePreset === 'LAST_7' ? 'Last 7 Days' : datePreset === 'THIS_MONTH' ? 'This Month' : datePreset === 'LAST_MONTH' ? 'Last Month' : 'Custom Range'}
+            </span>
+          )}
+        </span>
+        <span className="font-mono font-bold text-emerald-400">
+          Total: Rs. {filteredOrders.reduce((s, o) => s + (o.total || 0), 0).toFixed(2)}
+        </span>
+      </div>
+
       {/* Orders Data Table */}
       <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden">
-        {loading ? (
-          <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)] animate-pulse">
-            Loading Orders...
-          </div>
-        ) : filteredOrders.length === 0 ? (
-          <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)]">
-            No orders found matching the selected filters.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
-                  <th className="p-4">Order #</th>
-                  <th className="p-4">Customer</th>
-                  <th className="p-4">Table</th>
-                  <th className="p-4">Total</th>
-                  <th className="p-4">Payment Method</th>
-                  <th className="p-4">Order Status</th>
-                  <th className="p-4">Date Time</th>
-                  <th className="p-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--border-color)] text-xs">
-                {filteredOrders.map((order) => {
-                  const badge = statusBadges[order.status] || { label: order.status, bg: 'bg-slate-500/20 text-slate-400 border-slate-500/30' };
+          {loading ? (
+            <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)] animate-pulse">
+              Loading Orders...
+            </div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)]">
+              No orders found matching the selected filters.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
+                    {selectionMode && <th className="p-4 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={allSelectableOrdersSelected}
+                        disabled={selectableOrders.length === 0}
+                        onChange={() => setSelectedOrderIds((current) => {
+                          const next = new Set(current);
+                          if (allSelectableOrdersSelected) selectableOrders.forEach((order) => next.delete(order.id));
+                          else selectableOrders.forEach((order) => next.add(order.id));
+                          return next;
+                        })}
+                        className="accent-orange-500"
+                        aria-label="Select all eligible orders"
+                      />
+                    </th>}
+                    <th className="p-4">Order #</th>
+                    <th className="p-4">Customer</th>
+                    <th className="p-4">Table</th>
+                    <th className="p-4">Total</th>
+                    <th className="p-4">Payment Method</th>
+                    <th className="p-4">Order Status</th>
+                    <th className="p-4">Date Time</th>
+                    <th className="p-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-color)] text-xs">
+                  {filteredOrders.map((order) => {
+                    const badge = statusBadges[order.status] || { label: order.status, bg: 'bg-slate-500/20 text-slate-400 border-slate-500/30' };
 
-                  return (
-                    <tr key={order.id} className="hover:bg-[var(--bg-color)]/40 transition-colors">
-                      <td className="p-4 font-mono font-extrabold text-orange-400">
-                        {order.orderNumber}
-                      </td>
-                      <td className="p-4">
-                        <span className="font-bold block text-[var(--text-main)]">{order.user?.name || 'Guest Customer'}</span>
-                        <span className="text-[10px] text-[var(--text-muted)] block">{order.user?.email || 'N/A'}</span>
-                      </td>
-                      <td className="p-4 font-bold text-[var(--text-main)]">
-                        {order.tableNumber || (order.tableId ? `Table ${order.tableId}` : 'Takeaway')}
-                      </td>
-                      <td className="p-4 font-mono font-extrabold text-emerald-400">
-                        Rs. {order.total?.toFixed(2)}
-                      </td>
-                      <td className="p-4">
-                        <span className="px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)]">
-                          {order.paymentMethod}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold border ${badge.bg}`}>
-                          {badge.label}
-                        </span>
-                      </td>
-                      <td className="p-4 text-[var(--text-muted)] text-[11px]">
-                        {new Date(order.createdAt).toLocaleString()}
-                      </td>
-                      <td className="p-4 text-right">
-                        <button
-                          onClick={() => setSelectedOrder(order)}
-                          className="px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded-xl font-bold transition-all flex items-center space-x-1 ml-auto cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>View Details</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                    return (
+                      <tr key={order.id} className="hover:bg-[var(--bg-color)]/40 transition-colors">
+                        {selectionMode && <td className="p-4 text-center" onClick={(event) => event.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedOrderIds.has(order.id)}
+                              onChange={() => toggleOrderSelection(order.id)}
+                              className="accent-orange-500"
+                              aria-label={`Select order ${order.orderNumber} for deletion`}
+                            />
+                        </td>}
+                        <td className="p-4 font-mono font-extrabold text-orange-400">
+                          {order.orderNumber}
+                        </td>
+                        <td className="p-4">
+                          <span className="font-bold block text-[var(--text-main)]">{order.user?.name || 'Guest Customer'}</span>
+                          <span className="text-[10px] text-[var(--text-muted)] block">{order.user?.email || 'N/A'}</span>
+                        </td>
+                        <td className="p-4 font-bold text-[var(--text-main)]">
+                          {order.tableNumber || (order.tableId ? `Table ${order.tableId}` : 'Takeaway')}
+                        </td>
+                        <td className="p-4 font-mono font-extrabold text-emerald-400">
+                          Rs. {order.total?.toFixed(2)}
+                        </td>
+                        <td className="p-4">
+                          <span className="px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)]">
+                            {paymentMethodLabel(order.paymentMethod)}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <span className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold border ${badge.bg}`}>
+                            {badge.label}
+                          </span>
+                        </td>
+                        <td className="p-4 text-[var(--text-muted)] text-[11px]">
+                          {new Date(order.createdAt).toLocaleString()}
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end space-x-2">
+                            <button
+                              onClick={() => setSelectedOrder(order)}
+                              className="px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded-xl font-bold transition-all flex items-center space-x-1 cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>View</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setOrderToDelete(order);
+                                setIsBulkDeleting(false);
+                                setDeleteModalOpen(true);
+                              }}
+                              title="Delete Order Record"
+                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
       {/* Order Detail Modal */}
       {selectedOrder && (
@@ -371,13 +577,72 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh }) => {
             <div className="p-3 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] text-xs space-y-1">
               <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase block">Payment Info</span>
               <div className="flex justify-between">
-                <span>Method: <strong>{selectedOrder.paymentMethod}</strong></span>
+                <span>Method: <strong>{paymentMethodLabel(selectedOrder.paymentMethod)}</strong></span>
                 <span>TxID: <strong className="font-mono text-orange-400">{selectedOrder.payment?.transactionId || 'N/A'}</strong></span>
               </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex justify-between items-center pt-2 border-t border-[var(--border-color)]">
+              <button
+                  type="button"
+                  onClick={() => {
+                    setOrderToDelete(selectedOrder);
+                    setIsBulkDeleting(false);
+                    setDeleteModalOpen(true);
+                  }}
+                  className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Order Record</span>
+                </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedOrder(null)}
+                className="px-5 py-2 bg-[var(--bg-color)] hover:bg-[var(--border-color)] text-[var(--text-main)] rounded-xl text-xs font-bold border border-[var(--border-color)] transition-all cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
       )}
+
+
+
+      {/* Global Delete Confirmation Modal */}
+      <GlobalDeleteModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setOrderToDelete(null);
+          setIsBulkDeleting(false);
+        }}
+        onConfirm={isBulkDeleting ? handleConfirmBulkDelete : handleConfirmSingleDelete}
+        title={isBulkDeleting
+          ? (selectedOrderIds.size ? `Delete ${selectedOrderIds.size} Selected Orders` : 'Confirm Scoped Bulk Order Deletion')
+          : `Delete Order #${orderToDelete?.orderNumber || ''}`}
+        message={
+          isBulkDeleting
+            ? (selectedOrderIds.size
+              ? `Permanently delete ${selectedOrderIds.size} selected orders, including completed and verified orders, with their associated records?`
+              : `Are you sure you want to permanently delete all ${cancellableOrFailedCount} CANCELLED & PAYMENT_FAILED orders? This will permanently clean these invalid records from database.`)
+            : `Permanently delete order #${orderToDelete?.orderNumber} and its associated order and payment records?`
+        }
+        itemCount={isBulkDeleting ? (selectedOrderIds.size || cancellableOrFailedCount) : 1}
+        itemName={selectedOrderIds.size
+          ? `${selectedOrderIds.size} selected orders`
+          : (orderToDelete ? `Order #${orderToDelete.orderNumber} (Rs. ${orderToDelete.total?.toFixed(2)})` : '')}
+        isScopeAll={isBulkDeleting}
+        requiredConfirmationText={isBulkDeleting ? 'DELETE' : ''}
+        confirmButtonText={isBulkDeleting ? `Delete ${selectedOrderIds.size || cancellableOrFailedCount} Orders` : 'Delete Order'}
+        loading={deleteLoading}
+        warningNotes={[
+          'Permanent deletion removes the order, payment, item snapshots, status history, and ETA records from the database.',
+          'Inventory movement and audit logs are retained where the system records them separately.',
+        ]}
+      />
     </div>
   );
 };

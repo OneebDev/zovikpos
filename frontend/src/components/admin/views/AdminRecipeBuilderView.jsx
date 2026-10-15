@@ -18,6 +18,8 @@ import {
   DollarSign,
   SlidersHorizontal
 } from 'lucide-react';
+import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 
 /**
  * Standard Unit Converter Helper (matches backend unitConverter.js)
@@ -70,6 +72,83 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
   // Duplicate Modal State
   const [duplicateSourceItem, setDuplicateSourceItem] = useState(null);
   const [duplicateTargetId, setDuplicateTargetId] = useState('');
+
+  // Selection & Delete Modal State
+  const [selectedItemIds, setSelectedItemIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null); // single item or null for bulk
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Toggle single item selection
+  const toggleSelectItem = (id) => {
+    setSelectedItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Toggle select all visible items
+  const toggleSelectAll = () => {
+    if (selectedItemIds.size === filteredMenuItems.length && filteredMenuItems.length > 0) {
+      setSelectedItemIds(new Set());
+    } else {
+      setSelectedItemIds(new Set(filteredMenuItems.map(i => i.id)));
+    }
+  };
+
+  const toggleSelectionMode = () => {
+    if (selectionMode) setSelectedItemIds(new Set());
+    setSelectionMode((active) => !active);
+  };
+
+  // Open single delete modal
+  const handleOpenSingleDelete = (item) => {
+    setItemToDelete(item);
+    setDeleteModalOpen(true);
+  };
+
+  // Open bulk delete modal
+  const handleOpenBulkDelete = () => {
+    if (selectedItemIds.size === 0) return;
+    setItemToDelete(null);
+    setDeleteModalOpen(true);
+  };
+
+  // Confirm delete (single or bulk)
+  const handleConfirmDelete = async () => {
+    setIsDeleting(true);
+    try {
+      if (itemToDelete) {
+        // Single recipe clear
+        await api.delete(`/inventory/recipes/${itemToDelete.id}`);
+        if (showToast) showToast(`Recipe for "${itemToDelete.name}" cleared successfully.`, 'success');
+        setSelectedItemIds(prev => {
+          const next = new Set(prev);
+          next.delete(itemToDelete.id);
+          return next;
+        });
+      } else {
+        // Bulk recipes clear
+        const ids = Array.from(selectedItemIds);
+        await api.delete('/inventory/recipes/bulk', { data: { menuItemIds: ids } });
+        if (showToast) showToast(`Successfully cleared recipes for ${ids.length} menu items.`, 'success');
+        setSelectedItemIds(new Set());
+      }
+      setDeleteModalOpen(false);
+      setItemToDelete(null);
+      await loadData();
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error('Delete recipe error:', err);
+      const msg = err.response?.data?.error || 'Failed to clear recipe.';
+      if (showToast) showToast(msg, 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Fetch menu items & recipes
   const loadData = async () => {
@@ -388,6 +467,17 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
         </div>
 
         <div className="flex items-center gap-2.5">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedItemIds.size} />
+          {selectionMode && selectedItemIds.size > 0 && (
+            <button
+              onClick={handleOpenBulkDelete}
+              className="px-3.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs transition-all flex items-center gap-2 cursor-pointer shadow-sm animate-fade-in"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Clear Selected ({selectedItemIds.size})</span>
+            </button>
+          )}
+
           <button
             onClick={() => {
               if (menuItems.length > 0) handleOpenEditor(menuItems[0]);
@@ -511,6 +601,14 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
             <table className="w-full text-left text-xs divide-y divide-[var(--border-color)]">
               <thead className="bg-[var(--bg-color)]/80 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]">
                 <tr>
+                  {selectionMode && <th className="py-3.5 pl-4 pr-2 w-8">
+                    <input
+                      type="checkbox"
+                      className="w-3.5 h-3.5 rounded accent-rose-500 cursor-pointer"
+                      checked={filteredMenuItems.length > 0 && selectedItemIds.size === filteredMenuItems.length}
+                      onChange={toggleSelectAll}
+                    />
+                  </th>}
                   <th className="py-3.5 px-4">Menu Item</th>
                   <th className="py-3.5 px-4">Category</th>
                   <th className="py-3.5 px-4 text-center">Ingredients</th>
@@ -528,8 +626,17 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                   const foodCostPct = item.price > 0 && cost > 0 ? ((cost / item.price) * 100).toFixed(1) : null;
                   const status = getItemStatus(item.id);
 
+                  const isSelected = selectedItemIds.has(item.id);
                   return (
-                    <tr key={item.id} className="hover:bg-[var(--bg-color)]/50 transition-colors">
+                    <tr key={item.id} className={`hover:bg-[var(--bg-color)]/50 transition-colors ${isSelected ? 'bg-rose-500/5' : ''}`}>
+                      {selectionMode && <td className="py-3 pl-4 pr-2">
+                        <input
+                          type="checkbox"
+                          className="w-3.5 h-3.5 rounded accent-rose-500 cursor-pointer"
+                          checked={isSelected}
+                          onChange={() => toggleSelectItem(item.id)}
+                        />
+                      </td>}
                       {/* Item Name */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
@@ -622,6 +729,16 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                           <Edit3 className="w-3 h-3" />
                           <span>{status === 'Missing Items' ? 'Fix' : 'Edit'}</span>
                         </button>
+
+                        {(recipesMap[item.id] || []).length > 0 && (
+                          <button
+                            onClick={() => handleOpenSingleDelete(item)}
+                            title="Clear recipe ingredients"
+                            className="p-1.5 rounded-lg bg-[var(--bg-color)] hover:bg-rose-500/10 text-[var(--text-muted)] hover:text-rose-400 border border-[var(--border-color)] hover:border-rose-500/30 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -631,6 +748,24 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <GlobalDeleteModal
+          isOpen={deleteModalOpen}
+          onClose={() => { setDeleteModalOpen(false); setItemToDelete(null); }}
+          onConfirm={handleConfirmDelete}
+          isLoading={isDeleting}
+          title={itemToDelete ? 'Clear Recipe' : `Clear ${selectedItemIds.size} Recipes`}
+          description={
+            itemToDelete
+              ? `This will remove all recipe ingredients for "${itemToDelete.name}". The menu item itself will NOT be deleted.`
+              : `This will remove recipe ingredients for ${selectedItemIds.size} selected menu items. The menu items themselves will NOT be deleted.`
+          }
+          confirmText="Clear Recipe"
+          itemName={itemToDelete?.name || `${selectedItemIds.size} recipes`}
+        />
+      )}
 
       {/* 5. FULL RECIPE EDITOR MODAL — Portal to document.body for true screen centering */}
       {activeEditorItem && createPortal(

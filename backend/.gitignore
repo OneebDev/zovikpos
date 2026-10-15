@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+/data/learned_aliases.json
 .env
 .env.*
 !.env.example

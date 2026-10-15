@@ -185,6 +185,62 @@ const deleteItem = async (req, res) => {
   }
 };
 
+const bulkDeleteItems = async (req, res) => {
+  const { ids, category } = req.body;
+  try {
+    let itemIds = [];
+    if (category && category !== 'ALL') {
+      const itemsInCat = await prisma.menuItem.findMany({
+        where: { category },
+        select: { id: true, imageUrl: true },
+      });
+      itemIds = itemsInCat.map((i) => i.id);
+    } else if (Array.isArray(ids) && ids.length > 0) {
+      itemIds = ids.map((id) => parseInt(id, 10)).filter(Boolean);
+    } else {
+      return res.status(400).json({ error: 'Please select items or specify a category to delete.' });
+    }
+
+    if (itemIds.length === 0) {
+      return res.json({ message: 'No items found matching deletion criteria.', count: 0 });
+    }
+
+    let deletedCount = 0;
+    let deactivatedCount = 0;
+
+    for (const targetId of itemIds) {
+      const existing = await prisma.menuItem.findUnique({ where: { id: targetId } });
+      if (!existing) continue;
+
+      try {
+        await prisma.menuItem.delete({ where: { id: targetId } });
+        if (existing.imageUrl) await deleteImageByUrl(existing.imageUrl);
+        deletedCount++;
+      } catch (err) {
+        // Soft delete / deactivate if referenced in order history
+        await prisma.menuItem.update({
+          where: { id: targetId },
+          data: { isActive: false },
+        });
+        deactivatedCount++;
+      }
+    }
+
+    clearMenuCache();
+    broadcastEvent('menu:bulk-update', { action: 'BULK_DELETE', count: deletedCount + deactivatedCount });
+
+    return res.json({
+      message: `Processed ${itemIds.length} menu items: ${deletedCount} permanently deleted, ${deactivatedCount} deactivated due to order history.`,
+      count: deletedCount + deactivatedCount,
+      deletedCount,
+      deactivatedCount,
+    });
+  } catch (error) {
+    console.error('Bulk delete menu items error:', error);
+    return res.status(500).json({ error: 'Failed to process bulk menu item deletion.' });
+  }
+};
+
 const generateMenuQR = async (req, res) => {
   const { id } = req.params;
   const { tableId } = req.query; // optional table ID parameter
@@ -341,6 +397,7 @@ module.exports = {
   createItem,
   updateItem,
   deleteItem,
+  bulkDeleteItems,
   generateMenuQR,
   uploadImage,
 };

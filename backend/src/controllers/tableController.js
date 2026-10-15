@@ -135,6 +135,127 @@ const updateTable = async (req, res) => {
 };
 
 /**
+ * Delete a Table safely
+ * If the table has active sessions or historical orders, safely archives (isActive: false) instead of breaking foreign keys
+ */
+const deleteTable = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const tableId = parseInt(id, 10);
+    const table = await prisma.table.findUnique({
+      where: { id: tableId },
+      include: {
+        _count: { select: { orders: true, sessions: true } }
+      }
+    });
+
+    if (!table) {
+      return res.status(404).json({ error: 'Table not found.' });
+    }
+
+    const linkedRecords = (table._count.orders || 0) + (table._count.sessions || 0);
+
+    if (linkedRecords > 0) {
+      // Safe archival soft-delete
+      const deactivated = await prisma.table.update({
+        where: { id: tableId },
+        data: { isActive: false }
+      });
+
+      await logAudit({
+        userId: req.user?.id,
+        action: 'TABLE_DEACTIVATED',
+        entity: 'Table',
+        entityId: tableId,
+        oldValue: table,
+        newValue: deactivated,
+        req
+      });
+
+      return res.json({
+        message: `Table ${table.tableNumber} is linked to ${linkedRecords} orders/sessions and has been safely deactivated & removed from active floor service.`,
+        isArchived: true
+      });
+    }
+
+    // Clean permanent delete
+    await prisma.table.delete({ where: { id: tableId } });
+
+    await logAudit({
+      userId: req.user?.id,
+      action: 'TABLE_DELETED',
+      entity: 'Table',
+      entityId: tableId,
+      oldValue: table,
+      req
+    });
+
+    return res.json({ message: `Table ${table.tableNumber} deleted permanently.` });
+  } catch (error) {
+    console.error('Delete table error:', error);
+    return res.status(500).json({ error: 'Failed to delete table.' });
+  }
+};
+
+/**
+ * Bulk delete inactive tables within a branch
+ */
+const bulkDeleteTables = async (req, res) => {
+  const { branchId, scope = 'INACTIVE' } = req.body;
+
+  try {
+    const where = {};
+    if (scope === 'INACTIVE') {
+      where.isActive = false;
+    }
+    if (branchId && branchId !== 'all') {
+      where.branchId = parseInt(branchId, 10);
+    }
+
+    // Filter tables that have 0 orders
+    const candidateTables = await prisma.table.findMany({
+      where,
+      include: {
+        _count: { select: { orders: true, sessions: true } }
+      }
+    });
+
+    const safeToDelete = candidateTables.filter(t => (t._count.orders === 0 && t._count.sessions === 0));
+
+    if (safeToDelete.length === 0) {
+      return res.json({
+        message: 'No unreferenced tables found for permanent deletion. Referenced tables remain safely archived.',
+        count: 0
+      });
+    }
+
+    const idsToDelete = safeToDelete.map(t => t.id);
+
+    await prisma.table.deleteMany({
+      where: { id: { in: idsToDelete } }
+    });
+
+    await logAudit({
+      userId: req.user?.id,
+      action: 'BULK_TABLES_DELETED',
+      entity: 'Table',
+      entityId: `bulk_${idsToDelete.length}`,
+      oldValue: { count: idsToDelete.length, idsToDelete },
+      req
+    });
+
+    return res.json({
+      message: `Successfully deleted ${idsToDelete.length} unreferenced tables.`,
+      count: idsToDelete.length
+    });
+  } catch (error) {
+    console.error('Bulk delete tables error:', error);
+    return res.status(500).json({ error: 'Failed to bulk delete tables.' });
+  }
+};
+
+/**
  * Regenerate a fresh cryptographic QR token for a table (invalidates old QR codes)
  */
 const regenerateTableQR = async (req, res) => {
@@ -288,6 +409,8 @@ module.exports = {
   getAllTables,
   addTable,
   updateTable,
+  deleteTable,
+  bulkDeleteTables,
   regenerateTableQR,
   getTableQRCard,
   getBatchTableQRCards,

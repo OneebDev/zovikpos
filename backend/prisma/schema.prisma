@@ -145,7 +145,7 @@ model Order {
   discount      Float                @default(0.0)
   total         Float
   paymentStatus String               @default("UNPAID") // UNPAID, PENDING_VERIFICATION, PAID, FAILED, REFUNDED
-  paymentMethod String? // COD, Easypaisa, JazzCash, Nayapay
+  paymentMethod String? // COD, Easypaisa, JazzCash
   paymentTxId   String?              @unique
   userId        Int
   user          User                 @relation(fields: [userId], references: [id])
@@ -274,15 +274,19 @@ model InventoryLog {
   orderId         Int?
   orderItemId     Int?
   receivingId     Int?
-  receiving       InventoryReceiving? @relation(fields: [receivingId], references: [id])
+  receiving       InventoryReceiving?     @relation(fields: [receivingId], references: [id])
+  receivingItemId Int?
+  receivingItem   InventoryReceivingItem? @relation(fields: [receivingItemId], references: [id])
+  unitCost        Float?
+  batchRemaining  Float?
   batchNumber     String?
   expiryDate      DateTime?
   supplierId      Int?
-  supplier        Supplier?           @relation(fields: [supplierId], references: [id])
+  supplier        Supplier?               @relation(fields: [supplierId], references: [id])
   userId          Int?
-  user            User?               @relation(fields: [userId], references: [id])
+  user            User?                   @relation(fields: [userId], references: [id])
   createdBy       Int?
-  createdAt       DateTime            @default(now())
+  createdAt       DateTime                @default(now())
 }
 
 model InventoryReceiving {
@@ -298,6 +302,9 @@ model InventoryReceiving {
   receivedBy      User?                    @relation(fields: [receivedById], references: [id])
   notes           String?
   status          String                   @default("DRAFT") // DRAFT, RECEIVED, CANCELLED
+  subtotal        Float                    @default(0.0)
+  discount        Float                    @default(0.0)
+  discountPercent Float?
   totalCost       Float                    @default(0.0)
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
@@ -306,19 +313,21 @@ model InventoryReceiving {
 }
 
 model InventoryReceivingItem {
-  id              Int                @id @default(autoincrement())
-  receivingId     Int
-  receiving       InventoryReceiving @relation(fields: [receivingId], references: [id], onDelete: Cascade)
-  inventoryItemId Int
-  inventoryItem   InventoryItem      @relation(fields: [inventoryItemId], references: [id])
-  quantity        Float
-  unit            String
-  unitCost        Float              @default(0.0)
-  totalCost       Float              @default(0.0)
-  batchNumber     String?
-  expiryDate      DateTime?
-  notes           String?
-  createdAt       DateTime           @default(now())
+  id                Int                @id @default(autoincrement())
+  receivingId       Int
+  receiving         InventoryReceiving @relation(fields: [receivingId], references: [id], onDelete: Cascade)
+  inventoryItemId   Int
+  inventoryItem     InventoryItem      @relation(fields: [inventoryItemId], references: [id])
+  quantity          Float
+  remainingQuantity Float?
+  unit              String
+  unitCost          Float              @default(0.0)
+  totalCost         Float              @default(0.0)
+  batchNumber       String?
+  expiryDate        DateTime?
+  notes             String?
+  createdAt         DateTime           @default(now())
+  deductionLogs     InventoryLog[]
 }
 
 model EmailOTP {

@@ -51,7 +51,7 @@ const AdminLayout = ({ activeTab, onSelectTab, user, onLogout, children, onRefre
   };
 
   return (
-    <div className="min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] flex font-sans transition-colors duration-300">
+    <div className="responsive-shell admin-responsive min-h-screen w-full min-w-0 bg-[var(--bg-color)] text-[var(--text-main)] flex font-sans transition-colors duration-300">
       {/* Sidebar */}
       <AdminSidebar
         activeTab={activeTab}
@@ -72,8 +72,8 @@ const AdminLayout = ({ activeTab, onSelectTab, user, onLogout, children, onRefre
         {/* Main Content Canvas */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto animate-fade-in">
           {/* Action Toolbar: Branch Selector & Refresh Button */}
-          <div className="flex items-center justify-between gap-4 pb-4 border-b border-[var(--border-color)]">
-            <div className="flex items-center space-x-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 pb-4 border-b border-[var(--border-color)]">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto">
               {/* Mobile Sidebar Toggle Button */}
               <button
                 onClick={() => setIsMobileOpen(true)}
@@ -83,12 +83,12 @@ const AdminLayout = ({ activeTab, onSelectTab, user, onLogout, children, onRefre
               </button>
 
               {/* Dynamic Branch Selector Dropdown */}
-              <div className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs text-[var(--text-muted)] font-bold shadow-sm">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs text-[var(--text-muted)] font-bold shadow-sm min-w-0 flex-1 sm:flex-none">
                 <Building2 className="w-4 h-4 text-orange-400 shrink-0" />
                 <select
                   value={selectedBranchId}
                   onChange={(e) => onSelectBranch && onSelectBranch(e.target.value)}
-                  className="bg-transparent text-[var(--text-main)] focus:outline-none cursor-pointer font-bold"
+                  className="bg-transparent text-[var(--text-main)] focus:outline-none cursor-pointer font-bold min-w-0 w-full sm:w-auto"
                 >
                   <option value="all">All Outlets / Branches</option>
                   {branches.map((b) => (
@@ -103,7 +103,7 @@ const AdminLayout = ({ activeTab, onSelectTab, user, onLogout, children, onRefre
               {onRefresh && (
                 <button
                   onClick={onRefresh}
-                  className="p-2 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer shadow-sm hover:border-orange-500/40"
+                  className="p-2 shrink-0 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer shadow-sm hover:border-orange-500/40"
                   title="Refresh Page Data"
                 >
                   <RefreshCw className="w-4 h-4 text-orange-400" />
@@ -112,7 +112,7 @@ const AdminLayout = ({ activeTab, onSelectTab, user, onLogout, children, onRefre
             </div>
 
             {/* Mode Indicator Badge (Demo vs Live DB) */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-3 self-end sm:self-auto">
               <DemoStatusBadge user={user} />
             </div>
           </div>
