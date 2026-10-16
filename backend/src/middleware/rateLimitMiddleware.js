@@ -11,7 +11,8 @@ const requestBuckets = new Map();
  */
 const createRateLimiter = ({ windowMs = 60000, max = 100, message = 'Too many requests, please try again later.', keyGenerator }) => {
   return (req, res, next) => {
-    if (process.env.NODE_ENV === 'test' || req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1') {
+    const isLoopback = req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1';
+    if (process.env.NODE_ENV === 'test' || (process.env.NODE_ENV !== 'production' && isLoopback)) {
       return next();
     }
 
@@ -59,14 +60,21 @@ const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 15,
   message: 'Too many login attempts. Please wait 15 minutes before trying again.',
-  keyGenerator: (req) => `auth:${req.ip || 'ip'}:${(req.body?.email || '').toLowerCase()}`,
+  keyGenerator: (req) => `auth:${req.ip || 'ip'}:${typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : ''}`,
 });
 
 const otpLimiter = createRateLimiter({
   windowMs: 5 * 60 * 1000, // 5 minutes
   max: 5,
   message: 'Too many OTP requests. Please wait a few minutes before requesting a new code.',
-  keyGenerator: (req) => `otp:${req.ip || 'ip'}:${(req.body?.email || '').toLowerCase()}`,
+  keyGenerator: (req) => `otp:${req.ip || 'ip'}:${typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : ''}`,
+});
+
+const otpVerificationLimiter = createRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 20,
+  message: 'Too many verification attempts. Please wait a few minutes and try again.',
+  keyGenerator: (req) => `otp-verify:${req.ip || 'ip'}`,
 });
 
 const generalLimiter = createRateLimiter({
@@ -79,5 +87,6 @@ module.exports = {
   createRateLimiter,
   authLimiter,
   otpLimiter,
+  otpVerificationLimiter,
   generalLimiter,
 };

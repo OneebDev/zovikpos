@@ -1,16 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import  { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../services/api';
 import {
   Building2,
   Search,
   Plus,
-  Phone,
-  Mail,
-  MapPin,
-  Package,
-  FileText,
-  ChevronRight,
   X,
   CheckCircle2,
   Edit3,
@@ -36,6 +30,8 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [selectedSupplierIds, setSelectedSupplierIds] = useState(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
+  const hasSelectedSuppliers = selectionMode && selectedSupplierIds.size > 0;
+  const mobileActionWidth = hasSelectedSuppliers ? 'mobile-action-third' : 'mobile-action-half';
 
   // Form State
   const [formData, setFormData] = useState({
@@ -204,9 +200,9 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
 
   return (
     <div className="space-y-6">
-      
+
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
             <span className="p-2 rounded-2xl bg-sky-500/10 text-sky-400">🏢</span>
@@ -217,24 +213,24 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedSupplierIds.size} />
-          {selectionMode && selectedSupplierIds.size > 0 && (
+        <div className="flex w-full min-w-0 items-center gap-1.5 overflow-x-auto pb-1 lg:w-auto lg:shrink-0 lg:overflow-visible">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedSupplierIds.size} className={`${mobileActionWidth} h-10 justify-center px-1 text-[10px] sm:h-auto sm:w-auto sm:px-3 sm:py-2 sm:text-xs`} mobileLabel="Select" mobileActiveLabel="Done" />
+          {hasSelectedSuppliers && (
             <button
               onClick={handleBulkDelete}
-              className="px-3.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold text-xs border border-rose-500/30 shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
+              className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center gap-1 rounded-xl border border-rose-500/30 bg-rose-500/10 px-1 text-[10px] font-bold text-rose-400 shadow-lg transition-all hover:bg-rose-500/20 cursor-pointer sm:h-auto sm:w-auto sm:gap-2 sm:px-3.5 sm:py-2.5 sm:text-xs`}
             >
-              <Trash2 className="w-4 h-4" />
-              <span>Delete Selected ({selectedSupplierIds.size})</span>
+              <Trash2 className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+              <span><span className="sm:hidden">Delete</span><span className="hidden sm:inline">Delete Selected ({selectedSupplierIds.size})</span></span>
             </button>
           )}
 
           <button
             onClick={openAddModal}
-            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs shadow-lg shadow-orange-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
+            className={`${mobileActionWidth} flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-1 text-[10px] font-bold text-white shadow-lg transition-all cursor-pointer sm:h-auto sm:w-auto sm:gap-2 sm:px-4 sm:py-2.5 sm:text-xs`}
           >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Add Supplier</span>
+            <Plus className="h-3.5 w-3.5 shrink-0 stroke-[3] sm:h-4 sm:w-4" />
+            <span><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add Supplier</span></span>
           </button>
         </div>
       </div>
@@ -291,7 +287,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs divide-y divide-[var(--border-color)]">
+            <table className="inventory-single-row-table w-full min-w-max text-left text-xs divide-y divide-[var(--border-color)]">
               <thead className="bg-[var(--bg-color)]/80 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]">
                 <tr>
                   {selectionMode && <th className="py-3.5 px-4 w-10 text-center">
@@ -374,7 +370,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                       </td>
 
                       <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
                           <button
                             onClick={() => setSelectedSupplierDetails(s)}
                             className="px-2.5 py-1.5 rounded-lg bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-main)] border border-[var(--border-color)] font-bold text-[11px] transition-colors cursor-pointer"

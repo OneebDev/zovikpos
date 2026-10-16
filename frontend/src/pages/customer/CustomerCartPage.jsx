@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import  { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { connectSocket, getSocket } from '../../services/socket';
@@ -10,14 +10,10 @@ import {
   ArrowLeft,
   ShoppingBag,
   Trash2,
-  Clock,
   Bot,
   AlertCircle,
   CheckCircle2,
-  Shield,
-  CreditCard,
   Banknote,
-  Utensils,
   Check,
   RotateCcw,
   ChevronRight,
@@ -52,7 +48,7 @@ const CustomerCartPage = ({ user }) => {
 
   // ─── ETA / Kitchen Load ───────────────────────────────────────────────────
   const [etaInfo, setEtaInfo] = useState(null);
-  const [etaLoading, setEtaLoading] = useState(false);
+  const [, setEtaLoading] = useState(false);
 
   // ─── Safely fetch stored customer identity (ignoring staff accounts like Demo Kitchen) ───
   const getStoredCustomerUser = () => {
@@ -62,7 +58,7 @@ const CustomerCartPage = ({ user }) => {
         const u = JSON.parse(savedCustomer);
         if (u && (!u.role || u.role === 'CUSTOMER')) return u;
       }
-    } catch {}
+    } catch  { /* Optional storage or parsing failure. */ }
 
     try {
       const savedUser = sessionStorage.getItem('user') || localStorage.getItem('user');
@@ -70,7 +66,7 @@ const CustomerCartPage = ({ user }) => {
         const u = JSON.parse(savedUser);
         if (u && (!u.role || u.role === 'CUSTOMER')) return u;
       }
-    } catch {}
+    } catch  { /* Optional storage or parsing failure. */ }
 
     return null;
   };
@@ -460,7 +456,7 @@ const CustomerCartPage = ({ user }) => {
     return (
       <div className="responsive-shell w-full bg-[#FAF9F7] dark:bg-[#121212] min-h-screen font-sans flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-[#E85D2A]/20">
         <div className="max-w-[440px] w-full bg-white dark:bg-[#1C1B1A] border border-[#E7E5E4] dark:border-[#383330] rounded-[28px] sm:rounded-[32px] p-5 sm:p-8 shadow-[0_24px_70px_-28px_rgba(41,25,15,0.24)] dark:shadow-[0_24px_70px_-28px_rgba(0,0,0,0.75)] text-center space-y-5 sm:space-y-6 animate-in fade-in zoom-in duration-300 relative overflow-hidden">
-          
+
           {/* Top Decorative Glow */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-1 bg-gradient-to-r from-emerald-500 via-[#E85D2A] to-emerald-500 rounded-b-full" />
 
@@ -582,7 +578,7 @@ const CustomerCartPage = ({ user }) => {
             {/* Left: Cart Items List */}
             <div className="lg:col-span-7 space-y-4">
               <h2 className="text-xs font-black text-gray-400 dark:text-[#A8A29E] uppercase tracking-wider">Selected Items ({totalQty})</h2>
-              
+
               <div className="space-y-3">
                 {Object.values(cart).map((item) => (
                   <div
@@ -660,7 +656,7 @@ const CustomerCartPage = ({ user }) => {
 
             {/* Right: Checkout & Verification Panel */}
             <div className="lg:col-span-5 space-y-6">
-              
+
               {/* Customer Verification Card */}
               <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-[24px] sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-5">
                 <div className="flex items-center justify-between">
@@ -747,7 +743,7 @@ const CustomerCartPage = ({ user }) => {
               {/* Payment Method Card */}
               <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-[24px] sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-gray-400 dark:text-[#A8A29E]">Payment Option</h3>
-                
+
                 {!paymentSettings.codEnabled && !paymentSettings.onlineEnabled ? (
                   <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-2xl text-xs font-semibold flex items-center space-x-2.5 shadow-sm">
                     <AlertCircle className="w-5 h-5 shrink-0 text-rose-500" />
@@ -822,7 +818,7 @@ const CustomerCartPage = ({ user }) => {
               {/* Order Summary & Placement Button */}
               <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-[24px] sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-gray-400 dark:text-[#A8A29E]">Order Summary</h3>
-                
+
                 <div className="space-y-2 text-xs text-gray-600 dark:text-gray-300">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>

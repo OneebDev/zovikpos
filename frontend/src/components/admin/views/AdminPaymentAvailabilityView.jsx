@@ -1,11 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import  { useState, useEffect, useCallback } from 'react';
 import {
   Banknote,
   CreditCard,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  ShieldCheck,
+  Loader2,
 } from 'lucide-react';
 import api from '../../../services/api';
 import { getSocket } from '../../../services/socket';
@@ -15,7 +12,7 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get('/payments/settings');
@@ -29,7 +26,7 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     fetchSettings();
@@ -44,7 +41,7 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
       socket.on('paymentSettings:update', handleUpdate);
       return () => socket.off('paymentSettings:update', handleUpdate);
     }
-  }, []);
+  }, [fetchSettings]);
 
   const handleToggle = async (key, value) => {
     setUpdating(true);
@@ -76,7 +73,12 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
       </div>
 
       {/* Toggles Grid */}
-      <div className="grid md:grid-cols-2 gap-6">
+      {loading ? (
+        <div className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)]/40 text-xs font-semibold text-[var(--text-muted)]">
+          <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+          <span>Loading payment settings…</span>
+        </div>
+      ) : <div className="grid md:grid-cols-2 gap-6">
         {/* COD Toggle Card */}
         <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-6">
           <div className="flex justify-between items-start">
@@ -154,7 +156,7 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
             </button>
           </div>
         </div>
-      </div>
+      </div>}
     </div>
   );
 };

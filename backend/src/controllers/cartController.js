@@ -41,10 +41,10 @@ const verifyStockForQty = (menuItem, qty) => {
       const invItem = recipe.inventoryItem;
       if (!invItem) continue;
       const rawNeeded = recipe.quantity * qty;
-      let neededInInvUnit = rawNeeded;
+      let neededInInvUnit;
       try {
         neededInInvUnit = convertUnit(rawNeeded, recipe.unit, invItem.unit);
-      } catch (convErr) {
+      } catch {
         neededInInvUnit = rawNeeded;
       }
       if (invItem.stockLevel < neededInInvUnit) {

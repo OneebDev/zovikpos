@@ -7,6 +7,7 @@ const { logAudit } = require('../middleware/auditMiddleware');
 
 const ACCESS_SECRET = process.env.JWT_SECRET || 'pos_system_jwt_access_secret_key_2026';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'pos_system_jwt_refresh_secret_key_2026';
+const hashOTP = (email, otp) => crypto.createHmac('sha256', ACCESS_SECRET).update(`${email}:${otp}`).digest();
 
 const generateTokens = (user) => {
   const isDemo = user.isDemo || false;
@@ -27,10 +28,16 @@ const generateTokens = (user) => {
  * Staff and Customer Registration
  */
 const register = async (req, res) => {
-  const { email, password, name, role, branchId } = req.body;
+  const { email, password, name, role } = req.body;
 
-  if (!email || !password || !name) {
+  if (typeof email !== 'string' || typeof password !== 'string' || typeof name !== 'string' || !email.trim() || !password || !name.trim()) {
     return res.status(400).json({ error: 'Email, password, and name are required.' });
+  }
+
+  // Public registration is for customers only. Staff accounts are provisioned
+  // through the authenticated admin workflow.
+  if (role && (typeof role !== 'string' || role.toUpperCase() !== 'CUSTOMER')) {
+    return res.status(403).json({ error: 'Staff accounts must be created by an administrator.' });
   }
 
   const normalizedEmail = email.trim().toLowerCase();
@@ -42,17 +49,13 @@ const register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const userRole = role && ['CUSTOMER', 'VENDOR', 'KITCHEN', 'ADMIN'].includes(role.toUpperCase())
-      ? role.toUpperCase()
-      : 'CUSTOMER';
-
     const user = await prisma.user.create({
       data: {
         email: normalizedEmail,
         password: hashedPassword,
         name: name.trim(),
-        role: userRole,
-        branchId: branchId ? parseInt(branchId, 10) : null,
+        role: 'CUSTOMER',
+        branchId: null,
         isActive: true,
       },
     });
@@ -91,7 +94,7 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   const { email, password } = req.body;
 
-  if (!email || !password) {
+  if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
     return res.status(400).json({ error: 'Email and password are required.' });
   }
 
@@ -105,6 +108,12 @@ const login = async (req, res) => {
 
     if (user.isActive === false) {
       return res.status(403).json({ error: 'Your account has been deactivated or disabled by Admin.' });
+    }
+
+    // Older OTP-created customers used this shared password. Never allow it to
+    // authenticate, even before the account completes its next OTP sign-in.
+    if (user.role === 'CUSTOMER' && password === 'guest_customer_password_2026') {
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -166,7 +175,7 @@ const refreshToken = async (req, res) => {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
     });
-  } catch (error) {
+  } catch {
     return res.status(401).json({ error: 'Invalid or expired refresh token.' });
   }
 };
@@ -198,11 +207,12 @@ const getProfile = async (req, res) => {
 const sendOTP = async (req, res) => {
   const { email, name, sessionId } = req.body;
 
-  if (!email) {
+  if (typeof email !== 'string' || !email.trim() || email.length > 320) {
     return res.status(400).json({ error: 'Email address is required.' });
   }
 
   const normalizedEmail = email.trim().toLowerCase();
+  const safeName = typeof name === 'string' ? name.trim().slice(0, 120) : 'Customer';
 
   try {
     // Check for active unexpired OTP to enforce resend cooldown (30 seconds)
@@ -229,15 +239,21 @@ const sendOTP = async (req, res) => {
     }
 
     // Generate random secure 6-digit OTP
-    const rawOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    const codeHash = crypto.createHash('sha256').update(rawOtp).digest('hex');
+    const rawOtp = crypto.randomInt(100000, 1000000).toString();
+    const codeHash = hashOTP(normalizedEmail, rawOtp).toString('hex');
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes validity
 
     // Validate session ID in database to prevent foreign key constraint violation
     let validSessionId = null;
-    if (sessionId) {
-      const existingSession = await prisma.session.findUnique({ where: { id: sessionId } });
-      if (existingSession) {
+    if (typeof sessionId === 'string' && sessionId.length <= 64) {
+      const existingSession = await prisma.session.findUnique({
+        where: { id: sessionId },
+        select: { id: true, customerId: true, status: true, expiresAt: true, customer: { select: { email: true } } },
+      });
+      const sessionCanBeClaimed = existingSession && existingSession.status === 'ACTIVE' &&
+        new Date(existingSession.expiresAt) > new Date() &&
+        (!existingSession.customerId || existingSession.customer?.email?.toLowerCase() === normalizedEmail);
+      if (sessionCanBeClaimed) {
         validSessionId = sessionId;
       }
     }
@@ -253,7 +269,7 @@ const sendOTP = async (req, res) => {
     });
 
     // Send email asynchronously
-    sendOTPEmail(normalizedEmail, name, rawOtp).catch(err =>
+    sendOTPEmail(normalizedEmail, safeName, rawOtp).catch(err =>
       console.error('[OTP Email] Failed to send email:', err.message)
     );
 
@@ -271,14 +287,15 @@ const sendOTP = async (req, res) => {
  * Verify persistent OTP code and attach user to session
  */
 const verifyOTP = async (req, res) => {
-  const { email, name, otp, sessionId } = req.body;
+  const { email, name } = req.body;
+  const otp = req.body?.otp;
 
-  if (!email || !otp) {
+  if (typeof email !== 'string' || !email.trim() || email.length > 320 || typeof otp !== 'string' || !/^\d{6}$/.test(otp.trim())) {
     return res.status(400).json({ error: 'Email and OTP code are required.' });
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  const inputHash = crypto.createHash('sha256').update(String(otp).trim()).digest('hex');
+  const inputHash = hashOTP(normalizedEmail, otp.trim());
 
   try {
     const otpRecord = await prisma.emailOTP.findFirst({
@@ -303,7 +320,13 @@ const verifyOTP = async (req, res) => {
       return res.status(429).json({ error: 'Maximum verification attempts exceeded. Please request a new code.' });
     }
 
-    if (otpRecord.codeHash !== inputHash) {
+    const storedHash = Buffer.from(otpRecord.codeHash, 'hex');
+    const legacyHash = crypto.createHash('sha256').update(otp.trim()).digest();
+    const isHashMatch = (candidate) => storedHash.length === candidate.length && crypto.timingSafeEqual(storedHash, candidate);
+    // Accept short-lived codes issued just before this security update; all new
+    // codes use the keyed hash above and legacy codes expire within five minutes.
+    const isValidOtp = isHashMatch(inputHash) || isHashMatch(legacyHash);
+    if (!isValidOtp) {
       const newAttempts = otpRecord.attempts + 1;
       await prisma.emailOTP.update({
         where: { id: otpRecord.id },
@@ -313,36 +336,66 @@ const verifyOTP = async (req, res) => {
       return res.status(400).json({ error: `Incorrect verification code. ${remaining} attempt(s) remaining.` });
     }
 
-    // Mark OTP as verified
-    await prisma.emailOTP.update({
-      where: { id: otpRecord.id },
-      data: { verifiedAt: new Date() },
-    });
-
     // Create or find customer user
     let user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (user && user.role !== 'CUSTOMER') {
+      return res.status(403).json({ error: 'Email code sign-in is available for customer accounts only.' });
+    }
+    if (user && user.isActive === false) {
+      return res.status(403).json({ error: 'This account is inactive. Please contact an administrator.' });
+    }
+
+    // Claim the OTP atomically so two concurrent requests cannot reuse it.
+    const claimedOtp = await prisma.emailOTP.updateMany({
+      where: {
+        id: otpRecord.id,
+        verifiedAt: null,
+        expiresAt: { gt: new Date() },
+        attempts: { lt: 5 },
+      },
+      data: { verifiedAt: new Date() },
+    });
+    if (claimedOtp.count !== 1) {
+      return res.status(400).json({ error: 'This verification code is no longer valid. Please request a new code.' });
+    }
+
     if (!user) {
-      const defaultPassword = await bcrypt.hash('guest_customer_password_2026', 10);
+      const defaultPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
       user = await prisma.user.create({
         data: {
           email: normalizedEmail,
-          name: name ? name.trim() : 'Guest Customer',
+          name: typeof name === 'string' && name.trim() ? name.trim() : 'Guest Customer',
           password: defaultPassword,
           role: 'CUSTOMER',
           isActive: true,
         },
       });
-    } else if (name && name.trim() !== '' && user.name !== name.trim()) {
+    } else if (typeof name === 'string' && name.trim() !== '' && user.name !== name.trim()) {
       user = await prisma.user.update({
         where: { id: user.id },
         data: { name: name.trim() },
       });
     }
 
-    // If active sessionId provided, link customer to the session
-    if (sessionId) {
+    // Rotate legacy customer accounts away from the old shared password when
+    // they successfully prove control of the email address with this OTP.
+    if (user && await bcrypt.compare('guest_customer_password_2026', user.password)) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { password: await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10) },
+      });
+    }
+
+    // Only attach the session that was bound to this OTP request. Never trust a
+    // different session ID supplied alongside the verification code.
+    if (otpRecord.sessionId) {
       await prisma.session.updateMany({
-        where: { id: sessionId },
+        where: {
+          id: otpRecord.sessionId,
+          status: 'ACTIVE',
+          expiresAt: { gt: new Date() },
+          OR: [{ customerId: null }, { customerId: user.id }],
+        },
         data: { customerId: user.id },
       });
     }

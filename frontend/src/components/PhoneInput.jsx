@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import ThemedSelect from './common/ThemedSelect';
+import { useState, useEffect } from 'react';
 import { COUNTRY_CODES, parsePhoneNumber } from '../utils/phoneUtils';
 
 const PhoneInput = ({
@@ -54,7 +55,7 @@ const PhoneInput = ({
   return (
     <div className={`flex items-center gap-1.5 ${className}`}>
       {/* Country Code Selector */}
-      <select
+      <ThemedSelect
         value={selectedCode}
         onChange={handleCodeChange}
         disabled={disabled}
@@ -65,7 +66,7 @@ const PhoneInput = ({
             {c.flag} {c.code}
           </option>
         ))}
-      </select>
+      </ThemedSelect>
 
       {/* Local Digits Input */}
       <div className="relative flex-1">

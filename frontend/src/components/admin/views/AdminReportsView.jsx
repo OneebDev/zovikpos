@@ -1,27 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import ThemedSelect from '../../common/ThemedSelect';
+import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  FileBarChart,
+
   Download,
   Printer,
-  TrendingUp,
-  ShoppingCart,
   CreditCard,
   Package,
-  Calendar,
   X,
   Eye,
-  AlertTriangle,
-  CheckCircle2,
-  Building2,
-  DollarSign,
-  ArrowUpDown,
   Trash2,
-  CheckSquare,
-  Square,
 } from 'lucide-react';
 import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
-import DateRangeFilterBar, { getPresetRange } from '../../common/DateRangeFilterBar';
+import DateRangeFilterBar from '../../common/DateRangeFilterBar';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
 import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 import { paymentMethodLabel } from '../../../utils/paymentMethods';
@@ -49,6 +40,8 @@ const AdminReportsView = ({
   const [orderToDelete, setOrderToDelete] = useState(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const hasSelectedOrders = reportType === 'SALES' && selectionMode && selectedOrderIds.size > 0;
+  const mobileActionWidth = reportType === 'SALES' ? 'mobile-action-third' : 'mobile-action-half';
 
   // Checkbox Selection logic
   const isAllOrdersSelected =
@@ -438,34 +431,34 @@ const AdminReportsView = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {reportType === 'SALES' && <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedOrderIds.size} />}
-          {reportType === 'SALES' && selectionMode && selectedOrderIds.size > 0 && (
+        <div className="flex w-full min-w-0 flex-nowrap items-center justify-start gap-1.5 overflow-x-auto pb-1 sm:w-auto sm:justify-end sm:gap-2 sm:overflow-visible">
+          {reportType === 'SALES' && <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedOrderIds.size} className={`${mobileActionWidth} h-10 justify-center px-1 text-[10px] sm:h-auto sm:w-auto sm:px-3 sm:py-2 sm:text-xs`} mobileLabel="Select" mobileActiveLabel="Done" />}
+          {hasSelectedOrders && (
             <button
               onClick={() => {
                 setIsBulkDeleting(true);
                 setDeleteModalOpen(true);
               }}
-              className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer animate-fade-in"
+              className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center gap-1 rounded-xl border border-rose-500/20 bg-rose-500/10 px-1 text-[10px] font-bold text-rose-400 shadow-md transition-all hover:bg-rose-500/20 cursor-pointer animate-fade-in sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs`}
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Selected ({selectedOrderIds.size})</span>
+              <Trash2 className="h-3.5 w-3.5 shrink-0" />
+              <span className="whitespace-nowrap"><span className="sm:hidden">Delete</span><span className="hidden sm:inline">Delete Selected ({selectedOrderIds.size})</span></span>
             </button>
           )}
 
           <button
             onClick={handleExportCSV}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center gap-1 rounded-xl bg-emerald-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-emerald-500 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs`}
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
+            <Download className="h-3.5 w-3.5 shrink-0" />
+            <span className="whitespace-nowrap"><span className="sm:hidden">CSV</span><span className="hidden sm:inline">Export CSV</span></span>
           </button>
           <button
             onClick={handleExportPDF}
-            className="px-3.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center gap-1 rounded-xl bg-orange-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-orange-500 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs`}
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Export PDF</span>
+            <Printer className="h-3.5 w-3.5 shrink-0" />
+            <span className="whitespace-nowrap"><span className="sm:hidden">PDF</span><span className="hidden sm:inline">Export PDF</span></span>
           </button>
         </div>
       </div>
@@ -583,7 +576,7 @@ const AdminReportsView = ({
           {/* Detailed Orders Table */}
           <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+              <table className="w-full min-w-max text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
                     {selectionMode && <th className="p-4 w-10 text-center">
@@ -709,7 +702,7 @@ const AdminReportsView = ({
             </h3>
             <div className="flex items-center space-x-2 text-xs">
               <span className="text-[var(--text-muted)] font-bold">Sort By:</span>
-              <select
+              <ThemedSelect
                 value={productSort}
                 onChange={(e) => setProductSort(e.target.value)}
                 className="px-3 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-main)] rounded-lg font-bold focus:outline-none cursor-pointer"
@@ -718,7 +711,7 @@ const AdminReportsView = ({
                 <option value="REVENUE">Highest Revenue</option>
                 <option value="MARGIN">Highest Gross Margin %</option>
                 <option value="LOW_SALES">Lowest Sales</option>
-              </select>
+              </ThemedSelect>
             </div>
           </div>
 

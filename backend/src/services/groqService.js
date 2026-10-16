@@ -315,7 +315,7 @@ Output strictly valid JSON with no markdown tags or explanatory text:
         if (jsonMatch) {
           parsed = JSON.parse(jsonMatch[0]);
         }
-      } catch (parseErr) {
+      } catch {
         try {
           let repaired = cleaned;
           const objStart = repaired.indexOf('{');
@@ -333,7 +333,9 @@ Output strictly valid JSON with no markdown tags or explanatory text:
               parsed = JSON.parse(repaired);
             }
           }
-        } catch (_) {}
+        } catch {
+          // Truncated output repair can fail; the caller handles an empty result.
+        }
       }
 
       if (parsed) {
@@ -518,7 +520,7 @@ ${invoiceText.substring(0, maxInvoiceTextLength)}
     if (jsonMatch) {
       parsed = JSON.parse(jsonMatch[0]);
     }
-  } catch (parseErr) {
+  } catch {
     // JSON may be truncated. Attempt repair.
     console.warn(`[GroqService] Text LLM JSON parse failed (finish_reason=${finishReason}), attempting repair...`);
     try {

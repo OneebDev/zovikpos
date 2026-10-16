@@ -1,4 +1,4 @@
-import React from 'react';
+import 'react';
 
 const BrandLogo = ({ subtitle = 'Smart Dining Experience', compact = false, className = '' }) => (
   <div className={`flex items-center gap-3 min-w-0 ${className}`}>

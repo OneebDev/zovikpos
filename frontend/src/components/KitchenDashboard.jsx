@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
 import { getSocket } from '../services/socket';
 import {
-  ChefHat,
+
   Play,
   CheckCircle,
   RefreshCw,
@@ -11,14 +11,12 @@ import {
   AlertCircle,
   Volume2,
   VolumeX,
-  CheckSquare,
-  Square,
   Sparkles,
   Keyboard,
 } from 'lucide-react';
 import DemoStatusBadge from './DemoStatusBadge';
 
-const KitchenDashboard = ({ user, onLogout }) => {
+const KitchenDashboard = ({ user }) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -27,7 +25,6 @@ const KitchenDashboard = ({ user, onLogout }) => {
   const [soundEnabled, setSoundEnabled] = useState(true);
 
   // Item Check-Off State: { `${orderId}-${itemId}`: boolean }
-  const [checkedItems, setCheckedItems] = useState({});
 
   const [, setTick] = useState(0);
   const alertTimerRef = useRef(null);
@@ -42,7 +39,7 @@ const KitchenDashboard = ({ user, onLogout }) => {
   }, []);
 
   // Audio Notification Sound (Synthesized Sine Wave)
-  const playNotificationSound = () => {
+  const playNotificationSound = useCallback(() => {
     if (!soundEnabled) return;
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -61,7 +58,44 @@ const KitchenDashboard = ({ user, onLogout }) => {
     } catch (e) {
       console.warn('AudioContext not allowed or supported yet:', e);
     }
-  };
+  }, [soundEnabled]);
+
+  const [pendingStatusOrderIds, setPendingStatusOrderIds] = useState(new Set());
+
+  const fetchActiveOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await api.get('/orders');
+      const active = response.data.orders.filter((o) => ['PAID', 'PREPARING', 'READY'].includes(o.status));
+      optimisticStatusRef.current = {};
+      setOrders(active);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to fetch orders.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleUpdateStatus = useCallback(async (orderId, nextStatus) => {
+    if (pendingStatusOrderIds.has(orderId)) return;
+    setPendingStatusOrderIds((prev) => new Set(prev).add(orderId));
+    optimisticStatusRef.current[orderId] = nextStatus;
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)));
+    setPendingStatusOrderIds((prev) => {
+      const next = new Set(prev);
+      next.delete(orderId);
+      return next;
+    });
+    api.put(`/orders/${orderId}/status`, { status: nextStatus })
+      .then(() => { delete optimisticStatusRef.current[orderId]; })
+      .catch((err) => {
+        console.error(err);
+        setError(err.response?.data?.error || 'Failed to update order status.');
+        delete optimisticStatusRef.current[orderId];
+        fetchActiveOrders();
+      });
+  }, [pendingStatusOrderIds, fetchActiveOrders]);
 
   // Real-time socket updates for kitchen
   useEffect(() => {
@@ -139,7 +173,7 @@ const KitchenDashboard = ({ user, onLogout }) => {
         if (shiftTimerRef.current) clearTimeout(shiftTimerRef.current);
       };
     }
-  }, [user, soundEnabled]);
+  }, [user, playNotificationSound, fetchActiveOrders]);
 
   // Filter orders by queue columns
   const paidOrders = orders.filter((o) => o.status === 'PAID');
@@ -168,66 +202,9 @@ const KitchenDashboard = ({ user, onLogout }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [paidOrders]);
+  }, [paidOrders, handleUpdateStatus, fetchActiveOrders]);
 
-  const fetchActiveOrders = async () => {
-    setLoading(true);
-    try {
-      const response = await api.get('/orders');
-      const active = response.data.orders.filter((o) => ['PAID', 'PREPARING', 'READY'].includes(o.status));
-      // Clear optimistic locks on full refresh
-      optimisticStatusRef.current = {};
-      setOrders(active);
-    } catch (err) {
-      console.error(err);
-      setError('Failed to fetch orders.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const [pendingStatusOrderIds, setPendingStatusOrderIds] = useState(new Set());
-
-  const handleUpdateStatus = async (orderId, nextStatus) => {
-    if (pendingStatusOrderIds.has(orderId)) return;
-    setPendingStatusOrderIds((prev) => new Set(prev).add(orderId));
-
-    // Record optimistic status so socket events don't revert it
-    optimisticStatusRef.current[orderId] = nextStatus;
-
-    // Immediate Optimistic UI — move card to next column instantly
-    setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o))
-    );
-
-    // Unlock button immediately after UI update (don't wait for API)
-    setPendingStatusOrderIds((prev) => {
-      const next = new Set(prev);
-      next.delete(orderId);
-      return next;
-    });
-
-    // Fire API in background — clear optimistic lock on completion, rollback on failure
-    api.put(`/orders/${orderId}/status`, { status: nextStatus })
-      .then(() => {
-        // API succeeded — clear the optimistic lock (server status now matches)
-        delete optimisticStatusRef.current[orderId];
-      })
-      .catch((err) => {
-        console.error(err);
-        setError(err.response?.data?.error || 'Failed to update order status.');
-        delete optimisticStatusRef.current[orderId];
-        fetchActiveOrders(); // Rollback by re-fetching
-      });
-  };
-
-  const toggleItemCheck = (orderId, itemKey) => {
-    const key = `${orderId}-${itemKey}`;
-    setCheckedItems((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
 
   const getElapsedTimeInfo = (createdAtStr) => {
     const created = new Date(createdAtStr);
@@ -341,11 +318,13 @@ const KitchenDashboard = ({ user, onLogout }) => {
 
           <button
             onClick={fetchActiveOrders}
-            className="px-3 py-2 bg-[var(--card-bg)] hover:bg-white/[0.12] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 shadow-sm"
+            disabled={loading}
+            aria-label={loading ? 'Refreshing kitchen board' : 'Refresh kitchen board'}
+            className="px-3 py-2 bg-[var(--card-bg)] hover:bg-white/[0.12] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 shadow-sm disabled:cursor-wait disabled:opacity-60"
             title="Refresh Board (Press R)"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-orange-400" />
-            <span>Refresh Board</span>
+            <RefreshCw className={`w-3.5 h-3.5 text-orange-400 ${loading ? 'animate-spin' : ''}`} />
+            <span>{loading ? 'Refreshing…' : 'Refresh Board'}</span>
           </button>
         </div>
       </div>
@@ -359,7 +338,7 @@ const KitchenDashboard = ({ user, onLogout }) => {
 
       {/* ── THREE KDS QUEUE COLUMNS ─────────────────────────────────────────── */}
       <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-5 overflow-visible md:overflow-hidden min-h-0 md:min-h-[520px] relative z-10">
-        
+
         {/* Column 1: Incoming / PAID */}
         <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl p-4.5 flex flex-col space-y-4 shadow-xl min-h-[320px] md:min-h-0">
           <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">

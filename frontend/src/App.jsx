@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import  { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation, Link } from 'react-router-dom';
 import RoleLogin from './components/RoleLogin';
 import CustomerPortalPage from './pages/customer/CustomerPortalPage';
@@ -7,9 +7,9 @@ import OrderTrackingPage from './pages/customer/OrderTrackingPage';
 import CashierPOSPage from './pages/cashier/CashierPOSPage';
 import KitchenBoardPage from './pages/kitchen/KitchenBoardPage';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
-import api, { setActiveAuthTokens } from './services/api';
+import  { setActiveAuthTokens } from './services/api';
 import { connectSocket, disconnectSocket } from './services/socket';
-import { Sun, Moon, Flame, CreditCard, ShieldCheck, User } from 'lucide-react';
+import { Sun, Moon, Flame, CreditCard, ShieldCheck } from 'lucide-react';
 import DemoRestrictionModal from './components/DemoRestrictionModal';
 import RoleChangeModal from './components/RoleChangeModal';
 import BrandLogo from './components/common/BrandLogo';
@@ -19,7 +19,7 @@ function App() {
   const location = useLocation();
 
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
-  const [authLoading, setAuthLoading] = useState(false);
+  const [authLoading] = useState(false);
 
   const [user, setUser] = useState(() => {
     const path = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
@@ -71,6 +71,8 @@ function App() {
     } else {
       connectSocket({ id: 0, role: 'CUSTOMER', name: 'Guest Customer', email: '', isGuest: true });
     }
+  // Login explicitly connects the socket; this mount-only guest/user bootstrap is intentional.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Protect routes and handle session expiry events
@@ -84,6 +86,8 @@ function App() {
     return () => {
       window.removeEventListener('session-expired', handleSessionExpired);
     };
+  // Keep the listener tied to route changes; logout routing is managed by the existing session flow.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
   const handleLoginSuccess = (loggedInUser, tokens) => {
@@ -99,7 +103,7 @@ function App() {
 
     setUser(loggedInUser);
     connectSocket(loggedInUser);
-    
+
     if (loggedInUser.role === 'ADMIN') navigate('/admin');
     else if (loggedInUser.role === 'VENDOR') navigate('/cashier');
     else if (loggedInUser.role === 'KITCHEN') navigate('/kitchen');

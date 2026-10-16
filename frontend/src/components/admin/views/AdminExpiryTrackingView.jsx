@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import ThemedSelect from '../../common/ThemedSelect';
+import  { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../services/api';
 import {
@@ -6,16 +7,11 @@ import {
   Search,
   AlertTriangle,
   CheckCircle2,
-  Package,
   SlidersHorizontal,
   X,
-  ArrowRight,
   ShieldCheck,
   Save,
   Loader2,
-  Tag,
-  Building2,
-  Coins,
   RefreshCw,
   Trash2,
 } from 'lucide-react';
@@ -25,14 +21,13 @@ import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 const AdminExpiryTrackingView = ({
   inventory = [],
   receivings = [],
-  onOpenAdjustmentModal,
   onRefresh,
   showToast
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, EXPIRED, TODAY, WITHIN_3, WITHIN_7, WITHIN_30, FRESH, NO_EXPIRY
   const [selectedCategory, setSelectedCategory] = useState('ALL');
-  
+
   // Modal Edit State
   const [selectedBatchDetails, setSelectedBatchDetails] = useState(null);
   const [editExpiryDate, setEditExpiryDate] = useState('');
@@ -165,7 +160,7 @@ const AdminExpiryTrackingView = ({
       };
 
       await api.put('/inventory/batch-expiry', payload);
-      
+
       if (showToast) {
         showToast('Batch & Expiry date updated successfully!', 'success');
       }
@@ -344,7 +339,7 @@ const AdminExpiryTrackingView = ({
 
   return (
     <div className="space-y-6">
-      
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
         <div>
@@ -428,8 +423,8 @@ const AdminExpiryTrackingView = ({
       )}
 
       {/* Filter & Search Bar */}
-      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 rounded-2xl flex flex-col md:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full md:w-80">
+      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 rounded-2xl grid grid-cols-1 xl:grid-cols-[minmax(14rem,1fr)_auto] gap-3 items-start">
+        <div className="relative w-full min-w-0">
           <input
             type="text"
             value={searchQuery}
@@ -440,9 +435,10 @@ const AdminExpiryTrackingView = ({
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-[var(--text-muted)]" />
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs font-bold text-[var(--text-muted)]">
+        <div className="flex w-full min-w-0 flex-col gap-2 text-xs font-bold text-[var(--text-muted)] xl:w-auto xl:items-end">
+          <div className="flex w-full flex-wrap items-center gap-2 xl:justify-end">
           <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedExpiryRecords.length} />
-          {selectionMode && <label className="flex items-center gap-2 cursor-pointer select-none">
+          {selectionMode && <label className="flex shrink-0 items-center gap-2 whitespace-nowrap cursor-pointer select-none">
             <input
               type="checkbox"
               checked={allVisibleExpirySelected}
@@ -462,20 +458,23 @@ const AdminExpiryTrackingView = ({
             <button
               type="button"
               onClick={() => { setDeleteTarget(null); setDeleteModalOpen(true); }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               Remove expiry ({selectedExpiryRecords.length})
             </button>
           )}
+          </div>
+          <div className="flex w-full flex-wrap items-center gap-2 xl:justify-end">
           {/* Status Filter Dropdown */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 whitespace-nowrap sm:flex-none">
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>Filter Expiry:</span>
-            <select
+            <ThemedSelect
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer"
+              menuMinWidth={184}
+              className="min-w-0 max-w-[10rem] flex-1 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer sm:flex-none sm:max-w-none"
             >
               <option value="ALL">All ({expiryRecords.length})</option>
               <option value="EXPIRED">Expired ({summary.expired})</option>
@@ -485,22 +484,24 @@ const AdminExpiryTrackingView = ({
               <option value="WITHIN_30">Within 30 Days ({summary.within30})</option>
               <option value="FRESH">Fresh Stock ({summary.fresh})</option>
               <option value="NO_EXPIRY">No Expiry Date ({summary.noExpiry})</option>
-            </select>
+            </ThemedSelect>
           </div>
 
           {/* Category Dropdown */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 whitespace-nowrap sm:flex-none">
             <span>Category:</span>
-            <select
+            <ThemedSelect
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer"
+              menuMinWidth={184}
+              className="min-w-0 max-w-[9rem] flex-1 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer sm:flex-none sm:max-w-none"
             >
               <option value="ALL">All Categories</option>
               {categories.map((c, i) => (
                 <option key={i} value={c}>{c}</option>
               ))}
-            </select>
+            </ThemedSelect>
+          </div>
           </div>
         </div>
       </div>
@@ -515,7 +516,7 @@ const AdminExpiryTrackingView = ({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs divide-y divide-[var(--border-color)]">
+            <table className="inventory-single-row-table w-full min-w-[1080px] text-left text-xs divide-y divide-[var(--border-color)]">
               <thead className="bg-[var(--bg-color)]/80 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]">
                 <tr>
                   <th className="py-3.5 px-4">Item</th>
@@ -642,7 +643,8 @@ const AdminExpiryTrackingView = ({
                         {statusBadge}
                       </td>
 
-                      <td className="py-3 px-4 text-right space-x-1.5">
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
                         {r.hasExpiry && (
                           <button
                             type="button"
@@ -660,6 +662,7 @@ const AdminExpiryTrackingView = ({
                         >
                           View / Edit
                         </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -674,7 +677,7 @@ const AdminExpiryTrackingView = ({
       {selectedBatchDetails && createPortal(
         <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
-            
+
             {/* Modal Header */}
             <div className="flex justify-between items-start border-b border-[var(--border-color)] pb-4">
               <div>
@@ -747,7 +750,7 @@ const AdminExpiryTrackingView = ({
 
             {/* Editable Fields Section */}
             <div className="space-y-3 pt-1 border-t border-[var(--border-color)]/60">
-              
+
               {/* Field 1: Batch Number with Generator */}
               <div>
                 <label className="block text-[11px] font-extrabold uppercase text-[var(--text-main)] mb-1 flex justify-between items-center">

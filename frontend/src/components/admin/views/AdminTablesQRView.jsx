@@ -1,13 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  QrCode,
+
   Plus,
   RefreshCw,
   Download,
   Printer,
-  CheckCircle2,
-  XCircle,
-  Building2,
   X,
   Power,
   CheckSquare,
@@ -41,7 +38,7 @@ const AdminTablesQRView = ({ showToast }) => {
     return `http://${host}:5173`;
   };
 
-  const fetchTables = async () => {
+  const fetchTables = useCallback(async () => {
     setLoading(true);
     try {
       const currentBaseUrl = getActiveBaseUrl();
@@ -59,11 +56,11 @@ const AdminTablesQRView = ({ showToast }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     fetchTables();
-  }, []);
+  }, [fetchTables]);
 
   const handleToggleTableStatus = async (table) => {
     setActionLoading(true);
@@ -343,8 +340,9 @@ const AdminTablesQRView = ({ showToast }) => {
 
       {/* Table Cards Grid */}
       {loading ? (
-        <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)] animate-pulse">
-          Loading Tables & QR Tokens...
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs font-bold text-[var(--text-muted)]">
+          <RefreshCw className="h-5 w-5 animate-spin text-orange-500" />
+          <span>Loading Tables &amp; QR Tokens...</span>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

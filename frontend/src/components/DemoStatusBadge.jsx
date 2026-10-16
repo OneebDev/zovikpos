@@ -1,4 +1,4 @@
-import React from 'react';
+import 'react';
 import { Lock } from 'lucide-react';
 
 const DemoStatusBadge = ({ user }) => {
@@ -10,7 +10,7 @@ const DemoStatusBadge = ({ user }) => {
   if (!isDemo) return null;
 
   return (
-    <div 
+    <div
       className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-full text-[11px] font-black bg-amber-500/15 border border-amber-500/30 text-amber-500 dark:text-amber-400 shadow-sm transition-all"
       title="Read-Only Demo Mode: Actions & updates are disabled for demo accounts. Log in with a real account to make changes."
     >

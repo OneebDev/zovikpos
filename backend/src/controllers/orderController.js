@@ -1,4 +1,5 @@
 const { prisma } = require('../config/db');
+const crypto = require('crypto');
 const { emitToVendor, emitToKitchen, emitToUser, emitToAdmin } = require('../sockets/socket');
 const { convertUnit } = require('../utils/unitConverter');
 const {
@@ -19,7 +20,7 @@ const { deductInventoryForConfirmedOrder, restoreInventoryForOrder } = require('
  */
 const generateOrderNumber = () => {
   const year = new Date().getFullYear();
-  const randomSuffix = Math.floor(100000 + Math.random() * 900000);
+  const randomSuffix = crypto.randomInt(100000, 1000000);
   return `ORD-${year}-${randomSuffix}`;
 };
 
@@ -35,7 +36,6 @@ const createOrder = async (req, res) => {
     paymentStatus = 'UNPAID',
     paymentTxId,
     customerEmail,
-    emailVerified,
   } = req.body;
 
   const userId = req.user.id;
@@ -89,6 +89,10 @@ const createOrder = async (req, res) => {
         where: { id: sessionId },
         include: { table: true },
       });
+
+      if (req.user.role === 'CUSTOMER' && existingSession?.customerId && existingSession.customerId !== userId) {
+        return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+      }
     }
 
     if (existingSession && existingSession.status === 'ACTIVE') {
@@ -178,10 +182,10 @@ const createOrder = async (req, res) => {
             const invItem = recipe.inventoryItem;
             if (!invItem) continue;
             const rawNeeded = recipe.quantity * qty;
-            let neededInInvUnit = rawNeeded;
+            let neededInInvUnit;
             try {
               neededInInvUnit = convertUnit(rawNeeded, recipe.unit, invItem.unit);
-            } catch (convErr) {
+            } catch {
               neededInInvUnit = rawNeeded;
             }
             if (invItem.stockLevel < neededInInvUnit) {
@@ -347,6 +351,10 @@ const updateOrderStatus = async (req, res) => {
       return res.status(404).json({ error: 'Order not found.' });
     }
 
+    if (userRole === 'CUSTOMER' && order.userId !== userId) {
+      return res.status(403).json({ error: 'Unauthorized to update this order.' });
+    }
+
     const previousStatus = order.status;
 
     // Idempotent check: If order is ALREADY in the target status, return success
@@ -372,9 +380,6 @@ const updateOrderStatus = async (req, res) => {
         return res.status(403).json({ error: 'Only Kitchen staff can advance orders to PREPARING.' });
       }
     } else if (userRole === 'CUSTOMER') {
-      if (order.userId !== userId) {
-        return res.status(403).json({ error: 'Unauthorized to update this order.' });
-      }
       if (status !== 'CANCELLED') {
         return res.status(403).json({ error: 'Customers can only cancel unconfirmed or failed orders.' });
       }

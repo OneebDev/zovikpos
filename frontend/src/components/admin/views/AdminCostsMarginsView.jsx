@@ -1,18 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import ThemedSelect from '../../common/ThemedSelect';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../services/api';
 import {
-  DollarSign,
+
   Search,
-  SlidersHorizontal,
-  TrendingUp,
   AlertTriangle,
   CheckCircle2,
-  ChevronRight,
   RefreshCw,
   Utensils,
-  ArrowUpRight,
-  Info,
   X,
   Edit3,
   TrendingDown,
@@ -42,13 +38,17 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [foodCostFilter, setFoodCostFilter] = useState('ALL');
+  const [foodCostFilter] = useState('ALL');
   const [marginFilter, setMarginFilter] = useState('ALL');
   const [selectedItemDetails, setSelectedItemDetails] = useState(null);
 
   // Multi-select & Delete State
   const [selectedItemIds, setSelectedItemIds] = useState(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
+  const hasSelectedItems = selectionMode && selectedItemIds.size > 0;
+  const mobileActionWidth = hasSelectedItems && onNavigateToRecipes
+    ? 'mobile-action-third'
+    : 'mobile-action-half';
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null); // single item or null for bulk
   const [isDeleting, setIsDeleting] = useState(false);
@@ -120,7 +120,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
     }
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const menuRes = await api.get('/menu');
@@ -154,11 +154,11 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     loadData();
-  }, [inventory]);
+  }, [inventory, loadData]);
 
   const categories = useMemo(() => {
     const set = new Set();
@@ -166,7 +166,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
     return Array.from(set).sort();
   }, [menuItems]);
 
-  const getItemRecipeCost = (mId) => {
+  const getItemRecipeCost = useCallback((mId) => {
     const ings = recipesMap[mId] || [];
     if (!ings.length) return 0;
     return ings.reduce((sum, r) => {
@@ -175,7 +175,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
       const convertedQty = convertUnit(r.quantity, r.unit, inv.unit);
       return sum + (convertedQty * (inv.costPrice || 0));
     }, 0);
-  };
+  }, [recipesMap, inventory]);
 
   const calculatedItems = useMemo(() => {
     return menuItems.map(item => {
@@ -207,7 +207,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
         status
       };
     });
-  }, [menuItems, recipesMap, inventory]);
+  }, [menuItems, recipesMap, getItemRecipeCost]);
 
   const summary = useMemo(() => {
     const totalItems = calculatedItems.length;
@@ -260,9 +260,9 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
 
   return (
     <div className="space-y-6">
-      
+
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
             <span className="p-2 rounded-2xl bg-amber-500/10 text-amber-400">💰</span>
@@ -273,25 +273,25 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedItemIds.size} />
-          {selectionMode && selectedItemIds.size > 0 && (
+        <div className="flex w-full min-w-0 items-center gap-1.5 overflow-x-auto pb-1 lg:w-auto lg:shrink-0 lg:overflow-visible">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedItemIds.size} className={`${mobileActionWidth} h-10 justify-center px-1 text-[10px] md:h-auto md:w-auto md:px-3 md:py-2.5 md:text-xs`} mobileLabel="Select" mobileActiveLabel="Done" />
+          {hasSelectedItems && (
             <button
               onClick={handleOpenBulkDelete}
-              className="px-3.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs transition-all flex items-center gap-2 cursor-pointer shadow-sm animate-fade-in"
+              className={`${mobileActionWidth} flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-rose-500/20 bg-rose-500/10 px-1 text-[10px] font-bold text-rose-400 shadow-sm transition-all hover:bg-rose-500/20 cursor-pointer animate-fade-in md:h-auto md:w-auto md:gap-2 md:px-3.5 md:py-2.5 md:text-xs`}
             >
-              <Trash2 className="w-4 h-4" />
-              <span>Clear Cost / Recipe ({selectedItemIds.size})</span>
+              <Trash2 className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
+              <span><span className="md:hidden">Clear</span><span className="hidden md:inline">Clear Cost / Recipe ({selectedItemIds.size})</span></span>
             </button>
           )}
 
           {onNavigateToRecipes && (
             <button
               onClick={onNavigateToRecipes}
-              className="px-4 py-2.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 font-bold text-xs transition-all flex items-center gap-2 cursor-pointer"
+              className={`${mobileActionWidth} flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-orange-500/20 bg-orange-500/10 px-1 text-[10px] font-bold text-orange-400 transition-all hover:bg-orange-500/20 cursor-pointer md:h-auto md:w-auto md:gap-2 md:px-4 md:py-2.5 md:text-xs`}
             >
-              <Edit3 className="w-4 h-4" />
-              <span>Go to Recipe Builder</span>
+              <Edit3 className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
+              <span><span className="md:hidden">Recipes</span><span className="hidden md:inline">Go to Recipe Builder</span></span>
             </button>
           )}
         </div>
@@ -349,7 +349,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
           {/* Category */}
           <div className="flex items-center gap-1.5">
             <span>Category:</span>
-            <select
+            <ThemedSelect
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -358,13 +358,13 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
               {categories.map((c, idx) => (
                 <option key={idx} value={c}>{c}</option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
 
           {/* Status / Margin */}
           <div className="flex items-center gap-1.5">
             <span>Status:</span>
-            <select
+            <ThemedSelect
               value={marginFilter}
               onChange={(e) => setMarginFilter(e.target.value)}
               className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -374,7 +374,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
               <option value="LOW">Low Margin</option>
               <option value="LOSS">Loss / Negative Margin</option>
               <option value="NO_RECIPE">No Recipe / Cost Missing</option>
-            </select>
+            </ThemedSelect>
           </div>
         </div>
       </div>
@@ -394,7 +394,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs divide-y divide-[var(--border-color)]">
+            <table className="inventory-single-row-table w-full min-w-max text-left text-xs divide-y divide-[var(--border-color)]">
               <thead className="bg-[var(--bg-color)]/80 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]">
                 <tr>
                   {selectionMode && <th className="py-3.5 pl-4 pr-2 w-8">
@@ -484,8 +484,8 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
                         )}
                       </td>
 
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
                           <button
                             onClick={() => setSelectedItemDetails(item)}
                             className="px-3 py-1.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-main)] border border-[var(--border-color)] font-bold text-[11px] transition-colors cursor-pointer"

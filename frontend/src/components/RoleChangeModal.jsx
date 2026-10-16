@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import  { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldAlert, LogIn, Sparkles, UserCheck, ShieldCheck, Flame, CreditCard, Crown } from 'lucide-react';
+import { ShieldAlert, LogIn, Flame, CreditCard, Crown } from 'lucide-react';
 import { getSocket } from '../services/socket';
 
 const ROLE_DISPLAY = {

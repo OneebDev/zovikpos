@@ -1,13 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import ThemedSelect from '../../common/ThemedSelect';
+import  { useState, useMemo } from 'react';
 import {
   ShieldCheck,
   Search,
   Download,
   Printer,
   Trash2,
-  CheckSquare,
-  Square,
-  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
@@ -183,42 +182,44 @@ const AdminAuditLogsView = ({ logs = [], loading, onRefresh, showToast }) => {
       {/* Header Bar */}
       <div className="flex flex-col items-stretch gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl lg:flex-row lg:justify-between lg:items-start">
         <div className="min-w-0 flex items-start gap-2">
-          <ShieldCheck className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/10 text-orange-400">
+            <ShieldCheck className="h-5 w-5" />
+          </span>
           <div className="min-w-0">
             <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">System Audit Logs</h2>
             <p className="text-xs text-[var(--text-muted)] mt-1">Comprehensive audit trail of admin, inventory, and system events with single &amp; bulk deletion controls.</p>
           </div>
         </div>
 
-        <div className="flex flex-nowrap items-center gap-1.5 w-full lg:w-auto overflow-x-auto lg:shrink-0">
+        <div className="flex w-full min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto lg:w-auto lg:shrink-0 lg:overflow-visible">
           {/* Bulk Delete Selected Button */}
-          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedLogIds.size} />
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedLogIds.size} className="mobile-action-third h-10 justify-center px-1 text-[10px] lg:h-auto lg:w-auto lg:px-3 lg:py-2 lg:text-xs" mobileLabel="Select" mobileActiveLabel="Done" />
           {selectionMode && selectedLogIds.size > 0 && (
             <button
               onClick={() => {
                 setIsBulkDeleting(true);
                 setDeleteModalOpen(true);
               }}
-              className="shrink-0 px-2.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer animate-fade-in"
+              className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-500/20 bg-rose-500/10 px-1 text-[10px] font-bold text-rose-400 shadow-md transition-all hover:bg-rose-500/20 cursor-pointer animate-fade-in lg:h-auto lg:w-auto lg:gap-1.5 lg:px-2.5 lg:py-2 lg:text-xs"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Selected ({selectedLogIds.size})</span>
+              <Trash2 className="h-3.5 w-3.5 shrink-0" />
+              <span><span className="lg:hidden">Delete</span><span className="hidden lg:inline">Delete Selected ({selectedLogIds.size})</span></span>
             </button>
           )}
 
           <button
             onClick={handleExportCSV}
-            className="shrink-0 px-2.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer"
+            className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-emerald-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-emerald-500 cursor-pointer lg:h-auto lg:w-auto lg:gap-1.5 lg:px-2.5 lg:py-2 lg:text-xs"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
+            <span><span className="lg:hidden">CSV</span><span className="hidden lg:inline">Export CSV</span></span>
           </button>
           <button
             onClick={handleExportPDF}
-            className="shrink-0 px-2.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer"
+            className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-orange-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-orange-500 cursor-pointer lg:h-auto lg:w-auto lg:gap-1.5 lg:px-2.5 lg:py-2 lg:text-xs"
           >
             <Printer className="w-3.5 h-3.5" />
-            <span>Export PDF</span>
+            <span><span className="lg:hidden">PDF</span><span className="hidden lg:inline">Export PDF</span></span>
           </button>
         </div>
       </div>
@@ -236,7 +237,7 @@ const AdminAuditLogsView = ({ logs = [], loading, onRefresh, showToast }) => {
           />
         </div>
 
-        <select
+        <ThemedSelect
           value={actionFilter}
           onChange={(e) => setActionFilter(e.target.value)}
           className="px-4 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -247,7 +248,7 @@ const AdminAuditLogsView = ({ logs = [], loading, onRefresh, showToast }) => {
               {act}
             </option>
           ))}
-        </select>
+        </ThemedSelect>
 
         {selectionMode && selectedLogIds.size > 0 && (
           <div className="flex items-center space-x-2 text-xs font-bold text-orange-400">
@@ -265,8 +266,9 @@ const AdminAuditLogsView = ({ logs = [], loading, onRefresh, showToast }) => {
       {/* Audit Log Table */}
       <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)] animate-pulse">
-            Loading Audit Logs...
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs font-bold text-[var(--text-muted)]">
+            <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+            <span>Loading Audit Logs...</span>
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)]">
@@ -274,7 +276,7 @@ const AdminAuditLogsView = ({ logs = [], loading, onRefresh, showToast }) => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full min-w-[1120px] text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
                   {selectionMode && <th className="p-4 w-10 text-center">
@@ -315,30 +317,30 @@ const AdminAuditLogsView = ({ logs = [], loading, onRefresh, showToast }) => {
                           className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500/20 cursor-pointer"
                         />
                       </td>}
-                      <td className="p-4 font-bold text-[var(--text-main)]">
+                      <td className="p-4 whitespace-nowrap font-bold text-[var(--text-main)]">
                         {log.user?.name || log.user?.email || 'System'}
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 whitespace-nowrap">
                         <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-orange-500/10 text-orange-400 border border-orange-500/20">
                           {log.user?.role || 'SYSTEM'}
                         </span>
                       </td>
-                      <td className="p-4 font-mono font-extrabold text-emerald-400">
+                      <td className="p-4 whitespace-nowrap font-mono font-extrabold text-emerald-400">
                         {log.action}
                       </td>
-                      <td className="p-4 text-[var(--text-main)] font-semibold">
+                      <td className="p-4 whitespace-nowrap text-[var(--text-main)] font-semibold">
                         {log.entity}
                       </td>
-                      <td className="p-4 font-mono text-[var(--text-muted)]">
+                      <td className="p-4 whitespace-nowrap font-mono text-[var(--text-muted)]">
                         {log.entityId || 'N/A'}
                       </td>
-                      <td className="p-4 font-mono text-[11px] text-[var(--text-muted)]">
+                      <td className="p-4 whitespace-nowrap font-mono text-[11px] text-[var(--text-muted)]">
                         {log.ipAddress || '127.0.0.1'}
                       </td>
-                      <td className="p-4 text-[11px] text-[var(--text-muted)]">
+                      <td className="p-4 whitespace-nowrap text-[11px] text-[var(--text-muted)]">
                         {new Date(log.createdAt).toLocaleString()}
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="p-4 whitespace-nowrap text-right">
                         <button
                           onClick={() => {
                             setLogToDelete(log);

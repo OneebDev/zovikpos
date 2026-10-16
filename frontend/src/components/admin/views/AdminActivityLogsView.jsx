@@ -1,3 +1,4 @@
+import ThemedSelect from '../../common/ThemedSelect';
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -6,23 +7,11 @@ import {
   SlidersHorizontal,
   Truck,
   AlertTriangle,
-  FileText,
   Utensils,
-  User,
-  Clock,
   ChevronRight,
   ChevronDown,
-  ChevronUp,
   ChevronLeft,
   X,
-  CheckCircle2,
-  Package,
-  Calendar,
-  Layers,
-  ShoppingBag,
-  ExternalLink,
-  Tag,
-  DollarSign,
   Trash2
 } from 'lucide-react';
 import api from '../../../services/api';
@@ -426,7 +415,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
     return groupedActivities.filter(a => {
       // 1. Search Query
       if (q) {
-        let match = false;
+        let match;
         if (a.type === 'STOCK_IN_GROUP') {
           match =
             (a.supplierName && a.supplierName.toLowerCase().includes(q)) ||
@@ -490,7 +479,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
 
   return (
     <div className="space-y-6">
-      
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
         <div>
@@ -532,8 +521,8 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
       </div>
 
       {/* Search & Filters Bar */}
-      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 rounded-2xl flex flex-col md:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full md:w-80">
+      <div className="grid grid-cols-1 gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)]/40 p-4 xl:grid-cols-[minmax(16rem,20rem)_1fr] xl:items-start">
+        <div className="relative w-full min-w-0">
           <input
             type="text"
             value={searchQuery}
@@ -552,54 +541,53 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs font-bold text-[var(--text-muted)]">
+        <div className="grid w-full min-w-0 grid-cols-1 gap-3 text-xs font-bold text-[var(--text-muted)] sm:grid-cols-2 xl:grid-cols-4">
           {/* Action Filter */}
-          <div className="flex items-center gap-1.5">
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Type:</span>
-            <select
+          <div className="flex min-w-0 flex-col items-stretch gap-1.5">
+            <span className="flex items-center gap-1.5"><SlidersHorizontal className="w-3.5 h-3.5" />Type:</span>
+            <ThemedSelect
               value={actionFilter}
               onChange={(e) => setActionFilter(e.target.value)}
-              className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer font-bold"
+              className="w-full bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-2 focus:outline-none focus:border-orange-500 cursor-pointer font-bold"
             >
               <option value="ALL">All Movements</option>
               <option value="RECEIVED">Stock Received (Shipment Groups)</option>
               <option value="DEDUCTED">Stock Deducted (Order Groups)</option>
               <option value="ADJUSTED">Adjustments &amp; Spoilage</option>
-            </select>
+            </ThemedSelect>
           </div>
 
           {/* Supplier Filter */}
           {allSuppliers.length > 0 && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex min-w-0 flex-col items-stretch gap-1.5">
               <span>Supplier:</span>
-              <select
+              <ThemedSelect
                 value={supplierFilter}
                 onChange={(e) => setSupplierFilter(e.target.value)}
-                className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer font-bold"
+                className="w-full bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-2 focus:outline-none focus:border-orange-500 cursor-pointer font-bold"
               >
                 <option value="ALL">All Suppliers</option>
                 {allSuppliers.map(sup => (
                   <option key={sup} value={sup}>{sup}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
           )}
 
           {/* Date Filter */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 flex-col items-stretch gap-1.5">
             <span>Date:</span>
-            <select
+            <ThemedSelect
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
-              className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-orange-500 cursor-pointer font-bold"
+              className="w-full bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl px-2.5 py-2 focus:outline-none focus:border-orange-500 cursor-pointer font-bold"
             >
               <option value="ALL">All Time</option>
               <option value="TODAY">Today</option>
               <option value="YESTERDAY">Yesterday</option>
               <option value="LAST_7">Last 7 Days</option>
               <option value="LAST_30">Last 30 Days</option>
-            </select>
+            </ThemedSelect>
           </div>
 
           {(searchQuery || actionFilter !== 'ALL' || supplierFilter !== 'ALL' || dateFilter !== 'ALL') && (
@@ -610,7 +598,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
                 setSupplierFilter('ALL');
                 setDateFilter('ALL');
               }}
-              className="px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              className="self-end px-3 py-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer sm:col-span-2 xl:col-span-1 xl:self-end"
             >
               Reset Filters
             </button>
@@ -793,7 +781,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
                       </div>
 
                       <div className="overflow-x-auto rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)]">
-                        <table className="w-full text-left text-xs">
+                        <table className="inventory-single-row-table w-full min-w-max text-left text-xs">
                           <thead>
                             <tr className="border-b border-[var(--border-color)] bg-[var(--card-bg)]/60 text-[10px] font-extrabold uppercase text-[var(--text-muted)] tracking-wider">
                               <th className="py-2.5 px-3">Item / Ingredient</th>
@@ -973,7 +961,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
                       </div>
 
                       <div className="overflow-x-auto rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)]">
-                        <table className="w-full text-left text-xs">
+                        <table className="inventory-single-row-table w-full min-w-max text-left text-xs">
                           <thead>
                             <tr className="border-b border-[var(--border-color)] bg-[var(--card-bg)]/60 text-[10px] font-extrabold uppercase text-[var(--text-muted)] tracking-wider">
                               <th className="py-2.5 px-3">Ingredient</th>

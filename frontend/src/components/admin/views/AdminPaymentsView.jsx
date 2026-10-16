@@ -1,10 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import  { useState, useMemo } from 'react';
 import {
-  CreditCard,
-  Banknote,
-  CheckCircle2,
-  XCircle,
-  Clock,
   Search,
   Download,
   Printer,
@@ -29,7 +24,7 @@ const toDateStr = (d) => {
 
 const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
   const [methodTab, setMethodTab] = useState('ALL');
-  const [statusTab, setStatusTab] = useState('ALL');
+  const [statusTab] = useState('ALL');
   const [viewMode] = useState('TABLE'); // TABLE only – calendar removed
   const [searchTerm, setSearchTerm] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
@@ -264,7 +259,7 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
       {/* Tabs & Filter Bar */}
       <div className="flex flex-col sm:flex-row justify-between gap-4">
         {/* Method Tabs */}
-        <div className="flex items-center p-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl gap-1">
+        <div className="flex w-full min-w-0 flex-nowrap items-center gap-1 overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] p-1 sm:w-auto">
           {[
             { id: 'ALL', label: 'All Payments' },
             { id: 'COD', label: 'Pay at Counter (COD)' },
@@ -273,11 +268,12 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
             <button
               key={item.id}
               onClick={() => setMethodTab(item.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+              className={`min-w-0 flex-1 whitespace-nowrap rounded-lg px-1.5 py-1.5 text-[10px] font-extrabold transition-all cursor-pointer sm:flex-initial sm:px-3 sm:text-xs ${
                 methodTab === item.id ? 'bg-orange-600 text-white shadow-md' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
               }`}
             >
-              {item.label}
+              <span className="sm:hidden">{item.id === 'ALL' ? 'All' : item.id === 'COD' ? 'COD' : 'Online'}</span>
+              <span className="hidden sm:inline">{item.label}</span>
             </button>
           ))}
         </div>
@@ -295,11 +291,11 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedPaymentIds.size} />
+      <div className="flex w-full min-w-0 flex-nowrap items-center justify-end gap-1 sm:gap-2">
+        <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedPaymentIds.size} mobileLabel="Select" mobileActiveLabel="Done" className="px-2 py-2 text-[10px] sm:px-3 sm:py-2.5 sm:text-xs" />
         {selectionMode && (
           <>
-            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-muted)] cursor-pointer select-none">
+            <label className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-3 py-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-muted)] cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={allBulkDeletableSelected}
@@ -313,15 +309,18 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
                 className="accent-orange-500"
                 aria-label="Select all payment orders"
               />
-              Select all
+              <span className="sm:hidden">All</span>
+              <span className="hidden sm:inline">Select all</span>
             </label>
             {selectedPaymentIds.size > 0 && (
               <button
                 type="button"
                 onClick={() => { setIsBulkDeleting(true); setPaymentToDelete(null); setDeleteModalOpen(true); }}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black transition-colors cursor-pointer"
+                className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-xl bg-rose-600 px-2 py-2 text-[10px] font-black text-white transition-colors hover:bg-rose-500 cursor-pointer sm:gap-2 sm:px-3 sm:py-2 sm:text-xs"
               >
-                <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedPaymentIds.size})
+                <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                <span className="sm:hidden">Delete ({selectedPaymentIds.size})</span>
+                <span className="hidden sm:inline">Delete Selected ({selectedPaymentIds.size})</span>
               </button>
             )}
           </>
@@ -337,7 +336,7 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full min-w-[1120px] text-left border-collapse">
               <thead>
                 <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
                   <th className="p-4">Order #</th>
@@ -358,7 +357,7 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
 
                   return (
                     <tr key={p.id} className="hover:bg-[var(--bg-color)]/40 transition-colors">
-                      <td className="p-4 font-mono font-extrabold text-orange-400">
+                      <td className="p-4 whitespace-nowrap font-mono font-extrabold text-orange-400">
                         <span className="inline-flex items-center gap-2">
                           {selectionMode && (
                             <input
@@ -381,15 +380,15 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
                         <span className="font-bold block text-[var(--text-main)]">{p.customerName}</span>
                         <span className="text-[10px] text-[var(--text-muted)] block">{p.customerEmail}</span>
                       </td>
-                      <td className="p-4 font-bold">{p.tableId}</td>
-                      <td className="p-4 font-mono font-extrabold text-emerald-400">Rs. {Number(p.amount || 0).toFixed(2)}</td>
-                      <td className="p-4">
+                      <td className="p-4 whitespace-nowrap font-bold">{p.tableId}</td>
+                      <td className="p-4 whitespace-nowrap font-mono font-extrabold text-emerald-400">Rs. {Number(p.amount || 0).toFixed(2)}</td>
+                      <td className="p-4 whitespace-nowrap">
                         <span className="px-2.5 py-1 rounded-md text-[10px] font-extrabold bg-[var(--bg-color)] border border-[var(--border-color)] uppercase">
                           {p.method}
                         </span>
                       </td>
-                      <td className="p-4 font-mono text-[11px] text-[var(--text-muted)]">{p.transactionId}</td>
-                      <td className="p-4">
+                      <td className="p-4 whitespace-nowrap font-mono text-[11px] text-[var(--text-muted)]">{p.transactionId}</td>
+                      <td className="p-4 whitespace-nowrap">
                         <span
                           className={`px-2.5 py-1 rounded-md text-[10px] font-extrabold border ${
                             isPaid
@@ -402,8 +401,8 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
                           {isPaid ? 'PAID / VERIFIED' : isPending ? 'PENDING VERIFICATION' : 'FAILED'}
                         </span>
                       </td>
-                      <td className="p-4 text-right">
-                        <div className="flex items-center justify-end space-x-1.5">
+                      <td className="p-4 text-right whitespace-nowrap">
+                        <div className="flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
                           {isPending && p.paymentId ? (
                             <>
                               <button

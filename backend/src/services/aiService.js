@@ -5,8 +5,8 @@ const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 /**
  * Retrieves stock level forecasting for a given item.
  * Falls back to simple moving average if Python FastAPI service is offline.
- * @param {string} itemName 
- * @param {Array<number>} historicalSales 
+ * @param {string} itemName
+ * @param {Array<number>} historicalSales
  * @returns {Promise<{forecast: number, source: string}>}
  */
 const getInventoryForecast = async (itemName, historicalSales, features = {}) => {
@@ -17,7 +17,7 @@ const getInventoryForecast = async (itemName, historicalSales, features = {}) =>
   const now = new Date();
   const weekday = features.weekday !== undefined ? features.weekday : now.getDay();
   const month = features.month !== undefined ? features.month : now.getMonth() + 1;
-  
+
   // 0: Winter, 1: Spring, 2: Summer, 3: Autumn
   let defaultSeason = 0;
   if (month >= 3 && month <= 5) defaultSeason = 1;
@@ -27,9 +27,9 @@ const getInventoryForecast = async (itemName, historicalSales, features = {}) =>
   const season = features.season !== undefined ? features.season : defaultSeason;
   const promotions = features.promotions !== undefined ? features.promotions : 0;
   const exams_season = features.exams_season !== undefined ? features.exams_season : 0;
-  
+
   // Weather mapping: 0: Clear, 1: Rain, 2: Hot/Sunny, 3: Cold
-  let weather = 0;
+  let weather;
   if (features.weather !== undefined) {
     weather = features.weather;
   } else {
@@ -55,9 +55,9 @@ const getInventoryForecast = async (itemName, historicalSales, features = {}) =>
       percentChange: response.data.percent_change,
       source: 'fastapi-ml'
     };
-  } catch (error) {
+  } catch {
     console.warn(`FastAPI forecasting service unavailable for ${itemName}. Executing Node fallback moving-average.`);
-    
+
     // Fallback: Simple moving average (SMA) of last 3 periods, or average of whatever is available
     const length = actualHistory.length;
     const subset = actualHistory.slice(Math.max(0, length - 3));

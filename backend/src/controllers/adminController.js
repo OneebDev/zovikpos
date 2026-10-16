@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const { prisma } = require('../config/db');
 const { logAudit } = require('../middleware/auditMiddleware');
 const supabaseAdmin = require('../config/supabaseAdmin');
-const { broadcastEvent } = require('../sockets/socket');
+const { emitToAccount } = require('../sockets/socket');
 const { clearUserCache } = require('../middleware/authMiddleware');
 
 /**
@@ -681,7 +681,7 @@ const updateStaff = async (req, res) => {
 
     // Clear in-memory auth cache and broadcast real-time socket event
     clearUserCache(updated.id);
-    broadcastEvent('staff:account-updated', {
+    emitToAccount(updated.id, 'staff:account-updated', {
       userId: updated.id,
       email: updated.email,
       newRole: updated.role,
@@ -746,7 +746,7 @@ const updateStaffRole = async (req, res) => {
 
     // Clear in-memory auth cache and broadcast real-time account role change event
     clearUserCache(targetId);
-    broadcastEvent('staff:account-updated', {
+    emitToAccount(targetId, 'staff:account-updated', {
       userId: targetId,
       email: updated.email,
       newRole: updated.role,
@@ -791,7 +791,7 @@ const toggleStaffStatus = async (req, res) => {
       const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
       const authUser = authUsers?.users?.find(u => u.email === target.email);
       if (authUser) {
-        await syncToSupabaseAuth('ban', { supabaseId: authUser.id, banned: !Boolean(isActive) });
+        await syncToSupabaseAuth('ban', { supabaseId: authUser.id, banned: !isActive });
       }
     }
 
@@ -805,7 +805,7 @@ const toggleStaffStatus = async (req, res) => {
 
     // Clear in-memory auth cache and broadcast status toggle event
     clearUserCache(targetId);
-    broadcastEvent('staff:account-updated', {
+    emitToAccount(targetId, 'staff:account-updated', {
       userId: targetId,
       email: updated.email,
       newRole: updated.role,
@@ -877,7 +877,7 @@ const deleteStaffAccount = async (req, res) => {
       }
 
       clearUserCache(targetId);
-      broadcastEvent('staff:account-updated', {
+      emitToAccount(targetId, 'staff:account-updated', {
         userId: targetId,
         email: deactivated.email,
         action: 'ACCOUNT_DEACTIVATED',
@@ -911,7 +911,7 @@ const deleteStaffAccount = async (req, res) => {
     }
 
     clearUserCache(targetId);
-    broadcastEvent('staff:account-updated', {
+    emitToAccount(targetId, 'staff:account-updated', {
       userId: targetId,
       action: 'ACCOUNT_DELETED',
       message: 'Staff account has been permanently removed.'
@@ -1157,7 +1157,7 @@ const getBranches = async (req, res) => {
     const branches = await prisma.branch.findMany({
       include: {
         _count: {
-          select: { tables: true, menuItems: true, orders: true, users: true },
+          select: { tables: true, menuItems: true, orders: true, users: true, inventoryItems: true, receivings: true },
         },
       },
     });
@@ -1198,6 +1198,40 @@ const createBranch = async (req, res) => {
   } catch (error) {
     console.error('Create branch error:', error);
     return res.status(500).json({ error: 'Failed to create branch.' });
+  }
+};
+
+const updateBranch = async (req, res) => {
+  const branchId = parseInt(req.params.id, 10);
+  const { name, address, phone } = req.body;
+  if (!Number.isInteger(branchId)) return res.status(400).json({ error: 'Valid branch ID is required.' });
+  if (!name?.trim()) return res.status(400).json({ error: 'Branch name is required.' });
+
+  try {
+    const existing = await prisma.branch.findUnique({ where: { id: branchId } });
+    if (!existing) return res.status(404).json({ error: 'Branch not found.' });
+
+    const branch = await prisma.branch.update({
+      where: { id: branchId },
+      data: {
+        name: name.trim(),
+        address: address?.trim() || null,
+        phone: phone?.trim() || null,
+      },
+    });
+    await logAudit({
+      userId: req.user?.id,
+      action: 'BRANCH_UPDATED',
+      entity: 'Branch',
+      entityId: branch.id,
+      oldValue: existing,
+      newValue: branch,
+      req,
+    });
+    return res.json({ message: 'Branch updated successfully.', branch });
+  } catch (error) {
+    console.error('Update branch error:', error);
+    return res.status(500).json({ error: 'Failed to update branch.' });
   }
 };
 
@@ -1548,6 +1582,7 @@ module.exports = {
   bulkDeleteOrderStatusHistory,
   getBranches,
   createBranch,
+  updateBranch,
   deleteBranch,
   bulkDeleteBranches,
 };

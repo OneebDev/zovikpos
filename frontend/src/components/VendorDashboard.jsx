@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import  { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import api from '../services/api';
 import { getSocket } from '../services/socket';
 import AdminMenuView from './admin/views/AdminMenuView';
@@ -9,43 +9,28 @@ import {
   ShoppingCart,
   RefreshCw,
   AlertCircle,
-  Plus,
-  Edit,
   Trash2,
   Banknote,
-  Clock,
   Upload,
   Image as ImageIcon,
   AlertTriangle,
-  Utensils,
-  LogOut,
-  Package,
-  Search,
   Volume2,
   VolumeX,
-  TrendingUp,
   FileText,
   DollarSign,
-  Activity,
-  Filter,
-  CheckCircle2,
-  XCircle,
 } from 'lucide-react';
 import DemoStatusBadge from './DemoStatusBadge';
 import { paymentMethodLabel } from '../utils/paymentMethods';
 
-const VendorDashboard = ({ user, onLogout }) => {
+const VendorDashboard = ({ user }) => {
   const [orders, setOrders] = useState([]);
   const [menu, setMenu] = useState([]);
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('vendor_activeTab') || 'verification'); // 'verification', 'active', 'menu'
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(true);
 
   // Menu Search & Filter States
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [stockFilter, setStockFilter] = useState('ALL'); // 'ALL', 'AVAILABLE', 'LOW_STOCK', 'DISABLED'
 
   // Payment availability settings state
   const [paymentSettings, setPaymentSettings] = useState({ codEnabled: true, onlineEnabled: true });
@@ -83,7 +68,7 @@ const VendorDashboard = ({ user, onLogout }) => {
   };
 
   // Synthesized Web Audio Chime Sound
-  const playOrderChime = () => {
+  const playOrderChime = useCallback(() => {
     if (!soundEnabled) return;
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -103,7 +88,7 @@ const VendorDashboard = ({ user, onLogout }) => {
     } catch (e) {
       console.warn('Audio chime warning:', e);
     }
-  };
+  }, [soundEnabled]);
 
   useEffect(() => {
     localStorage.setItem('vendor_activeTab', activeTab);
@@ -196,7 +181,7 @@ const VendorDashboard = ({ user, onLogout }) => {
         socket.off('inventory:update');
       }
     };
-  }, [user, soundEnabled]);
+  }, [user, playOrderChime]);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -206,7 +191,7 @@ const VendorDashboard = ({ user, onLogout }) => {
     } catch (err) {
       console.error(err);
       setError('Failed to fetch orders.');
-    } fontFinally: {
+    } finally {
       setLoading(false);
     }
   };
@@ -366,57 +351,11 @@ const VendorDashboard = ({ user, onLogout }) => {
     }
   };
 
-  const handleToggleMenu = async (itemId, currentActive) => {
-    // Immediate Optimistic Update
-    setMenu((prev) => prev.map((item) => (item.id === itemId ? { ...item, isActive: !currentActive } : item)));
-    try {
-      const response = await api.put(`/menu/${itemId}`, { isActive: !currentActive });
-      setMenu((prev) => prev.map((item) => (item.id === itemId ? response.data.item : item)));
-      showToast(`Menu item availability updated!`);
-    } catch (err) {
-      console.error(err);
-      setMenu((prev) => prev.map((item) => (item.id === itemId ? { ...item, isActive: currentActive } : item)));
-      showToast('Failed to toggle availability', 'error');
-    }
-  };
 
-  const handleOpenAddModal = () => {
-    setModalData({
-      id: null,
-      name: '',
-      price: '',
-      type: 'food',
-      category: 'Fast Food',
-      stock: '50',
-      prepTime: '5',
-      imageUrl: '',
-      description: '',
-      isActive: true,
-    });
-    setImagePreview(null);
-    setPendingBase64(null);
-    setImageError('');
-    setShowModal('add');
-  };
 
-  const handleOpenEditModal = (item) => {
-    setModalData({
-      id: item.id,
-      name: item.name,
-      price: item.price.toString(),
-      type: item.type || 'food',
-      category: item.category || 'Fast Food',
-      stock: item.stock.toString(),
-      prepTime: (item.prepTime || 5).toString(),
-      imageUrl: item.imageUrl || '',
-      description: item.description || '',
-      isActive: item.isActive !== false,
-    });
-    setImagePreview(item.imageUrl || null);
-    setPendingBase64(null);
-    setImageError('');
-    setShowModal('edit');
-  };
+
+
+
 
   const handleImageFileChange = (e) => {
     const file = e.target.files[0];
@@ -543,31 +482,6 @@ const VendorDashboard = ({ user, onLogout }) => {
       outOfStockCount,
     };
   }, [orders, menu, activeOrders, verificationOrders]);
-
-  // Dynamic Categories Computation
-  const categories = useMemo(() => {
-    const cats = new Set(menu.map((it) => it.category || 'General'));
-    return ['ALL', ...Array.from(cats)];
-  }, [menu]);
-
-  // Filtered Menu Items
-  const filteredMenuItems = useMemo(() => {
-    return menu.filter((item) => {
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCat = selectedCategory === 'ALL' || item.category === selectedCategory;
-
-      let matchesStock = true;
-      if (stockFilter === 'AVAILABLE') {
-        matchesStock = (item.stock ?? 50) > 0 && item.isActive !== false;
-      } else if (stockFilter === 'LOW_STOCK') {
-        matchesStock = (item.stock ?? 50) <= 5 && (item.stock ?? 50) > 0;
-      } else if (stockFilter === 'DISABLED') {
-        matchesStock = item.isActive === false || (item.stock ?? 50) <= 0;
-      }
-
-      return matchesSearch && matchesCat && matchesStock;
-    });
-  }, [menu, searchTerm, selectedCategory, stockFilter]);
 
   return (
     <div className="responsive-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] p-4 sm:p-6 relative selection:bg-[var(--sb-primary)]/30 font-sans">

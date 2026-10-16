@@ -1,6 +1,7 @@
 const { prisma } = require('../config/db');
 const { generateQR } = require('../utils/generateQRCode');
 const { broadcastEvent } = require('../sockets/socket');
+const crypto = require('crypto');
 
 const menuCache = new Map();
 const MENU_CACHE_TTL_MS = 10 * 1000;
@@ -216,7 +217,7 @@ const bulkDeleteItems = async (req, res) => {
         await prisma.menuItem.delete({ where: { id: targetId } });
         if (existing.imageUrl) await deleteImageByUrl(existing.imageUrl);
         deletedCount++;
-      } catch (err) {
+      } catch {
         // Soft delete / deactivate if referenced in order history
         await prisma.menuItem.update({
           where: { id: targetId },
@@ -317,21 +318,25 @@ async function deleteImageByUrl(imageUrl) {
 const uploadImage = async (req, res) => {
   const { imageBase64 } = req.body;
 
-  if (!imageBase64) {
+  if (typeof imageBase64 !== 'string' || !imageBase64) {
     return res.status(400).json({ error: 'No image data provided for upload.' });
   }
 
   try {
-    const matches = imageBase64.match(/^data:(image\/(jpeg|png|webp|jpg));base64,(.+)$/i);
+    const matches = imageBase64.match(/^data:(image\/(?:jpeg|png|webp|jpg));base64,([A-Za-z0-9+/]+={0,2})$/i);
     if (!matches) {
       return res.status(400).json({
         error: 'Invalid image format. Only JPG, JPEG, PNG, and WEBP formats are supported.',
       });
     }
 
-    const mimeType = matches[1].toLowerCase();
-    const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg';
-    const base64Data = matches[3];
+    const declaredMimeType = matches[1].toLowerCase();
+    const base64Data = matches[2];
+    const maxBase64Chars = Math.ceil((5 * 1024 * 1024) / 3) * 4;
+    if (base64Data.length > maxBase64Chars || base64Data.length % 4 !== 0) {
+      return res.status(400).json({ error: 'Image data is invalid or exceeds the 5MB size limit.' });
+    }
+
     const buffer = Buffer.from(base64Data, 'base64');
 
     if (buffer.length > 5 * 1024 * 1024) {
@@ -340,12 +345,28 @@ const uploadImage = async (req, res) => {
       });
     }
 
-    const uniqueName = `menu_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    let actualMimeType = null;
+    if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+      actualMimeType = 'image/png';
+    } else if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+      actualMimeType = 'image/jpeg';
+    } else if (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
+      actualMimeType = 'image/webp';
+    }
+
+    const normalizedDeclaredMimeType = declaredMimeType === 'image/jpg' ? 'image/jpeg' : declaredMimeType;
+    if (!actualMimeType || actualMimeType !== normalizedDeclaredMimeType) {
+      return res.status(400).json({ error: 'Image content does not match its declared file type.' });
+    }
+
+    const ext = actualMimeType === 'image/png' ? 'png' : actualMimeType === 'image/webp' ? 'webp' : 'jpg';
+    const mimeType = actualMimeType;
+    const uniqueName = `menu_${crypto.randomBytes(16).toString('hex')}.${ext}`;
 
     // Attempt Supabase Storage Upload first
     try {
       const supabase = require('../config/supabaseClient');
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('Menu Images')
         .upload(uniqueName, buffer, {
           contentType: mimeType,

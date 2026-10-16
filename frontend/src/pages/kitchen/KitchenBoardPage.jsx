@@ -1,4 +1,4 @@
-import React from 'react';
+import 'react';
 import KitchenDashboard from '../../components/KitchenDashboard';
 
 const KitchenBoardPage = ({ user, onLogout }) => {

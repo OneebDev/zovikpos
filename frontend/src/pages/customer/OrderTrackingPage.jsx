@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import ThemedSelect from '../../components/common/ThemedSelect';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { getSocket } from '../../services/socket';
 import {
-  Clock,
+
   CheckCircle2,
   AlertCircle,
   Utensils,
@@ -12,9 +13,7 @@ import {
   Sparkles,
   ShieldCheck,
   MapPin,
-  Flame,
   Check,
-  RotateCcw,
 } from 'lucide-react';
 
 const OrderTrackingPage = () => {
@@ -22,6 +21,10 @@ const OrderTrackingPage = () => {
   const navigate = useNavigate();
 
   const [order, setOrder] = useState(null);
+  const orderId = order?.id;
+  const orderStatus = order?.status;
+  const orderCreatedAt = order?.createdAt;
+  const orderAdjustedEta = order?.etaPrediction?.adjustedEta;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -64,33 +67,33 @@ const OrderTrackingPage = () => {
   // Real-time socket updates — modifies order state directly WITHOUT triggering loading spinner or flickering
   useEffect(() => {
     const socket = getSocket();
-    if (!socket || !order) return;
+    if (!socket || !orderId) return;
 
     const handleUpdate = (updatedOrder) => {
-      if (updatedOrder && (updatedOrder.id === order.id || updatedOrder.trackingToken === trackingToken)) {
+      if (updatedOrder && (updatedOrder.id === orderId || updatedOrder.trackingToken === trackingToken)) {
         setOrder(updatedOrder);
       }
     };
 
     socket.on('order:update', handleUpdate);
     return () => socket.off('order:update', handleUpdate);
-  }, [trackingToken, order?.id]);
+  }, [trackingToken, orderId]);
 
   // ─── Real-Time Client-Side Countdown Timer (0 API Requests) ────────────────
   const [timeLeftSeconds, setTimeLeftSeconds] = useState(0);
 
   useEffect(() => {
-    if (!order) return;
+    if (!orderCreatedAt) return;
 
-    if (order.status === 'READY' || order.status === 'COMPLETED') {
+    if (orderStatus === 'READY' || orderStatus === 'COMPLETED') {
       setTimeLeftSeconds(0);
       return;
     }
 
-    const prepMins = order.etaPrediction?.adjustedEta
-      ? Math.round(order.etaPrediction.adjustedEta)
+    const prepMins = orderAdjustedEta
+      ? Math.round(orderAdjustedEta)
       : 15;
-    const createdAtMs = new Date(order.createdAt).getTime();
+    const createdAtMs = new Date(orderCreatedAt).getTime();
     const targetMs = createdAtMs + prepMins * 60 * 1000;
 
     const updateTimer = () => {
@@ -101,7 +104,7 @@ const OrderTrackingPage = () => {
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [order?.createdAt, order?.etaPrediction?.adjustedEta, order?.status]);
+  }, [orderCreatedAt, orderAdjustedEta, orderStatus]);
 
   const formatCountdown = (totalSecs) => {
     if (totalSecs <= 0) return '00:00';
@@ -215,7 +218,7 @@ const OrderTrackingPage = () => {
 
         {/* Main Tracker Card */}
         <div className="bg-white dark:bg-[#1E1E1E] border border-[#E7E5E4] dark:border-[#333] rounded-[32px] p-6 sm:p-8 shadow-xl space-y-8 relative overflow-hidden">
-          
+
           {/* Order Identity Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#F5F5F4] dark:border-[#2A2A2A] pb-6">
             <div>
@@ -266,7 +269,7 @@ const OrderTrackingPage = () => {
                 <button onClick={() => setShowTablePicker(false)} className="text-xs text-[#78716C] dark:text-[#A8A29E] font-bold hover:text-[#171717]">✕ Close</button>
               </div>
               <div className="flex items-center gap-2">
-                <select
+                <ThemedSelect
                   value={targetTable}
                   onChange={(e) => setTargetTable(e.target.value)}
                   className="bg-white dark:bg-[#333] border border-[#E7E5E4] dark:border-[#555] text-[#171717] dark:text-white text-xs rounded-xl px-3 py-2 font-bold flex-1 focus:outline-none focus:border-[#E85D2A]"
@@ -277,7 +280,7 @@ const OrderTrackingPage = () => {
                       {t.tableNumber}
                     </option>
                   ))}
-                </select>
+                </ThemedSelect>
                 <button
                   disabled={tableUpdateLoading || !targetTable}
                   onClick={handleTableChange}
@@ -436,7 +439,7 @@ const OrderTrackingPage = () => {
                 </div>
               ))}
             </div>
-            
+
             {/* Total Paid Financial Summary */}
             <div className="border-t border-[#E7E5E4] dark:border-[#333] pt-3.5 flex justify-between items-center text-sm font-black">
               <span className="text-[#171717] dark:text-white text-base">Total Paid:</span>

@@ -20,6 +20,7 @@ const {
   bulkDeleteOrderStatusHistory,
   getBranches,
   createBranch,
+  updateBranch,
   deleteBranch,
   bulkDeleteBranches,
 } = require('../controllers/adminController');
@@ -59,6 +60,7 @@ router.delete('/customers/:id', deleteCustomerAccount);
 // Branch Management
 router.get('/branches', getBranches);
 router.post('/branches', createBranch);
+router.put('/branches/:id', updateBranch);
 router.delete('/branches/bulk', bulkDeleteBranches);
 router.delete('/branches/:id', deleteBranch);
 

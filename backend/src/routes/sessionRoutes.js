@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.post('/start', optionalAuthMiddleware, startSession);
 router.post('/transfer-table', optionalAuthMiddleware, transferSessionTable);
-router.get('/:sessionId', getSession);
-router.post('/:sessionId/close', closeSession);
+router.get('/:sessionId', optionalAuthMiddleware, getSession);
+router.post('/:sessionId/close', optionalAuthMiddleware, closeSession);
 
 module.exports = router;

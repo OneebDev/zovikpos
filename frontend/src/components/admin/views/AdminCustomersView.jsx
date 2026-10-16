@@ -1,15 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  UserCheck,
+
   Search,
   Download,
   Printer,
   Eye,
-  ShoppingBag,
-  DollarSign,
-  Calendar,
   X,
   Trash2,
+  Loader2,
 } from 'lucide-react';
 import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
 import api from '../../../services/api';
@@ -30,7 +28,7 @@ const AdminCustomersView = ({ showToast }) => {
   const [selectionMode, setSelectionMode] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get('/admin/customers');
@@ -41,11 +39,11 @@ const AdminCustomersView = ({ showToast }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     fetchCustomers();
-  }, []);
+  }, [fetchCustomers]);
 
   const filteredCustomers = useMemo(() => {
     return customers.filter(
@@ -54,6 +52,8 @@ const AdminCustomersView = ({ showToast }) => {
         c.name?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [customers, searchTerm]);
+  const hasSelectedCustomers = selectionMode && selectedCustomerIds.size > 0;
+  const mobileActionWidth = 'mobile-action-third';
 
   const toggleSelectCustomer = (id) => {
     setSelectedCustomerIds((prev) => {
@@ -143,36 +143,36 @@ const AdminCustomersView = ({ showToast }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
-        <div>
-          <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">Customer Roster & Analytics</h2>
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl">
+        <div className="min-w-0 flex-1">
+          <h2 className="min-w-0 text-lg font-extrabold leading-tight text-[var(--text-main)] font-display sm:text-xl">Customers &amp; Analytics</h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">Track total spending, order history, and dining session activity.</p>
         </div>
 
-        <div className="flex items-center space-x-2">
-          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedCustomerIds.size} />
-          {selectionMode && selectedCustomerIds.size > 0 && (
+        <div className="flex w-full min-w-0 items-center gap-1.5 overflow-x-auto pb-1 lg:w-auto lg:shrink-0 lg:justify-end lg:overflow-visible">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedCustomerIds.size} mobileLabel="Select" mobileActiveLabel="Done" className={`${mobileActionWidth} h-10 justify-center px-1.5 text-[10px] sm:h-auto sm:w-auto sm:px-3 sm:py-2 sm:text-xs`} />
+          {hasSelectedCustomers && (
             <button
               onClick={handleBulkDelete}
-              className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+              className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center gap-1 rounded-xl border border-rose-500/20 bg-rose-500/10 px-1 text-[10px] font-bold text-rose-400 shadow-md transition-all hover:bg-rose-500/20 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs`}
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Selected ({selectedCustomerIds.size})</span>
+              <Trash2 className="h-3.5 w-3.5 shrink-0" />
+              <span className="whitespace-nowrap"><span className="sm:hidden">Delete</span><span className="hidden sm:inline">Delete Selected ({selectedCustomerIds.size})</span></span>
             </button>
           )}
           <button
             onClick={handleExportCSV}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center gap-1 rounded-xl bg-emerald-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-emerald-500 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs`}
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
+            <Download className="h-3.5 w-3.5 shrink-0" />
+            <span className="whitespace-nowrap"><span className="sm:hidden">CSV</span><span className="hidden sm:inline">Export CSV</span></span>
           </button>
           <button
             onClick={handleExportPDF}
-            className="px-3.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center gap-1 rounded-xl bg-orange-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-orange-500 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs`}
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Export PDF</span>
+            <Printer className="h-3.5 w-3.5 shrink-0" />
+            <span className="whitespace-nowrap"><span className="sm:hidden">PDF</span><span className="hidden sm:inline">Export PDF</span></span>
           </button>
         </div>
       </div>
@@ -192,8 +192,9 @@ const AdminCustomersView = ({ showToast }) => {
       {/* Customer Roster Table */}
       <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)] animate-pulse">
-            Loading Customer Analytics...
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs font-bold text-[var(--text-muted)]">
+            <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+            <span>Loading Customer Analytics...</span>
           </div>
         ) : filteredCustomers.length === 0 ? (
           <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)]">
@@ -201,7 +202,7 @@ const AdminCustomersView = ({ showToast }) => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full min-w-[1080px] text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
                   {selectionMode && <th className="p-4 w-10 text-center">
@@ -234,10 +235,10 @@ const AdminCustomersView = ({ showToast }) => {
                           className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500 cursor-pointer"
                         />
                       </td>}
-                      <td className="p-4 font-bold text-[var(--text-main)]">{c.name}</td>
-                      <td className="p-4 font-mono text-[var(--text-muted)]">{c.email}</td>
-                      <td className="p-4 font-bold text-[var(--text-main)]">{c.totalOrders} orders</td>
-                      <td className="p-4 font-mono font-extrabold text-emerald-400">Rs. {Number(c.totalSpent || 0).toFixed(2)}</td>
+                      <td className="p-4 whitespace-nowrap font-bold text-[var(--text-main)]">{c.name}</td>
+                      <td className="p-4 whitespace-nowrap font-mono text-[var(--text-muted)]">{c.email}</td>
+                      <td className="p-4 whitespace-nowrap font-bold text-[var(--text-main)]">{c.totalOrders} orders</td>
+                      <td className="p-4 whitespace-nowrap font-mono font-extrabold text-emerald-400">Rs. {Number(c.totalSpent || 0).toFixed(2)}</td>
                       <td className="p-4 text-[11px] text-[var(--text-muted)]">
                         {c.lastOrderDate ? new Date(c.lastOrderDate).toLocaleString() : 'No orders'}
                       </td>
@@ -246,8 +247,8 @@ const AdminCustomersView = ({ showToast }) => {
                           {c.isActive ? 'ACTIVE' : 'INACTIVE'}
                         </span>
                       </td>
-                      <td className="p-4 text-right">
-                        <div className="flex items-center justify-end space-x-2">
+                      <td className="p-4 text-right whitespace-nowrap">
+                        <div className="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
                           <button
                             onClick={() => setSelectedCustomer(c)}
                             className="px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded-xl font-bold transition-all flex items-center space-x-1 cursor-pointer"

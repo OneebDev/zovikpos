@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import ThemedSelect from '../../common/ThemedSelect';
+import  { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../services/api';
 import {
@@ -15,7 +16,6 @@ import {
   Clock,
   X,
   ArrowRight,
-  DollarSign,
   SlidersHorizontal
 } from 'lucide-react';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
@@ -63,7 +63,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
   const [yieldText, setYieldText] = useState('1 Serving');
   const [prepInstructions, setPrepInstructions] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [recipeHistory, setRecipeHistory] = useState([]);
+  const [, setRecipeHistory] = useState([]);
 
   // Ingredient Selector inside Editor
   const [ingredientSearch, setIngredientSearch] = useState('');
@@ -76,6 +76,8 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
   // Selection & Delete Modal State
   const [selectedItemIds, setSelectedItemIds] = useState(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
+  const hasSelectedRecipes = selectionMode && selectedItemIds.size > 0;
+  const mobileActionWidth = hasSelectedRecipes ? 'mobile-action-third' : 'mobile-action-half';
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null); // single item or null for bulk
   const [isDeleting, setIsDeleting] = useState(false);
@@ -151,10 +153,10 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
   };
 
   // Fetch menu items & recipes
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [menuRes, marginsRes] = await Promise.all([
+      const [menuRes] = await Promise.all([
         api.get('/menu'),
         api.get('/inventory/recipes/margins')
       ]);
@@ -190,11 +192,11 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   // Compute Categories dynamically from POS Menu Items
   const categories = useMemo(() => {
@@ -206,7 +208,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
   }, [menuItems]);
 
   // Recipe calculation helpers
-  const calculateItemRecipeCost = (mId) => {
+  const calculateItemRecipeCost = useCallback((mId) => {
     const ings = recipesMap[mId] || [];
     if (!ings.length) return 0;
     return ings.reduce((sum, r) => {
@@ -215,9 +217,9 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
       const convertedQty = convertUnit(r.quantity, r.unit, inv.unit);
       return sum + (convertedQty * (inv.costPrice || 0));
     }, 0);
-  };
+  }, [recipesMap, inventory]);
 
-  const getItemStatus = (mId) => {
+  const getItemStatus = useCallback((mId) => {
     const ings = recipesMap[mId] || [];
     if (!ings || ings.length === 0) return 'Draft';
     const missing = ings.some(r => !inventory.some(i => i.id === r.inventoryItemId));
@@ -225,7 +227,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
     const invalidQty = ings.some(r => !r.quantity || parseFloat(r.quantity) <= 0);
     if (invalidQty) return 'Invalid';
     return 'Ready';
-  };
+  }, [recipesMap, inventory]);
 
   // Filtered Menu Items
   const filteredMenuItems = useMemo(() => {
@@ -249,7 +251,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
 
       return matchesSearch && matchesCategory && matchesStatus;
     });
-  }, [menuItems, recipesMap, inventory, searchQuery, selectedCategory, statusFilter]);
+  }, [menuItems, recipesMap, inventory, searchQuery, selectedCategory, statusFilter, getItemStatus]);
 
   // Summary Metrics
   const summary = useMemo(() => {
@@ -277,7 +279,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
     const avgFoodCost = countedWithRecipe > 0 ? (totalFoodCostSum / countedWithRecipe).toFixed(1) : '0';
 
     return { totalItems, readyCount, missingCount, draftCount, avgFoodCost };
-  }, [menuItems, recipesMap, inventory]);
+  }, [menuItems, calculateItemRecipeCost, getItemStatus]);
 
   // Open Recipe Editor
   const handleOpenEditor = (item) => {
@@ -395,17 +397,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
   };
 
   // Bulk Import Presets
-  const handleImportPresets = async () => {
-    try {
-      const res = await api.post('/inventory/recipes/import-presets');
-      if (showToast) showToast(res.data?.message || 'Recipe presets imported successfully!', 'success');
-      loadData();
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      console.error('Import presets error:', err);
-      if (showToast) showToast('Failed to import recipe presets.', 'error');
-    }
-  };
+
 
   // Duplicate Recipe Handler
   const handleConfirmDuplicate = async () => {
@@ -453,9 +445,9 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
 
   return (
     <div className="space-y-6">
-      
+
       {/* 1. Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
             <span className="p-2 rounded-2xl bg-orange-500/10 text-orange-400">📖</span>
@@ -466,15 +458,15 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedItemIds.size} />
-          {selectionMode && selectedItemIds.size > 0 && (
+        <div className="flex w-full min-w-0 items-center gap-1.5 overflow-x-auto pb-1 lg:w-auto lg:shrink-0 lg:overflow-visible">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedItemIds.size} className={`${mobileActionWidth} h-10 justify-center px-1 text-[10px] md:h-auto md:w-auto md:px-3 md:py-2.5 md:text-xs`} mobileLabel="Select" mobileActiveLabel="Done" />
+          {hasSelectedRecipes && (
             <button
               onClick={handleOpenBulkDelete}
-              className="px-3.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs transition-all flex items-center gap-2 cursor-pointer shadow-sm animate-fade-in"
+              className={`${mobileActionWidth} flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-rose-500/20 bg-rose-500/10 px-1 text-[10px] font-bold text-rose-400 shadow-sm transition-all hover:bg-rose-500/20 cursor-pointer animate-fade-in md:h-auto md:w-auto md:gap-2 md:px-3.5 md:py-2.5 md:text-xs`}
             >
-              <Trash2 className="w-4 h-4" />
-              <span>Clear Selected ({selectedItemIds.size})</span>
+              <Trash2 className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
+              <span><span className="md:hidden">Clear</span><span className="hidden md:inline">Clear Selected ({selectedItemIds.size})</span></span>
             </button>
           )}
 
@@ -483,10 +475,10 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
               if (menuItems.length > 0) handleOpenEditor(menuItems[0]);
             }}
             disabled={menuItems.length === 0}
-            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 disabled:opacity-50 text-white font-bold text-xs shadow-lg shadow-orange-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer"
+            className={`${mobileActionWidth} flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-1 text-[10px] font-bold text-white shadow-lg transition-all cursor-pointer disabled:opacity-50 md:h-auto md:w-auto md:gap-2 md:px-4 md:py-2.5 md:text-xs`}
           >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>New Recipe</span>
+            <Plus className="h-3.5 w-3.5 shrink-0 stroke-[3] md:h-4 md:w-4" />
+            <span><span className="md:hidden">New</span><span className="hidden md:inline">New Recipe</span></span>
           </button>
         </div>
       </div>
@@ -548,7 +540,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
           <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] font-bold">
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>Category:</span>
-            <select
+            <ThemedSelect
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] text-xs rounded-xl px-2.5 py-1.5 font-bold focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -557,13 +549,13 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
               {categories.map((cat, i) => (
                 <option key={i} value={cat}>{cat}</option>
               ))}
-            </select>
+            </ThemedSelect>
           </div>
 
           {/* Status Filter */}
           <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] font-bold">
             <span>Status:</span>
-            <select
+            <ThemedSelect
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] text-xs rounded-xl px-2.5 py-1.5 font-bold focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -572,7 +564,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
               <option value="Ready">Ready</option>
               <option value="Missing Items">Missing Items</option>
               <option value="Draft">Draft</option>
-            </select>
+            </ThemedSelect>
           </div>
         </div>
       </div>
@@ -598,7 +590,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs divide-y divide-[var(--border-color)]">
+            <table className="inventory-single-row-table w-full min-w-max text-left text-xs divide-y divide-[var(--border-color)]">
               <thead className="bg-[var(--bg-color)]/80 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]">
                 <tr>
                   {selectionMode && <th className="py-3.5 pl-4 pr-2 w-8">
@@ -713,7 +705,8 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3 px-4 text-right space-x-1.5">
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
                         <button
                           onClick={() => setDuplicateSourceItem(item)}
                           title="Duplicate Recipe to Another Menu Item"
@@ -739,6 +732,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -769,28 +763,28 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
 
       {/* 5. FULL RECIPE EDITOR MODAL — Portal to document.body for true screen centering */}
       {activeEditorItem && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-3xl w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-scale-up my-auto max-h-[92vh] flex flex-col">
-            
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-slate-950/80 p-2 backdrop-blur-md sm:p-4">
+          <div className="my-auto flex max-h-[96dvh] min-h-0 w-full min-w-0 max-w-3xl flex-col space-y-3 overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] p-3 shadow-2xl animate-scale-up sm:max-h-[92vh] sm:space-y-4 sm:p-6">
+
             {/* Modal Header */}
-            <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3.5 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-xl">
+            <div className="flex shrink-0 items-start justify-between gap-2 border-b border-[var(--border-color)] pb-3.5">
+              <div className="flex min-w-0 items-start gap-2 sm:items-center sm:gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-orange-500/20 bg-orange-500/10 text-lg sm:h-10 sm:w-10 sm:text-xl">
                   🍕
                 </div>
-                <div>
-                  <h3 className="text-base font-black text-[var(--text-main)] font-display flex items-center gap-2">
+                <div className="min-w-0">
+                  <h3 className="break-words text-sm font-black text-[var(--text-main)] font-display sm:text-base">
                     Recipe: {activeEditorItem.name}
                   </h3>
-                  <div className="flex items-center gap-3 text-[11px] text-[var(--text-muted)] mt-0.5">
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-[var(--text-muted)] sm:gap-3 sm:text-[11px]">
                     <span>Category: <strong className="text-[var(--text-main)]">{activeEditorItem.category || 'General'}</strong></span>
-                    <span>•</span>
+                    <span className="hidden sm:inline">•</span>
                     <span>Selling Price: <strong className="text-orange-400">Rs. {activeEditorItem.price}</strong></span>
                     {activeEditorItem.prepTime && (
-                      <>
-                        <span>•</span>
+                      <span>
+                        <span className="mr-2 hidden sm:inline">•</span>
                         <span>Prep Time: <strong>{activeEditorItem.prepTime} min</strong></span>
-                      </>
+                      </span>
                     )}
                   </div>
                 </div>
@@ -799,21 +793,21 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
               <button
                 type="button"
                 onClick={() => setActiveEditorItem(null)}
-                className="p-2 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors border border-[var(--border-color)]"
+                className="shrink-0 rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--card-bg)] hover:text-[var(--text-main)] sm:p-2"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Scrollable Form Content */}
-            <form onSubmit={handleSaveRecipe} className="space-y-4 text-xs overflow-y-auto pr-1 flex-1">
-              
+            <form onSubmit={handleSaveRecipe} className="min-h-0 min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto pr-1 text-xs">
+
               {/* Menu Item Step Selector */}
               <div className="bg-[var(--bg-color)]/60 border border-[var(--border-color)] p-3 rounded-2xl space-y-2">
                 <label className="block font-extrabold text-[var(--text-main)] uppercase tracking-wider text-[10px]">
                   Step 1 — Menu Item Selection
                 </label>
-                <select
+                <ThemedSelect
                   value={activeEditorItem.id}
                   onChange={(e) => {
                     const sel = menuItems.find(m => m.id === parseInt(e.target.value, 10));
@@ -826,11 +820,11 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                       {m.name} — Rs.{m.price} ({m.category || 'General'})
                     </option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
 
               {/* Ingredients Header + AI Suggest Button */}
-              <div className="flex items-center justify-between pt-1">
+              <div className="flex flex-col items-start justify-between gap-2 pt-1 sm:flex-row sm:items-center">
                 <div>
                   <h4 className="font-black text-[var(--text-main)] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                     <span>📦 Recipe Ingredients</span>
@@ -865,11 +859,11 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                     const lineCost = convertedQty * unitCost;
 
                     return (
-                      <div key={idx} className="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-[var(--bg-color)]/80 transition-colors">
-                        
+                      <div key={idx} className="flex min-w-0 flex-col items-start justify-between gap-3 p-3 transition-colors hover:bg-[var(--bg-color)]/80 sm:flex-row sm:items-center">
+
                         {/* Ingredient Name & Inventory Status */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="font-extrabold text-[var(--text-main)] text-xs">{inv?.name || `ID #${ing.inventoryItemId}`}</span>
                             {ing.isAiSuggested && (
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
@@ -883,7 +877,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                             )}
                           </div>
 
-                          <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)] mt-0.5 font-mono">
+                          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] text-[var(--text-muted)] font-mono">
                             <span>Catalog Unit: <strong>{invUnit}</strong></span>
                             <span>•</span>
                             <span>Unit Cost: <strong>Rs.{unitCost} / {invUnit}</strong></span>
@@ -891,8 +885,8 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                         </div>
 
                         {/* Quantity & Unit Input */}
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                          <div>
+                        <div className="grid w-full min-w-0 grid-cols-2 items-end gap-2 sm:flex sm:w-auto sm:items-center sm:gap-2">
+                          <div className="min-w-0">
                             <span className="block text-[9px] text-[var(--text-muted)] font-extrabold uppercase mb-0.5">Quantity Used</span>
                             <input
                               type="number"
@@ -908,13 +902,13 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                                 });
                               }}
                               placeholder="0"
-                              className="w-24 px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                              className="w-full min-w-0 px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 sm:w-24"
                             />
                           </div>
 
-                          <div>
+                          <div className="min-w-0">
                             <span className="block text-[9px] text-[var(--text-muted)] font-extrabold uppercase mb-0.5">Unit</span>
-                            <select
+                            <ThemedSelect
                               value={ing.unit}
                               onChange={(e) => {
                                 const val = e.target.value;
@@ -924,7 +918,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                                   return updated;
                                 });
                               }}
-                              className="px-2 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                              className="w-full min-w-0 px-2 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer sm:w-auto"
                             >
                               <option value="KG">KG</option>
                               <option value="G">Grams (G)</option>
@@ -933,11 +927,11 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                               <option value="PCS">PCS</option>
                               <option value="DOZEN">DOZEN</option>
                               <option value="PACK">PACK</option>
-                            </select>
+                            </ThemedSelect>
                           </div>
 
                           {/* Calculated Cost */}
-                          <div className="w-24 text-right">
+                          <div className="col-span-2 flex min-w-0 items-end justify-between gap-2 sm:w-24 sm:shrink-0 sm:justify-end sm:text-right">
                             <span className="block text-[9px] text-[var(--text-muted)] font-extrabold uppercase mb-0.5">Est. Cost</span>
                             <span className="font-mono font-bold text-amber-400 text-xs">
                               Rs.{lineCost.toFixed(2)}
@@ -950,7 +944,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                             onClick={() => {
                               setEditorIngredients(prev => prev.filter((_, i) => i !== idx));
                             }}
-                            className="p-1.5 text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer mt-3"
+                            className="col-start-2 shrink-0 justify-self-end rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-rose-500/10 hover:text-rose-400 cursor-pointer sm:mt-3"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -1023,14 +1017,14 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                           key={inv.id}
                           type="button"
                           onClick={() => handleAddIngredientToEditor(inv)}
-                          className="w-full text-left px-3.5 py-2.5 hover:bg-orange-500/10 transition-colors flex items-center justify-between group cursor-pointer"
+                          className="group flex w-full min-w-0 flex-col gap-1 px-3.5 py-2.5 text-left transition-colors hover:bg-orange-500/10 cursor-pointer sm:flex-row sm:items-center sm:justify-between"
                         >
-                          <div>
+                          <div className="min-w-0">
                             <span className="font-bold text-[var(--text-main)] group-hover:text-orange-400">{inv.name}</span>
                             <span className="ml-2 text-[10px] text-[var(--text-muted)]">({inv.category || 'General'})</span>
                           </div>
 
-                          <div className="flex items-center gap-2 text-[10px]">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2 text-[10px]">
                             <span className="font-mono text-[var(--text-muted)]">Stock: {inv.stockLevel} {inv.unit}</span>
                             <span className="px-2 py-0.5 rounded font-black text-orange-400 bg-[var(--bg-color)] border border-orange-500/20">
                               Rs.{inv.costPrice} / {inv.unit}
@@ -1073,10 +1067,10 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
               </div>
 
               {/* Recipe Cost Summary Box */}
-              <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 border border-orange-500/30 p-4 rounded-2xl flex items-center justify-between">
-                <div>
+              <div className="flex min-w-0 flex-col justify-between gap-3 rounded-2xl border border-orange-500/30 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 p-3 sm:flex-row sm:items-center sm:p-4">
+                <div className="min-w-0">
                   <span className="text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider block">Recipe Financial Summary</span>
-                  <div className="flex items-center gap-4 mt-1 font-mono">
+                  <div className="mt-2 grid grid-cols-2 gap-3 font-mono sm:flex sm:items-center sm:gap-4">
                     <div>
                       <span className="text-[10px] text-[var(--text-muted)]">Selling Price:</span>
                       <strong className="text-xs text-[var(--text-main)] block">Rs. {activeEditorItem.price}</strong>
@@ -1096,7 +1090,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                   </div>
                 </div>
 
-                <div className="text-right shrink-0">
+                <div className="shrink-0 text-left sm:text-right">
                   <span className="text-[10px] font-bold text-[var(--text-muted)] block">Inventory Mapped</span>
                   <span className="text-sm font-black text-emerald-400 font-mono">
                     {editorIngredients.length} / {editorIngredients.length} Items
@@ -1105,18 +1099,18 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border-color)] shrink-0">
+              <div className="sticky bottom-0 flex shrink-0 flex-col-reverse gap-2 border-t border-[var(--border-color)] bg-[var(--card-bg)]/95 pt-3 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setActiveEditorItem(null)}
-                  className="px-4 py-2.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-xs font-bold text-[var(--text-muted)] border border-[var(--border-color)] cursor-pointer"
+                  className="w-full rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] px-4 py-2.5 text-xs font-bold text-[var(--text-muted)] hover:bg-[var(--card-bg)] cursor-pointer sm:w-auto"
                 >
                   Cancel
                 </button>
 
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-xs shadow-lg shadow-orange-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                  className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-orange-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer sm:w-auto"
                 >
                   Save & Activate Recipe
                 </button>
@@ -1145,7 +1139,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
               <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
                 Target Menu Item
               </label>
-              <select
+              <ThemedSelect
                 value={duplicateTargetId}
                 onChange={(e) => setDuplicateTargetId(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -1158,7 +1152,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                       {m.name} (Rs. {m.price})
                     </option>
                   ))}
-              </select>
+              </ThemedSelect>
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-2">

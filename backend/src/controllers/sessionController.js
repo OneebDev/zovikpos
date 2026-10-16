@@ -132,6 +132,10 @@ const getSession = async (req, res) => {
       return res.status(404).json({ error: 'Dining session not found.' });
     }
 
+    if (req.user?.role === 'CUSTOMER' && session.customerId && session.customerId !== req.user.id) {
+      return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+    }
+
     // Auto-expire check
     if (session.status === 'ACTIVE' && new Date() > new Date(session.expiresAt)) {
       // Check if session has active orders before expiring
@@ -174,6 +178,10 @@ const closeSession = async (req, res) => {
     const session = await prisma.session.findUnique({ where: { id: sessionId } });
     if (!session) {
       return res.status(404).json({ error: 'Session not found.' });
+    }
+
+    if (req.user?.role === 'CUSTOMER' && session.customerId && session.customerId !== req.user.id) {
+      return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
 
     const updated = await prisma.session.update({
@@ -248,6 +256,10 @@ const transferSessionTable = async (req, res) => {
 
     if (!currentSession) {
       return res.status(404).json({ error: 'Current dining session not found.' });
+    }
+
+    if (req.user?.role === 'CUSTOMER' && currentSession.customerId && currentSession.customerId !== req.user.id) {
+      return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
 
     const oldTableDisplay = currentSession.table?.tableNumber || `Table ${currentSession.tableId}`;

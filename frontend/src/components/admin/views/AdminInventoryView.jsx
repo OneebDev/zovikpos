@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ThemedSelect from '../../common/ThemedSelect';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Package,
@@ -7,37 +8,24 @@ import {
   RefreshCw,
   Search,
   Download,
-  Printer,
   History,
   CheckCircle2,
   XCircle,
   X,
   Truck,
-  TrendingUp,
   Clock,
   Layers,
   Coins,
-  PieChart,
   Edit3,
-  Calendar,
   Building2,
   Save,
   Trash2,
-  MoreVertical,
-  SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
-  Info,
   Check,
-  Eye,
-  FileSpreadsheet,
   UploadCloud,
-  FileText,
-  FileCheck,
   Sparkles,
-  ArrowRight,
-  Target,
-  CheckSquare
+  Target
 } from 'lucide-react';
 import { exportToCSV } from '../../../utils/exportUtils';
 import api from '../../../services/api';
@@ -242,8 +230,8 @@ const sumInventorySubtotals = (rows, getQuantity = row => row.stockLevel ?? row.
 
 const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, focusRequest, onFocusHandled }) => {
   const [activeTab, setActiveTab] = useState('CATALOG');
-  const [summary, setSummary] = useState(null);
-  
+  const [, setSummary] = useState(null);
+
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // ALL | LOW | NORMAL | OVERSTOCK
@@ -251,35 +239,15 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
   const [supplierFilter, setSupplierFilter] = useState('ALL');
   const [unitFilter, setUnitFilter] = useState('ALL');
   const [sortBy, setSortBy] = useState('NAME_ASC'); // NAME_ASC | NAME_DESC | LOW_STOCK_FIRST | OVERSTOCK_FIRST | STOCK_LOW_TO_HIGH | STOCK_HIGH_TO_LOW | COST_HIGH_TO_LOW | RECENTLY_UPDATED
-  
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage] = useState(25);
 
   // Quick Action Modal State
   const [selectedItemForDetails, setSelectedItemForDetails] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [selectedItemForAdjustment, setSelectedItemForAdjustment] = useState(null);
-  const [itemActionMenuId, setItemActionMenuId] = useState(null);
-
-  useEffect(() => {
-    if (!focusRequest?.itemId || inventory.length === 0) return;
-    const item = inventory.find((entry) => String(entry.id) === String(focusRequest.itemId));
-    if (item) {
-      setActiveTab('CATALOG');
-      if (focusRequest.action === 'restock') {
-        setAdjType('CORRECTION');
-        setAdjQty('');
-        setAdjReason('Restock from Action Alerts');
-        setSelectedItemForAdjustment(item);
-      } else {
-        setSelectedItemForDetails(item);
-      }
-    } else {
-      showToast?.('This inventory item is no longer available.', 'error');
-    }
-    onFocusHandled?.();
-  }, [focusRequest, inventory, onFocusHandled, showToast]);
 
   // Bulk & Single Delete with GlobalDeleteModal
   const [selectedInventoryIds, setSelectedInventoryIds] = useState(new Set());
@@ -288,26 +256,22 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
   const [itemToDelete, setItemToDelete] = useState(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  
+
   // Stock Adjustment Form State
   const [adjType, setAdjType] = useState('CORRECTION'); // CORRECTION | WASTE | EXPIRATION | DAMAGE | USED | OTHER
   const [adjQty, setAdjQty] = useState('');
   const [adjReason, setAdjReason] = useState('');
 
   // Modal / Recipe / Supplier state
-  const [selectedMenuItem, setSelectedMenuItem] = useState(null);
-  const [menuItemsList, setMenuItemsList] = useState([]);
-  const [recipeIngredients, setRecipeIngredients] = useState([]);
-  const [marginsList, setMarginsList] = useState([]);
+  const [, setMenuItemsList] = useState([]);
+  const [, setMarginsList] = useState([]);
   const [suppliersList, setSuppliersList] = useState([]);
-  const [expiringList, setExpiringList] = useState([]);
+  const [, setExpiringList] = useState([]);
   const [receivingsList, setReceivingsList] = useState([]);
-  
+
   // Add New Item Modal State
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [quickPickSearch, setQuickPickSearch] = useState('');
-  const [ingredientSearch, setIngredientSearch] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState({});
 
   const getTodayCompactDate = (d = new Date()) => {
@@ -463,29 +427,11 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
     }));
   };
 
-  const generateAutoBatchForIngredientCard = (cardId) => {
-    const dateStr = getTodayCompactDate();
-    const rand = Math.floor(1000 + Math.random() * 9000);
-    const newBatch = `BATCH-${dateStr}-${rand}`;
-    setIngredientCards(prev => prev.map(c => c.id === cardId ? { ...c, batchNumber: newBatch } : c));
-    if (showToast) showToast(`Batch # Generated: ${newBatch}`, 'info');
-  };
 
-  const generateAutoSKUForIngredientCard = (cardId) => {
-    const dateStr = getTodayCompactDate();
-    const rand = Math.floor(1000 + Math.random() * 9000);
-    const newRef = `REF-${dateStr}-${rand}`;
-    setIngredientCards(prev => prev.map(c => c.id === cardId ? { ...c, sku: newRef } : c));
-    if (showToast) showToast(`Reference Generated: ${newRef}`, 'info');
-  };
 
-  const generateAutoInvoiceForIngredientCard = (cardId) => {
-    const dateStr = getTodayCompactDate();
-    const ms = String(Date.now()).slice(-6);
-    const inv = `INV-${dateStr}-${ms}`;
-    setIngredientCards(prev => prev.map(c => c.id === cardId ? { ...c, supplierInvoiceNumber: inv } : c));
-    if (showToast) showToast(`Supplier Invoice # Generated: ${inv}`, 'info');
-  };
+
+
+
 
   // Preset Selection -> Updates empty card or appends a new card to the active target supplier card
   const handleSelectPresetForCard = (preset) => {
@@ -686,7 +632,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
   };
 
   // Card B & C Upload & Review State for Add New Ingredient Item
-  const [importFile, setImportFile] = useState(null);
+  const [, setImportFile] = useState(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
   const [uploadError, setUploadError] = useState(null);
@@ -704,6 +650,25 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
   const [showMergeChoiceModal, setShowMergeChoiceModal] = useState(false);
   const [pendingUploadData, setPendingUploadData] = useState(null);
   const [pendingUploadRows, setPendingUploadRows] = useState(null);
+
+  useEffect(() => {
+    if (!focusRequest?.itemId || inventory.length === 0) return;
+    const item = inventory.find((entry) => String(entry.id) === String(focusRequest.itemId));
+    if (item) {
+      setActiveTab('CATALOG');
+      if (focusRequest.action === 'restock') {
+        setAdjType('CORRECTION');
+        setAdjQty('');
+        setAdjReason('Restock from Action Alerts');
+        setSelectedItemForAdjustment(item);
+      } else {
+        setSelectedItemForDetails(item);
+      }
+    } else {
+      showToast?.('This inventory item is no longer available.', 'error');
+    }
+    onFocusHandled?.();
+  }, [focusRequest, inventory, onFocusHandled, showToast]);
 
   // Distinct Auto Ref generator for a specific delivery card
   const generateAutoRefForCard = (cardId) => {
@@ -1028,7 +993,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
     if (showToast) showToast('Replaced Card #1 items with new scanned delivery!', 'info');
   };
 
-  // Discard an additional delivery card
+  // Discard an additional supplier delivery card.
   const handleDiscardDeliveryCard = (cardId) => {
     setAdditionalDeliveryCards(prev => prev.filter(c => c.id !== cardId));
     if (showToast) showToast('Discarded delivery card.', 'info');
@@ -1346,72 +1311,10 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
   };
 
   // Single Item Save to Catalog (Creates record with 0 stock, no stock receipt)
-  const handleSaveImportedItemToCatalog = async (item, cardSupplierId = null) => {
-    try {
-      const payload = {
-        name: item.name.trim(),
-        unit: item.unit,
-        category: item.category || 'General',
-        costPrice: parseFloat(item.costPrice) || 0,
-        stockLevel: 0, // IMPORTANT: Save to catalog does NOT increase stock
-        minThreshold: 10,
-        maxThreshold: 100,
-        supplierId: cardSupplierId ? parseInt(cardSupplierId, 10) : (newItem.supplierId ? parseInt(newItem.supplierId, 10) : null)
-      };
-      await api.post('/inventory', payload);
-      setImportedItems(prev => prev.map(i => i.id === item.id ? { ...i, isNewItem: false, saved: true, catalogMatchName: item.name } : i));
-      setAdditionalDeliveryCards(prev => prev.map(card => ({
-        ...card,
-        items: card.items.map(i => i.id === item.id ? { ...i, isNewItem: false, saved: true, catalogMatchName: item.name } : i)
-      })));
-      if (showToast) showToast(`"${item.name}" saved to catalog! (Stock: 0)`, 'success');
-      if (onRefresh) onRefresh();
-      fetchSummary();
-    } catch (err) {
-      if (showToast) showToast(err.response?.data?.error || 'Failed to save item', 'error');
-    }
-  };
+
 
   // Save All New Items in Catalog for Card #1
-  const handleSaveAllImportedToCatalog = async () => {
-    const unsavedNew = importedItems.filter(i => i.isNewItem && !i.saved);
-    if (unsavedNew.length === 0) {
-      if (showToast) showToast('No unsaved new items in Card #1.', 'info');
-      return;
-    }
-    setBulkSavingCatalog(true);
-    setCatalogSaveScope('card-1');
-    try {
-      const itemsPayload = unsavedNew.map((i, rowIndex) => ({
-        rowIndex,
-        name: i.name.trim(),
-        unit: i.unit,
-        category: i.category || 'General',
-        costPrice: parseFloat(i.costPrice) || 0,
-        stockLevel: 0, // Bulk catalog creation with 0 initial stock
-        minThreshold: 10,
-        maxThreshold: 100,
-        supplierId: newItem.supplierId ? parseInt(newItem.supplierId, 10) : null
-      }));
-      const response = await api.post('/inventory/bulk', { items: itemsPayload });
-      const results = response.data?.results || [];
-      const succeeded = new Set(results.filter(r => r.success).map(r => Number(r.index)));
-      setImportedItems(prev => prev.map(i => {
-        const index = unsavedNew.findIndex(row => row.id === i.id);
-        return succeeded.has(index) ? { ...i, isNewItem: false, saved: true, catalogMatchName: i.name } : i;
-      }));
-      const summary = response.data?.summary || {};
-      setCatalogImportResult({ summary, results, total: itemsPayload.length });
-      if (showToast) showToast(`Import summary: ${summary.total ?? itemsPayload.length} total, ${summary.imported ?? summary.savedCount ?? 0} imported, ${summary.duplicates ?? 0} duplicates skipped, ${summary.failed ?? summary.failedCount ?? 0} failed.`, (summary.failed ?? summary.failedCount ?? 0) ? 'warning' : 'success');
-      if (onRefresh) onRefresh();
-      fetchSummary();
-    } catch (err) {
-      if (showToast) showToast(err.response?.data?.error || 'Failed to save new items', 'error');
-    } finally {
-      setBulkSavingCatalog(false);
-      setCatalogSaveScope(null);
-    }
-  };
+
 
   // Save All New Items in Catalog for a specific Additional Delivery Card
   const handleSaveDeliveryCardToCatalog = async (cardId) => {
@@ -1454,7 +1357,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
         }
         return c;
       }));
-      const supLabel = card.supplierName || 'this delivery';
       const summary = response.data?.summary || {};
       setCatalogImportResult({ summary, results, total: itemsPayload.length });
       if (showToast) showToast(`Import summary: ${summary.total ?? itemsPayload.length} total, ${summary.imported ?? summary.savedCount ?? 0} imported, ${summary.duplicates ?? 0} duplicates skipped, ${summary.failed ?? summary.failedCount ?? 0} failed.`, (summary.failed ?? summary.failedCount ?? 0) ? 'warning' : 'success');
@@ -1669,6 +1571,30 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
 
       if (draftCount > 0) {
         setDraftSaveResult({ success: true, message: `Saved ${draftCount} supplier draft${draftCount === 1 ? '' : 's'}. Stock has not changed.` });
+        // Clear the current entry form only after every draft request has succeeded.
+        setIngredientCards([createBlankIngredientCard()]);
+        setAdditionalDeliveryCards([]);
+        setImportedItems([]);
+        setCard1Discount(0);
+        setCard1DiscountMode('AMOUNT');
+        setActiveTargetCardId('card-1');
+        setNewItem({
+          name: '',
+          unit: 'KG',
+          category: 'General',
+          minThreshold: '10',
+          maxThreshold: '100',
+          costPrice: '0',
+          stockLevel: '0',
+          supplierId: '',
+          sku: '',
+          batchNumber: '',
+          supplierInvoiceNumber: '',
+          expiryDate: '',
+          notes: '',
+        });
+        setQuickPickSearch('');
+        setShowAddItemModal(false);
         if (showToast) showToast(
           `Saved ${draftCount} draft receiving${draftCount > 1 ? 's' : ''} successfully! New items will be added to catalog when confirmed.`,
           'success'
@@ -1823,16 +1749,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
     }
   };
 
-  // Supplier modal
-  const [showSupplierModal, setShowSupplierModal] = useState(false);
-  const [newSupplier, setNewSupplier] = useState({
-    name: '',
-    contactPerson: '',
-    phone: '',
-    email: '',
-    address: '',
-  });
-
   const fetchSummary = async () => {
     try {
       const res = await api.get('/inventory/summary');
@@ -1901,7 +1817,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
     return inventory.map((item) => {
       const stock = parseFloat(item.stockLevel) || 0;
       const min = parseFloat(item.minThreshold) || 10;
-      
+
       let status = 'NORMAL';
       if (stock <= min) {
         status = 'LOW';
@@ -1988,39 +1904,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
     setCurrentPage(1);
   };
 
-  const handleCreateItem = async (e) => {
-    e.preventDefault();
-    try {
-      const payload = {
-        ...newItem,
-        expiryDate: newItem.expiryDate ? newItem.expiryDate : null,
-        notes: newItem.notes || null,
-        supplierId: newItem.supplierId ? parseInt(newItem.supplierId, 10) : null
-      };
-      await api.post('/inventory', payload);
-      if (showToast) showToast(`Added inventory item ${newItem.name}!`);
-      setShowAddItemModal(false);
-      setIngredientSearch('');
-      setShowSuggestions(false);
-      setNewItem({
-        name: '',
-        unit: 'KG',
-        category: 'General',
-        minThreshold: '10',
-        maxThreshold: '100',
-        costPrice: '0',
-        stockLevel: '0',
-        supplierId: '',
-        expiryDate: '',
-        notes: '',
-      });
-      if (onRefresh) onRefresh();
-      fetchSummary();
-      fetchReceivings();
-    } catch (err) {
-      if (showToast) showToast(err.response?.data?.error || 'Failed to add item', 'error');
-    }
-  };
+
 
   const handleUpdateItem = async (e) => {
     e.preventDefault();
@@ -2085,11 +1969,16 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
   };
 
   const handleToggleSelectAll = () => {
-    if (selectedInventoryIds.size === paginatedStock.length && paginatedStock.length > 0) {
-      setSelectedInventoryIds(new Set());
-    } else {
-      setSelectedInventoryIds(new Set(paginatedStock.map((i) => i.id)));
-    }
+    if (paginatedStock.length === 0) return;
+    const allVisibleSelected = paginatedStock.every((item) => selectedInventoryIds.has(item.id));
+    setSelectedInventoryIds((previous) => {
+      const next = new Set(previous);
+      paginatedStock.forEach((item) => {
+        if (allVisibleSelected) next.delete(item.id);
+        else next.add(item.id);
+      });
+      return next;
+    });
   };
 
   const toggleSelectionMode = () => {
@@ -2165,10 +2054,10 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
 
   return (
     <div className="space-y-6">
-      
+
       {/* 1. Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-sm">
-        <div>
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-4 sm:p-6 rounded-3xl shadow-sm">
+        <div className="min-w-0 flex-1">
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
             <span className="p-2 rounded-2xl bg-orange-500/10 text-orange-400">📦</span>
             Inventory
@@ -2179,36 +2068,36 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
         </div>
 
         {/* Action Buttons: + Add Item, Receive Stock, Import Excel */}
-        <div className="flex flex-nowrap items-center gap-1.5 w-full sm:w-auto overflow-x-auto">
+        <div className="flex w-full min-w-0 items-center gap-1.5 lg:w-auto lg:shrink-0">
           <button
             onClick={() => setShowAddItemModal(true)}
-            className="shrink-0 px-2.5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center gap-1 cursor-pointer"
+            className="flex h-10 min-w-0 flex-1 items-center justify-center gap-1 rounded-2xl bg-orange-600 px-1.5 text-[10px] font-black text-white shadow-md transition-all hover:bg-orange-500 cursor-pointer lg:h-auto lg:w-auto lg:flex-none lg:px-2.5 lg:py-2.5 lg:text-xs"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add Item</span>
+            <Plus className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <span className="whitespace-nowrap"><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add Item</span></span>
           </button>
 
           <button
             onClick={() => setActiveTab('STOCK_IN')}
-            className="shrink-0 px-2.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center gap-1 cursor-pointer"
+            className="flex h-10 min-w-0 flex-1 items-center justify-center gap-1 rounded-2xl bg-emerald-600 px-1.5 text-[10px] font-black text-white shadow-md transition-all hover:bg-emerald-500 cursor-pointer lg:h-auto lg:w-auto lg:flex-none lg:px-2.5 lg:py-2.5 lg:text-xs"
           >
-            <Truck className="w-4 h-4" />
-            <span>Receive Stock</span>
+            <Truck className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <span className="whitespace-nowrap"><span className="sm:hidden">Receive</span><span className="hidden sm:inline">Receive Stock</span></span>
           </button>
 
           <button
             onClick={handleExportCSV}
-            className="shrink-0 px-2.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] hover:border-orange-500/50 text-[var(--text-main)] rounded-2xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1"
+            className="flex h-10 min-w-0 flex-1 items-center justify-center gap-1 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)] px-1.5 text-[10px] font-extrabold text-[var(--text-main)] transition-all hover:border-orange-500/50 cursor-pointer lg:h-auto lg:w-auto lg:flex-none lg:px-2.5 lg:py-2.5 lg:text-xs"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
+            <Download className="h-3.5 w-3.5 shrink-0" />
+            <span className="whitespace-nowrap"><span className="sm:hidden">Export</span><span className="hidden sm:inline">Export CSV</span></span>
           </button>
         </div>
       </div>
 
       {/* 2. Clickable Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        
+
         {/* Card 1: Total Items */}
         <button
           type="button"
@@ -2296,7 +2185,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       </div>
 
       {/* Tabs Navigation Bar */}
-      <div className="flex items-center p-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl overflow-x-auto gap-1">
+      <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-1 custom-scrollbar">
         {[
           { id: 'CATALOG', label: 'Inventory Catalog', icon: Layers },
           { id: 'STOCK_IN', label: 'Receive Stock', icon: Truck },
@@ -2311,7 +2200,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center space-x-1.5 cursor-pointer ${
+              className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition-all whitespace-nowrap flex items-center space-x-1.5 cursor-pointer ${
                 activeTab === tab.id
                   ? 'bg-orange-600 text-white shadow-md'
                   : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
@@ -2327,10 +2216,10 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       {/* TAB 1: INVENTORY CATALOG */}
       {activeTab === 'CATALOG' && (
         <div className="space-y-5">
-          
+
           {/* 3. Search & Filter Bar */}
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-4 sm:p-5 rounded-3xl space-y-3.5 shadow-sm">
-            
+
             {/* Search Input */}
             <div className="relative">
               <input
@@ -2354,10 +2243,10 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
 
             {/* Filter Dropdowns */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-              
+
               {/* Category Filter */}
               <div>
-                <select
+                <ThemedSelect
                   value={categoryFilter}
                   onChange={(e) => { setCategoryFilter(e.target.value); setCurrentPage(1); }}
                   className="w-full px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] cursor-pointer"
@@ -2375,12 +2264,12 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   <option value="Packaging">Packaging</option>
                   <option value="Kitchen Supplies">Kitchen Supplies</option>
                   <option value="Other">Other</option>
-                </select>
+                </ThemedSelect>
               </div>
 
               {/* Status Filter */}
               <div>
-                <select
+                <ThemedSelect
                   value={statusFilter}
                   onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                   className="w-full px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] cursor-pointer"
@@ -2389,12 +2278,12 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   <option value="LOW">Low Stock</option>
                   <option value="NORMAL">Normal</option>
                   <option value="OVERSTOCK">Overstock</option>
-                </select>
+                </ThemedSelect>
               </div>
 
               {/* Supplier Filter */}
               <div>
-                <select
+                <ThemedSelect
                   value={supplierFilter}
                   onChange={(e) => { setSupplierFilter(e.target.value); setCurrentPage(1); }}
                   className="w-full px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] cursor-pointer"
@@ -2403,12 +2292,12 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   {suppliersList.map(sup => (
                     <option key={sup.id} value={sup.id}>{sup.name}</option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
 
               {/* Unit Filter */}
               <div>
-                <select
+                <ThemedSelect
                   value={unitFilter}
                   onChange={(e) => { setUnitFilter(e.target.value); setCurrentPage(1); }}
                   className="w-full px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] cursor-pointer"
@@ -2423,7 +2312,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   <option value="BOTTLE">BOTTLE</option>
                   <option value="BOX">BOX</option>
                   <option value="DOZEN">DOZEN</option>
-                </select>
+                </ThemedSelect>
               </div>
 
               {/* Clear Filters */}
@@ -2439,29 +2328,40 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
             </div>
 
             {/* Sorting & Results Count Row */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2 border-t border-[var(--border-color)]/60 text-xs">
-              <div className="flex items-center space-x-3">
+            <div className="flex flex-col gap-3 border-t border-[var(--border-color)]/60 pt-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedInventoryIds.size} />
+                {selectionMode && (
+                  <button
+                    type="button"
+                    onClick={handleToggleSelectAll}
+                    disabled={paginatedStock.length === 0}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] px-3 py-2.5 text-xs font-bold text-[var(--text-muted)] transition-colors hover:border-orange-500/40 hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {paginatedStock.length > 0 && paginatedStock.every((item) => selectedInventoryIds.has(item.id)) ? 'Deselect visible' : 'Select visible'}
+                  </button>
+                )}
                 <span className="text-[var(--text-muted)] font-medium">
                   Showing <strong className="text-[var(--text-main)]">{filteredAndSortedStock.length}</strong> items
                 </span>
-                {selectionMode && selectedInventoryIds.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleBulkDelete}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-md shadow-rose-900/30 transition-all cursor-pointer animate-scale-up"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete Selected ({selectedInventoryIds.size})</span>
-                  </button>
-                )}
               </div>
 
-              <div className="flex items-center space-x-2 w-full sm:w-auto">
+              {selectionMode && selectedInventoryIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  className="inline-flex w-fit shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white shadow-md shadow-rose-900/30 transition-all hover:bg-rose-700 cursor-pointer animate-scale-up"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Selected ({selectedInventoryIds.size})</span>
+                </button>
+              )}
+
+              <div className="flex min-w-0 items-center gap-2 w-full sm:w-auto">
                 <span className="text-[10px] font-black uppercase text-[var(--text-muted)] tracking-wider shrink-0">
                   Sort By:
                 </span>
-                <select
+                <ThemedSelect
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
                   className="px-3 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] cursor-pointer"
@@ -2473,7 +2373,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   <option value="STOCK_LOW_TO_HIGH">Lowest Stock</option>
                   <option value="STOCK_HIGH_TO_LOW">Highest Stock</option>
                   <option value="COST_HIGH_TO_LOW">Highest Cost</option>
-                </select>
+                </ThemedSelect>
               </div>
             </div>
           </div>
@@ -2494,19 +2394,19 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
             </div>
           ) : (
             <div className="space-y-4">
-              
+
               {/* Desktop Table View */}
               <div className="hidden md:block bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
+                  <table className="w-full min-w-max text-left border-collapse text-xs">
                     <thead>
                       <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
                         {selectionMode && <th className="p-4 w-10">
                           <input
                             type="checkbox"
-                            checked={paginatedStock.length > 0 && selectedInventoryIds.size === paginatedStock.length}
+                            checked={paginatedStock.length > 0 && paginatedStock.every((item) => selectedInventoryIds.has(item.id))}
                             onChange={handleToggleSelectAll}
-                            className="rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500/20 cursor-pointer"
+                            className="rounded border-[var(--border-color)] accent-orange-500 focus:ring-orange-500/20 cursor-pointer"
                           />
                         </th>}
                         <th className="p-4">Item</th>
@@ -2539,10 +2439,10 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                 type="checkbox"
                                 checked={isSelected}
                                 onChange={() => handleToggleSelect(item.id)}
-                                className="rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500/20 cursor-pointer"
+                                className="rounded border-[var(--border-color)] accent-orange-500 focus:ring-orange-500/20 cursor-pointer"
                               />
                             </td>}
-                            
+
                             {/* Item Name & Subtitle */}
                             <td className="p-4">
                               <button
@@ -2573,7 +2473,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               <span className="font-mono font-black text-xs text-[var(--text-main)] block">
                                 {formatQuantity(item.stockLevel, item.unit)} {item.unit}
                               </span>
-                              
+
                               {/* Visual Stock Bar */}
                               <div className="w-28 h-1.5 bg-[var(--bg-color)] rounded-full overflow-hidden mt-1 border border-[var(--border-color)]">
                                 <div
@@ -2613,8 +2513,8 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                             </td>
 
                             {/* Quick Action Buttons */}
-                            <td className="p-4 text-right">
-                              <div className="flex items-center justify-end space-x-1.5">
+                            <td className="p-4 text-right whitespace-nowrap">
+                              <div className="flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
                                 <button
                                   type="button"
                                   onClick={() => setActiveTab('STOCK_IN')}
@@ -2658,10 +2558,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
               {/* Mobile/Tablet Card Layout */}
               <div className="md:hidden grid grid-cols-1 gap-3">
                 {paginatedStock.map((item) => {
-                  const stockVal = parseFloat(item.stockLevel) || 0;
-                  const minVal = parseFloat(item.minThreshold) || 10;
-                  const percent = Math.min(100, Math.max(10, (stockVal / (minVal * 3)) * 100));
-
                   return (
                     <div
                       key={item.id}
@@ -2677,7 +2573,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                             type="checkbox"
                             checked={selectedInventoryIds.has(item.id)}
                             onChange={() => handleToggleSelect(item.id)}
-                            className="mt-0.5 rounded border-[var(--border-color)] text-orange-500 focus:ring-orange-500/20 cursor-pointer"
+                            className="mt-0.5 rounded border-[var(--border-color)] accent-orange-500 focus:ring-orange-500/20 cursor-pointer"
                           />}
                           <div>
                             <h4 className="text-xs font-black text-[var(--text-main)]">{item.name}</h4>
@@ -2812,7 +2708,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
           inventory={stockList}
           receivings={receivingsList}
           onOpenAdjustmentModal={(item) => setSelectedItemForAdjustment(item)}
-          onRefresh={() => { fetchReceivings(); fetchStockItems(); fetchSummary(); if (onRefresh) onRefresh(); }}
+          onRefresh={() => { fetchReceivings(); fetchSummary(); onRefresh?.(); }}
           showToast={showToast}
         />
       )}
@@ -2833,7 +2729,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
         <AdminActivityLogsView
           logs={logs}
           receivings={receivingsList}
-          onRefresh={() => { fetchLogs(); fetchReceivings(); if (onRefresh) onRefresh(); }}
+          onRefresh={() => { fetchReceivings(); onRefresh?.(); }}
           showToast={showToast}
         />
       )}
@@ -2860,7 +2756,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
 
               <div>
                 <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">What happened? *</label>
-                <select
+                <ThemedSelect
                   value={adjType}
                   onChange={(e) => setAdjType(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)]"
@@ -2870,7 +2766,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   <option value="EXPIRATION">Expired Product (-)</option>
                   <option value="DAMAGE">Damaged Goods (-)</option>
                   <option value="USED">Unrecorded Usage (-)</option>
-                </select>
+                </ThemedSelect>
               </div>
 
               <div>
@@ -2982,7 +2878,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
                     Unit *
                   </label>
-                  <select
+                  <ThemedSelect
                     value={editingItem.unit}
                     onChange={(e) => setEditingItem({ ...editingItem, unit: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
@@ -2996,14 +2892,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                     <option value="BOX">BOX</option>
                     <option value="PACK">PACK</option>
                     <option value="BOTTLE">BOTTLE</option>
-                  </select>
+                  </ThemedSelect>
                 </div>
 
                 <div>
                   <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
                     Category *
                   </label>
-                  <select
+                  <ThemedSelect
                     value={editingItem.category || 'General'}
                     onChange={(e) => setEditingItem({ ...editingItem, category: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
@@ -3020,7 +2916,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                     <option value="Cooking Oil">Cooking Oil</option>
                     <option value="Packaging">Packaging</option>
                     <option value="Kitchen Supplies">Kitchen Supplies</option>
-                  </select>
+                  </ThemedSelect>
                 </div>
               </div>
 
@@ -3058,7 +2954,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                 <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
                   Supplier
                 </label>
-                <select
+                <ThemedSelect
                   value={editingItem.supplierId || ''}
                   onChange={(e) => setEditingItem({ ...editingItem, supplierId: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
@@ -3069,7 +2965,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                       {sup.name}
                     </option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
 
               <div className="flex justify-end space-x-2 pt-3 border-t border-[var(--border-color)]">
@@ -3095,95 +2991,94 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
 
       {/* Add New Item Modal — Professional 4-Card Interface (Card A: Presets, Card B: Import, Card C: Review, Card D: Manual) */}
       {showAddItemModal && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-5xl w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-scale-up my-auto max-h-[92vh] flex flex-col">
-            
+        <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="min-w-0 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-5xl w-full p-3 sm:p-6 space-y-4 shadow-2xl animate-scale-up my-auto max-h-[92dvh] flex flex-col overflow-hidden">
+
             {/* Modal Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-[var(--border-color)] pb-3.5 shrink-0">
-              <div>
+            <div className="flex min-w-0 flex-col gap-3 border-b border-[var(--border-color)] pb-3.5 shrink-0">
+              <div className="flex min-w-0 items-start justify-between gap-2">
+                <div className="min-w-0">
                 <h3 className="text-base sm:text-lg font-black text-[var(--text-main)] font-display flex items-center gap-2">
                   <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">📦</span>
                   Add New Ingredient Item
                 </h3>
-                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                <p className="text-[11px] leading-relaxed text-[var(--text-muted)] mt-0.5">
                   Pick standard catalog presets, import via Excel/invoice OCR, or type custom details manually.
                 </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddItemModal(false)}
+                  aria-label="Close add ingredient form"
+                  className="shrink-0 p-1 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
               {/* Mode switch pills */}
-              <div className="flex items-center gap-1.5 bg-[var(--bg-color)] p-1 rounded-2xl border border-[var(--border-color)] text-xs font-bold">
+              <div className="grid w-full grid-cols-2 items-center gap-1.5 bg-[var(--bg-color)] p-1 rounded-2xl border border-[var(--border-color)] text-[11px] font-bold sm:flex sm:w-fit sm:flex-wrap sm:text-xs">
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('ALL')}
-                  className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${activeAddTab === 'ALL' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
+                  className={`min-w-0 px-2 sm:px-3 py-1.5 sm:py-1 rounded-xl transition-all cursor-pointer whitespace-nowrap ${activeAddTab === 'ALL' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
                 >
                   All Sections
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('PRESETS')}
-                  className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${activeAddTab === 'PRESETS' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
+                  className={`min-w-0 px-2 sm:px-3 py-1.5 sm:py-1 rounded-xl transition-all cursor-pointer whitespace-nowrap ${activeAddTab === 'PRESETS' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
                 >
                   ⚡ Presets
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('IMPORT')}
-                  className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${activeAddTab === 'IMPORT' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
+                  className={`min-w-0 px-2 sm:px-3 py-1.5 sm:py-1 rounded-xl transition-all cursor-pointer whitespace-nowrap ${activeAddTab === 'IMPORT' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
                 >
                   📤 Import
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('MANUAL')}
-                  className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${activeAddTab === 'MANUAL' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
+                  className={`min-w-0 px-2 sm:px-3 py-1.5 sm:py-1 rounded-xl transition-all cursor-pointer whitespace-nowrap ${activeAddTab === 'MANUAL' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
                 >
                   ✍️ Manual Form
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddItemModal(false);
-                    setIngredientSearch('');
-                    setShowSuggestions(false);
-                  }}
-                  className="p-1 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] ml-1 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             {/* Scrollable Content Container */}
-            <div className="space-y-4 overflow-y-auto pr-1 flex-1 text-xs">
+            <div className="min-h-0 min-w-0 space-y-4 overflow-x-hidden overflow-y-auto pr-1 flex-1 text-xs">
 
               {/* ======================================================== */}
               {/* CARD A: QUICK PICK PRESETS                               */}
               {/* ======================================================== */}
               {(activeAddTab === 'ALL' || activeAddTab === 'PRESETS') && (
-                <div className="bg-[var(--bg-color)]/70 border border-[var(--border-color)] p-4 rounded-2xl space-y-3">
+                <div className="min-w-0 bg-[var(--bg-color)]/70 border border-[var(--border-color)] p-3 sm:p-4 rounded-2xl space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--border-color)]/60 pb-2.5">
-                    <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
                       <span className="p-1 rounded-lg bg-orange-500/10 text-orange-400 font-bold">⚡ Card A</span>
-                      <h4 className="font-black text-xs text-[var(--text-main)] uppercase tracking-wider">
+                      <h4 className="min-w-0 font-black text-[11px] sm:text-xs text-[var(--text-main)] uppercase tracking-wider">
                         Quick Pick Presets (Click to Auto-Fill):
                       </h4>
                     </div>
-                    <div className="relative">
+                    <div className="relative w-full sm:w-auto">
                       <input
                         type="text"
                         value={quickPickSearch}
                         onChange={(e) => setQuickPickSearch(e.target.value)}
                         placeholder="Search 200+ presets..."
-                        className="pl-7 pr-3 py-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500 w-44 font-medium"
+                        className="w-full sm:w-44 pl-7 pr-3 py-1.5 sm:py-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500 font-medium"
                       />
                       <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-[var(--text-muted)]" />
                     </div>
                   </div>
 
                   {/* Target Delivery / Supplier Selection Strip for Presets */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-[var(--card-bg)]/90 border border-[var(--border-color)] text-xs">
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-[var(--card-bg)]/90 border border-[var(--border-color)] text-xs">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="text-[11px] font-bold text-[var(--text-muted)] flex items-center gap-1">
                         <Target className="w-3.5 h-3.5 text-orange-400" />
                         <span>Add Presets into:</span>
@@ -3193,14 +3088,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                       <button
                         type="button"
                         onClick={() => setActiveTargetCardId('card-1')}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        className={`max-w-full flex flex-wrap items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-bold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
                           activeTargetCardId === 'card-1'
                             ? 'bg-orange-500 text-white shadow-sm ring-2 ring-orange-500/30'
                             : 'bg-[var(--bg-color)] text-[var(--text-main)] hover:bg-orange-500/10 border border-[var(--border-color)]'
                         }`}
                       >
                         <span>📋 Card #1</span>
-                        <span className="text-[10px] opacity-80">
+                        <span className="min-w-0 break-words text-[10px] opacity-80 sm:truncate sm:max-w-44">
                           ({suppliersList.find(s => String(s.id) === String(newItem.supplierId))?.name || 'Local / Supplier 1'})
                         </span>
                         {activeTargetCardId === 'card-1' && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
@@ -3212,14 +3107,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                           key={card.id}
                           type="button"
                           onClick={() => setActiveTargetCardId(card.id)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          className={`max-w-full flex flex-wrap items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-bold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
                             activeTargetCardId === card.id
                               ? 'bg-orange-600 text-white shadow-sm ring-2 ring-orange-500/30'
                               : 'bg-[var(--bg-color)] text-[var(--text-main)] hover:bg-orange-500/10 border border-[var(--border-color)]'
                           }`}
                         >
                           <span>🏢 Card #{cIdx + 2}</span>
-                          <span className="text-[10px] opacity-80">
+                          <span className="min-w-0 break-words text-[10px] opacity-80 sm:truncate sm:max-w-44">
                             ({card.supplierName || 'Different Supplier'})
                           </span>
                           {activeTargetCardId === card.id && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
@@ -3230,7 +3125,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                       <button
                         type="button"
                         onClick={handleAddNewDeliveryCard}
-                        className="px-2 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 text-[10px] font-bold border border-orange-500/20 flex items-center gap-1 transition-all cursor-pointer"
+                        className="min-h-8 max-w-full px-2.5 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 text-[10px] font-bold border border-orange-500/20 flex items-center justify-center gap-1 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
                         title="Add another delivery card for a different supplier"
                       >
                         <Plus className="w-3 h-3" />
@@ -3243,7 +3138,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                     </span>
                   </div>
 
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 content-start gap-2 max-h-[50dvh] lg:max-h-[45dvh] overflow-y-auto overscroll-contain pr-1">
                     {QUICK_PICK_GROUPS.map((group, gIdx) => {
                       const groupItems = INGREDIENT_PRESETS.filter(p => p.category === group.category);
                       const filtered = groupItems.filter(p =>
@@ -3257,11 +3152,11 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                       const isExpanded = quickPickSearch ? true : (expandedCategories[group.category] ?? (gIdx === 0));
 
                       return (
-                        <div key={gIdx} className="border border-[var(--border-color)]/60 rounded-xl overflow-hidden bg-[var(--card-bg)]/40">
+                        <div key={gIdx} className="min-w-0 border border-[var(--border-color)]/60 rounded-xl overflow-hidden bg-[var(--card-bg)]/40">
                           <button
                             type="button"
                             onClick={() => setExpandedCategories(prev => ({ ...prev, [group.category]: !isExpanded }))}
-                            className="w-full px-3 py-1.5 flex items-center justify-between text-[11px] font-bold text-[var(--text-main)] hover:bg-orange-500/5 transition-colors cursor-pointer"
+                            className="min-h-10 w-full px-3 py-2 flex items-center justify-between gap-2 text-left text-[11px] font-bold text-[var(--text-main)] hover:bg-orange-500/5 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400"
                           >
                             <span className="flex items-center gap-1.5">
                               <span>{group.icon}</span>
@@ -3272,7 +3167,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                           </button>
 
                           {isExpanded && (
-                            <div className="p-2 border-t border-[var(--border-color)]/40 flex flex-wrap gap-1.5 bg-[var(--bg-color)]/30">
+                            <div className="p-2 border-t border-[var(--border-color)]/40 grid grid-cols-1 sm:grid-cols-2 gap-2 bg-[var(--bg-color)]/30">
                               {filtered.map((preset, pIdx) => {
                                 const exists = inventory.some(i => i.name.toLowerCase().trim() === preset.name.toLowerCase().trim());
                                 return (
@@ -3280,14 +3175,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                     key={pIdx}
                                     type="button"
                                     onClick={() => handleSelectPresetForCard(preset)}
-                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center space-x-1 border ${
+                                    className={`min-h-9 w-full min-w-0 max-w-full rounded-lg px-2.5 py-1.5 text-left text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1.5 border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
                                       exists
                                         ? 'bg-[var(--card-bg)] text-[var(--text-muted)] border-[var(--border-color)] opacity-70'
-                                        : 'bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20 hover:scale-105'
+                                        : 'bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20'
                                     }`}
                                   >
-                                    <span>{preset.label}</span>
-                                    {exists && <span className="text-[9px] text-emerald-400 font-extrabold ml-1">✓ In Stock</span>}
+                                    <span className="min-w-0 flex-1 break-words">{preset.label}</span>
+                                    {exists && <span className="shrink-0 text-[9px] text-emerald-400 font-extrabold">✓ In Stock</span>}
                                   </button>
                                 );
                               })}
@@ -3304,21 +3199,21 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
               {/* CARD B: IMPORT ITEMS (EXCEL, CSV, IMAGE, PDF)            */}
               {/* ======================================================== */}
               {(activeAddTab === 'ALL' || activeAddTab === 'IMPORT') && (
-                <div className="bg-[var(--bg-color)]/70 border border-[var(--border-color)] p-4 rounded-2xl space-y-3">
-                  <div className="flex items-center justify-between border-b border-[var(--border-color)]/60 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="p-1 rounded-lg bg-emerald-500/10 text-emerald-400 font-bold">📥 Card B</span>
-                      <h4 className="font-black text-xs text-[var(--text-main)] uppercase tracking-wider">
+                <div className="min-w-0 bg-[var(--bg-color)]/70 border border-[var(--border-color)] p-3 sm:p-4 rounded-2xl space-y-3">
+                  <div className="flex min-w-0 flex-col items-start gap-2 border-b border-[var(--border-color)]/60 pb-2.5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                      <span className="shrink-0 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 font-bold">📥 Card B</span>
+                      <h4 className="min-w-0 break-words leading-snug font-black text-xs text-[var(--text-main)] uppercase tracking-wider">
                         Import Items (Excel, CSV, Image, PDF):
                       </h4>
                     </div>
-                    <span className="text-[10px] text-[var(--text-muted)] font-mono">
+                    <span className="max-w-full self-start text-[10px] text-[var(--text-muted)] font-mono break-words sm:self-auto">
                       XLSX, XLS, CSV, JPG, PNG, PDF
                     </span>
                   </div>
 
                   {/* Drag-and-drop or Click Upload Area */}
-                  <label className="border-2 border-dashed border-[var(--border-color)] hover:border-orange-500/50 bg-[var(--card-bg)]/40 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-all hover:bg-orange-500/5 group text-center">
+                  <label className="min-w-0 border-2 border-dashed border-[var(--border-color)] hover:border-orange-500/50 bg-[var(--card-bg)]/40 p-3 sm:p-4 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-all hover:bg-orange-500/5 group text-center">
                     <input
                       type="file"
                       accept=".xlsx,.xls,.csv,.png,.jpg,.jpeg,.pdf"
@@ -3329,11 +3224,11 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                     <div className="p-2.5 rounded-2xl bg-orange-500/10 text-orange-400 group-hover:scale-110 transition-transform">
                       {isUploadingFile ? <RefreshCw className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
                     </div>
-                    <div>
-                      <div className="font-black text-xs text-[var(--text-main)]">
+                    <div className="min-w-0 w-full">
+                      <div className="break-words font-black text-xs text-[var(--text-main)]">
                         {isUploadingFile ? uploadProgress : 'Click or Drag & Drop Invoices / Stock Sheets'}
                       </div>
-                      <div className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                      <div className="break-words text-[10px] leading-relaxed text-[var(--text-muted)] mt-0.5">
                         Supports English, Urdu script, Roman Urdu, and mixed documents. Extracts items, units, and suggested categories automatically.
                       </div>
                     </div>
@@ -3341,9 +3236,9 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
 
                   {/* Error Notification */}
                   {uploadError && (
-                    <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+                    <div className="min-w-0 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-start gap-2">
                       <AlertTriangle className="w-4 h-4 shrink-0" />
-                      <span>{uploadError}</span>
+                      <span className="min-w-0 break-words">{uploadError}</span>
                     </div>
                   )}
                 </div>
@@ -3357,7 +3252,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
               {/* ======================================================== */}
               {/* CARD C: DYNAMIC MULTI-ITEM INGREDIENT CARDS             */}
               {/* ======================================================== */}
-              {(activeAddTab === 'ALL' || activeAddTab === 'MANUAL' || activeAddTab === 'IMPORT') && (
+              {(activeAddTab === 'ALL' || activeAddTab === 'PRESETS' || activeAddTab === 'MANUAL' || activeAddTab === 'IMPORT') && (
                 <div className="space-y-4">
 
                   {/* Master Summary Banner when Multiple Deliveries are Active */}
@@ -3380,21 +3275,21 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                       <div className="flex w-full sm:w-auto flex-col sm:flex-row gap-2">
                         <button
                           type="button"
-                          onClick={() => setPendingAddSaveAction({ action: 'DRAFT' })}
+                          onClick={handleSaveDraftFromAddForm}
                           disabled={bulkSavingCatalog || savingDraft}
                           className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-600 border border-orange-500/35 font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
                           {savingDraft ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                          <span>Save All Deliveries to Draft</span>
+                          <span>{savingDraft ? 'Saving drafts…' : 'Save All Deliveries to Draft'}</span>
                         </button>
                         {(ingredientCards.some(c => c.isNewItem && !c.saved && c.name?.trim()) || additionalDeliveryCards.some(card => (card.items || []).some(i => i.isNewItem && !i.saved && i.name?.trim()))) && <button
                           type="button"
-                          onClick={() => setPendingAddSaveAction({ action: 'CATALOG' })}
+                          onClick={() => additionalDeliveryCards.length > 0 ? handleSaveAllDeliveriesToCatalog() : handleSaveAllIngredientCardsToCatalog()}
                           disabled={bulkSavingCatalog || savingDraft}
                           className="w-full sm:w-auto px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black text-xs transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
                           {catalogSaveScope === 'all' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                          <span>{catalogSaveScope === 'all' ? 'Saving items…' : `Save All New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length + additionalDeliveryCards.reduce((count, card) => count + (card.items || []).filter(i => i.isNewItem && !i.saved && i.name?.trim()).length, 0)}`}</span>
+                          <span>{bulkSavingCatalog && catalogSaveScope === 'all' ? 'Saving items…' : `Save All New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length + additionalDeliveryCards.reduce((count, card) => count + (card.items || []).filter(i => i.isNewItem && !i.saved && i.name?.trim()).length, 0)}`}</span>
                         </button>
                         }
                       </div>
@@ -3402,7 +3297,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   )}
 
                   {/* Primary Delivery Card (Card #1) */}
-                  <div className={`bg-[var(--bg-color)]/70 border p-4 rounded-2xl space-y-4 shadow-md transition-all ${
+                  <div className={`min-w-0 bg-[var(--bg-color)]/70 border p-3 sm:p-4 rounded-2xl space-y-4 shadow-md transition-all ${
                     activeTargetCardId === 'card-1'
                       ? 'border-orange-500/80 ring-2 ring-orange-500/20'
                       : 'border-orange-500/30'
@@ -3410,18 +3305,18 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
 
                     {/* Header Bar: Card #1, Summary Metrics & Action Buttons */}
                     <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-[var(--border-color)]/60 pb-3">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-2.5">
                         <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400 font-bold shrink-0">📋 Card #1</span>
-                        <div>
-                          <h4 className="font-black text-xs text-[var(--text-main)] uppercase tracking-wider flex flex-wrap items-center gap-2">
+                        <div className="min-w-0 w-full sm:w-auto">
+                          <h4 className="min-w-0 break-words leading-snug font-black text-xs text-[var(--text-main)] uppercase tracking-wider flex flex-wrap items-center gap-2">
                             <span>Delivery Card #1 — Supplier &amp; Items</span>
                             {suppliersList.find(s => String(s.id) === String(newItem.supplierId))?.name && (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-500/15 text-orange-400 border border-orange-500/20">
+                              <span className="max-w-full break-words px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-500/15 text-orange-400 border border-orange-500/20">
                                 {suppliersList.find(s => String(s.id) === String(newItem.supplierId)).name}
                               </span>
                             )}
                           </h4>
-                          <span className="text-[10px] text-[var(--text-muted)]">
+                          <span className="block break-words text-[10px] leading-relaxed text-[var(--text-muted)]">
                             Select supplier and add items below. Reference, batch, and invoice apply to this delivery.
                           </span>
                         </div>
@@ -3452,19 +3347,11 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                           <Trash2 className="w-3.5 h-3.5" />
                           <span>Clear All</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAddIngredientCard()}
-                          className="px-3.5 py-1.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/25 text-orange-400 text-xs font-extrabold transition-all cursor-pointer flex items-center space-x-1.5 border border-orange-500/30"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Add Item</span>
-                        </button>
                       </div>
                     </div>
 
                     {/* Card #1 Supplier & Delivery Details Bar */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-3.5 rounded-2xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs shadow-sm">
+                    <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-3 sm:p-3.5 rounded-2xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs shadow-sm">
                       <div>
                         <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
@@ -3473,7 +3360,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                           </span>
                           <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(applies to items)</span>
                         </label>
-                        <select
+                        <ThemedSelect
                           value={newItem.supplierId || ''}
                           onChange={(e) => {
                             const val = e.target.value;
@@ -3486,7 +3373,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                           {suppliersList.map(s => (
                             <option key={s.id} value={s.id}>{s.name}</option>
                           ))}
-                        </select>
+                        </ThemedSelect>
                       </div>
 
                       <div>
@@ -3572,7 +3459,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                     </div>
 
                     {/* Metrics Strip */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs">
+                    <div className="flex min-w-0 flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-3 p-3 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs">
                       <div className="flex flex-wrap items-center gap-3">
                         <div className="flex items-center gap-1.5">
                           <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0"></span>
@@ -3613,14 +3500,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               Click "+ Add Item" below or pick any Quick Pick Preset from Card A above to add items to this supplier.
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleAddIngredientCard()}
-                            className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 shadow-md active:scale-95"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Add Item</span>
-                          </button>
                         </div>
                       )}
 
@@ -3767,7 +3646,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                             </div>
 
                             {/* Clean Fields Grid (Receive Stock Style): Quantity, Unit, Category, Cost per Unit, Expiry Date (Optional), Subtotal */}
-                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 items-center pt-2 border-t border-[var(--border-color)]/60 text-xs">
+                            <div className="grid min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] sm:grid-cols-6 gap-2.5 items-center pt-2 border-t border-[var(--border-color)]/60 text-xs">
                               {/* Quantity / Initial Stock */}
                               <div>
                                 <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
@@ -3789,7 +3668,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                 <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
                                   Unit *
                                 </label>
-                                <select
+                                <ThemedSelect
                                   value={card.unit}
                                   onChange={(e) => handleIngredientCardChange(card.id, 'unit', e.target.value)}
                                   className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -3803,7 +3682,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                   <option value="BOX">BOX</option>
                                   <option value="PACK">PACK</option>
                                   <option value="BOTTLE">BOTTLE</option>
-                                </select>
+                                </ThemedSelect>
                               </div>
 
                               {/* Category */}
@@ -3811,7 +3690,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                 <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
                                   Category *
                                 </label>
-                                <select
+                                <ThemedSelect
                                   value={card.category}
                                   onChange={(e) => handleIngredientCardChange(card.id, 'category', e.target.value)}
                                   className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -3829,7 +3708,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                   <option value="Packaging">Packaging</option>
                                   <option value="Kitchen Supplies">Kitchen Supplies</option>
                                   <option value="Desserts">Desserts</option>
-                                </select>
+                                </ThemedSelect>
                               </div>
 
                               {/* Cost per Unit (Rs.) */}
@@ -3863,7 +3742,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               </div>
 
                               {/* Subtotal */}
-                              <div className="flex flex-col items-start sm:items-end justify-center bg-[var(--bg-color)]/70 px-3 py-1.5 rounded-xl border border-[var(--border-color)]">
+                              <div className="min-h-[42px] self-stretch flex flex-col items-start sm:items-end justify-between bg-[var(--bg-color)]/70 px-3 py-1.5 rounded-xl border border-[var(--border-color)]">
                                 <span className="text-[9px] font-bold uppercase text-[var(--text-muted)]">Subtotal</span>
                                 <span className="text-xs font-black text-orange-400 font-mono">
                                   Rs. {lineSubtotal.toLocaleString()}
@@ -3874,25 +3753,33 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                         );
                       })}
                     </div>
-                    {ingredientCards.some(c => c.name?.trim()) && <div className="bg-[var(--bg-color)]/80 border border-[var(--border-color)] p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3">
-                      <div>
+                    <button
+                      type="button"
+                      onClick={() => handleAddIngredientCard()}
+                      className="w-full py-2.5 rounded-xl border-2 border-dashed border-[var(--border-color)] hover:border-orange-500/50 text-[var(--text-muted)] hover:text-orange-400 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Add Another Item</span>
+                    </button>
+                    {ingredientCards.some(c => c.name?.trim()) && <div className="min-w-0 bg-[var(--bg-color)]/80 border border-[var(--border-color)] p-3 sm:p-4 rounded-2xl flex flex-col xl:flex-row xl:justify-between xl:items-center gap-3">
+                      <div className="min-w-0 w-full xl:flex-1">
                         <span className="text-[10px] font-black uppercase text-[var(--text-muted)] block">Card #1 Summary</span>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <span className="text-xs font-bold text-[var(--text-main)]">{ingredientCards.filter(c => c.name?.trim()).length} named items</span>
-                          <span className="text-xs font-mono font-bold text-orange-400">Subtotal: Rs. {sumInventorySubtotals(ingredientCards).toLocaleString()}</span>
-                          <label className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--text-muted)]">Discount
-                            <select value={card1DiscountMode} onChange={e => setCard1DiscountMode(e.target.value)} aria-label="Card 1 discount type" className="rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-1.5 py-1.5 text-xs text-[var(--text-main)]"><option value="PERCENT">%</option><option value="AMOUNT">Rs.</option></select>
-                            <input type="number" min="0" max={card1DiscountMode === 'PERCENT' ? 100 : undefined} step="0.01" value={card1Discount} onChange={e => setCard1Discount(e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0))} aria-label="Card 1 discount value" className="w-24 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 font-mono text-xs text-[var(--text-main)]" />
-                            {card1DiscountMode === 'PERCENT' && <span>Rs. {calculateCardDiscount(sumInventorySubtotals(ingredientCards), card1Discount, card1DiscountMode).toLocaleString()}</span>}
+                        <div className="grid min-w-0 grid-cols-2 xl:grid-cols-4 gap-2 mt-1.5">
+                          <span className="min-w-0 self-center text-xs font-bold text-[var(--text-main)]">{ingredientCards.filter(c => c.name?.trim()).length} named items</span>
+                          <span className="min-w-0 self-center text-xs font-mono font-bold text-orange-400 break-words">Subtotal: Rs. {sumInventorySubtotals(ingredientCards).toLocaleString()}</span>
+                          <label className="col-span-2 xl:col-span-1 grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 text-[10px] font-bold text-[var(--text-muted)]">Discount
+                            <ThemedSelect value={card1DiscountMode} onChange={e => setCard1DiscountMode(e.target.value)} aria-label="Card 1 discount type" className="min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-1.5 py-1.5 text-xs text-[var(--text-main)]"><option value="PERCENT">%</option><option value="AMOUNT">Rs.</option></ThemedSelect>
+                            <input type="number" min="0" max={card1DiscountMode === 'PERCENT' ? 100 : undefined} step="0.01" value={card1Discount} onChange={e => setCard1Discount(e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0))} aria-label="Card 1 discount value" className="w-full min-w-0 max-w-28 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 font-mono text-xs text-[var(--text-main)]" />
+                            {card1DiscountMode === 'PERCENT' && <span className="col-span-3 min-w-0 break-words">Rs. {calculateCardDiscount(sumInventorySubtotals(ingredientCards), card1Discount, card1DiscountMode).toLocaleString()}</span>}
                           </label>
-                          <span className="text-sm font-mono font-black text-emerald-500">Total: Rs. {Math.max(0, roundInventoryMoney(sumInventorySubtotals(ingredientCards) - calculateCardDiscount(sumInventorySubtotals(ingredientCards), card1Discount, card1DiscountMode))).toLocaleString()}</span>
+                          <span className="col-span-2 xl:col-span-1 min-w-0 self-center text-sm font-mono font-black text-emerald-500 break-words xl:text-right">Total: Rs. {Math.max(0, roundInventoryMoney(sumInventorySubtotals(ingredientCards) - calculateCardDiscount(sumInventorySubtotals(ingredientCards), card1Discount, card1DiscountMode))).toLocaleString()}</span>
                         </div>
                       </div>
-                      <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
-                        <button type="button" onClick={() => setPendingAddSaveAction({ action: 'DRAFT', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
+                      <div className="grid w-full grid-cols-1 sm:grid-cols-2 xl:w-auto gap-2">
+                        <button type="button" onClick={() => setPendingAddSaveAction({ action: 'DRAFT', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
                           <Save className="mr-1.5 inline h-4 w-4" />Save Draft
                         </button>
-                        {ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
+                        {ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
                           {catalogSaveScope === 'card-1' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'card-1' ? 'Saving…' : `Save New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length})`}
                         </button>}
                       </div>
@@ -3911,7 +3798,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                     return (
                       <div
                         key={card.id}
-                        className={`bg-[var(--bg-color)]/70 border p-4 rounded-2xl space-y-4 shadow-md transition-all animate-in fade-in ${
+                        className={`min-w-0 bg-[var(--bg-color)]/70 border p-3 sm:p-4 rounded-2xl space-y-4 shadow-md transition-all animate-in fade-in ${
                           isTargetActive
                             ? 'border-orange-500/80 ring-2 ring-orange-500/30'
                             : 'border-orange-500/30 hover:border-orange-500/50'
@@ -3919,20 +3806,20 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                       >
                         {/* Header Bar: Card #{N}, Supplier name, Metrics & Actions */}
                         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-[var(--border-color)]/60 pb-3">
-                          <div className="flex items-center gap-2.5">
+                              <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-2.5">
                             <span className="p-1.5 rounded-xl bg-orange-500/15 text-orange-300 font-bold shrink-0">
                               🏢 Card #{cardIdx + 2}
                             </span>
-                            <div>
-                              <h4 className="font-black text-xs text-[var(--text-main)] uppercase tracking-wider flex flex-wrap items-center gap-2">
+                            <div className="min-w-0 w-full sm:w-auto">
+                              <h4 className="min-w-0 break-words leading-snug font-black text-xs text-[var(--text-main)] uppercase tracking-wider flex flex-wrap items-center gap-2">
                                 <span>Delivery Card #{cardIdx + 2} — Supplier &amp; Items</span>
                                 {cardSupplier?.name && (
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-500/15 text-orange-300 border border-orange-500/20">
+                                  <span className="max-w-full break-words px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-500/15 text-orange-300 border border-orange-500/20">
                                     {cardSupplier.name}
                                   </span>
                                 )}
                               </h4>
-                              <span className="text-[10px] text-[var(--text-muted)]">
+                              <span className="block break-words text-[10px] leading-relaxed text-[var(--text-muted)]">
                                 Select supplier and add items below. Reference, batch, and invoice apply to this delivery.
                               </span>
                             </div>
@@ -3968,25 +3855,17 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               <span>Clear All</span>
                             </button>
 
-                            {/* Add Item Button */}
-                            <button
-                              type="button"
-                              onClick={() => handleAdditionalCardAddItem(card.id)}
-                              className="px-3.5 py-1.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/25 text-orange-300 text-xs font-extrabold transition-all cursor-pointer flex items-center space-x-1.5 border border-orange-500/30"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Add Item</span>
-                            </button>
-
-                            {/* Delete Delivery Card */}
                             <button
                               type="button"
                               onClick={() => handleDiscardDeliveryCard(card.id)}
-                              className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer"
-                              title="Discard this delivery card"
+                              className="flex min-h-8 max-w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-extrabold text-rose-400 transition-colors hover:bg-rose-500/20 cursor-pointer sm:text-xs"
+                              title={`Discard Card #${cardIdx + 2}`}
+                              aria-label={`Discard delivery card ${cardIdx + 2}`}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                              <span>Discard Card</span>
                             </button>
+
                           </div>
                         </div>
 
@@ -4000,7 +3879,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               </span>
                               <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(applies to items)</span>
                             </label>
-                            <select
+                            <ThemedSelect
                               value={card.supplierId || ''}
                               onChange={(e) => {
                                 const val = e.target.value;
@@ -4018,7 +3897,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               {suppliersList.map(s => (
                                 <option key={s.id} value={s.id}>{s.name}</option>
                               ))}
-                            </select>
+                            </ThemedSelect>
                           </div>
 
                           <div>
@@ -4142,14 +4021,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                   Click "+ Add Item" below or pick any Quick Pick Preset from Card A above to add items to this supplier.
                                 </p>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleAdditionalCardAddItem(card.id)}
-                                className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 shadow-md active:scale-95"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Add Item</span>
-                              </button>
                             </div>
                           )}
 
@@ -4296,7 +4167,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                 </div>
 
                                 {/* Clean Fields Grid: Quantity, Unit, Category, Cost per Unit, Expiry Date (Optional), Subtotal */}
-                                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 items-center pt-2 border-t border-[var(--border-color)]/60 text-xs">
+                                <div className="grid min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] sm:grid-cols-6 gap-2.5 items-center pt-2 border-t border-[var(--border-color)]/60 text-xs">
                                   {/* Quantity / Initial Stock */}
                                   <div>
                                     <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
@@ -4318,7 +4189,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                     <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
                                       Unit *
                                     </label>
-                                    <select
+                                    <ThemedSelect
                                       value={item.unit}
                                       onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'unit', e.target.value)}
                                       className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -4332,7 +4203,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                       <option value="BOX">BOX</option>
                                       <option value="PACK">PACK</option>
                                       <option value="BOTTLE">BOTTLE</option>
-                                    </select>
+                                    </ThemedSelect>
                                   </div>
 
                                   {/* Category */}
@@ -4340,7 +4211,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                     <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
                                       Category *
                                     </label>
-                                    <select
+                                    <ThemedSelect
                                       value={item.category}
                                       onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'category', e.target.value)}
                                       className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -4358,7 +4229,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                       <option value="Packaging">Packaging</option>
                                       <option value="Kitchen Supplies">Kitchen Supplies</option>
                                       <option value="Desserts">Desserts</option>
-                                    </select>
+                                    </ThemedSelect>
                                   </div>
 
                                   {/* Cost per Unit (Rs.) */}
@@ -4392,7 +4263,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                   </div>
 
                                   {/* Subtotal */}
-                                  <div className="flex flex-col items-start sm:items-end justify-center bg-[var(--bg-color)]/70 px-3 py-1.5 rounded-xl border border-[var(--border-color)]">
+                                  <div className="min-h-[42px] self-stretch flex flex-col items-start sm:items-end justify-between bg-[var(--bg-color)]/70 px-3 py-1.5 rounded-xl border border-[var(--border-color)]">
                                     <span className="text-[9px] font-bold uppercase text-[var(--text-muted)]">Subtotal</span>
                                     <span className="text-xs font-black text-orange-300 font-mono">
                                       Rs. {lineSubtotal.toLocaleString()}
@@ -4403,25 +4274,33 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                             );
                           })}
                         </div>
-                        {items.some(i => i.name?.trim()) && <div className="bg-[var(--bg-color)]/80 border border-[var(--border-color)] p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3">
-                          <div>
+                        <button
+                          type="button"
+                          onClick={() => handleAdditionalCardAddItem(card.id)}
+                          className="w-full py-2.5 rounded-xl border-2 border-dashed border-[var(--border-color)] hover:border-orange-500/50 text-[var(--text-muted)] hover:text-orange-400 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add Another Item</span>
+                        </button>
+                        {items.some(i => i.name?.trim()) && <div className="min-w-0 bg-[var(--bg-color)]/80 border border-[var(--border-color)] p-3 sm:p-4 rounded-2xl flex flex-col xl:flex-row xl:justify-between xl:items-center gap-3">
+                          <div className="min-w-0 w-full xl:flex-1">
                             <span className="text-[10px] font-black uppercase text-[var(--text-muted)] block">Card #{cardIdx + 2} Summary</span>
-                            <div className="flex items-center gap-3 mt-0.5">
-                              <span className="text-xs font-bold text-[var(--text-main)]">{items.filter(i => i.name?.trim()).length} named items</span>
-                              <span className="text-xs font-mono font-bold text-orange-400">Subtotal: Rs. {sumInventorySubtotals(items).toLocaleString()}</span>
-                              <label className="flex items-center gap-1.5 text-[10px] font-bold text-[var(--text-muted)]">Discount
-                                <select value={card.discountMode || 'AMOUNT'} onChange={e => setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, discountMode: e.target.value } : c))} aria-label={`Card ${cardIdx + 2} discount type`} className="rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-1.5 py-1.5 text-xs text-[var(--text-main)]"><option value="PERCENT">%</option><option value="AMOUNT">Rs.</option></select>
-                                <input type="number" min="0" max={card.discountMode === 'PERCENT' ? 100 : undefined} step="0.01" value={card.discountAmount ?? 0} onChange={e => setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, discountAmount: e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0) } : c))} aria-label={`Card ${cardIdx + 2} discount value`} className="w-24 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 font-mono text-xs text-[var(--text-main)]" />
-                                {card.discountMode === 'PERCENT' && <span>Rs. {calculateCardDiscount(sumInventorySubtotals(items), card.discountAmount, card.discountMode).toLocaleString()}</span>}
+                            <div className="grid min-w-0 grid-cols-2 xl:grid-cols-4 gap-2 mt-1.5">
+                              <span className="min-w-0 self-center text-xs font-bold text-[var(--text-main)]">{items.filter(i => i.name?.trim()).length} named items</span>
+                              <span className="min-w-0 self-center text-xs font-mono font-bold text-orange-400 break-words">Subtotal: Rs. {sumInventorySubtotals(items).toLocaleString()}</span>
+                              <label className="col-span-2 xl:col-span-1 grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 text-[10px] font-bold text-[var(--text-muted)]">Discount
+                                <ThemedSelect value={card.discountMode || 'AMOUNT'} onChange={e => setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, discountMode: e.target.value } : c))} aria-label={`Card ${cardIdx + 2} discount type`} className="min-w-0 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-1.5 py-1.5 text-xs text-[var(--text-main)]"><option value="PERCENT">%</option><option value="AMOUNT">Rs.</option></ThemedSelect>
+                                <input type="number" min="0" max={card.discountMode === 'PERCENT' ? 100 : undefined} step="0.01" value={card.discountAmount ?? 0} onChange={e => setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, discountAmount: e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0) } : c))} aria-label={`Card ${cardIdx + 2} discount value`} className="w-full min-w-0 max-w-28 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 font-mono text-xs text-[var(--text-main)]" />
+                                {card.discountMode === 'PERCENT' && <span className="col-span-3 min-w-0 break-words">Rs. {calculateCardDiscount(sumInventorySubtotals(items), card.discountAmount, card.discountMode).toLocaleString()}</span>}
                               </label>
-                              <span className="text-sm font-mono font-black text-emerald-500">Total: Rs. {Math.max(0, roundInventoryMoney(sumInventorySubtotals(items) - calculateCardDiscount(sumInventorySubtotals(items), card.discountAmount, card.discountMode))).toLocaleString()}</span>
+                              <span className="col-span-2 xl:col-span-1 min-w-0 self-center text-sm font-mono font-black text-emerald-500 break-words xl:text-right">Total: Rs. {Math.max(0, roundInventoryMoney(sumInventorySubtotals(items) - calculateCardDiscount(sumInventorySubtotals(items), card.discountAmount, card.discountMode))).toLocaleString()}</span>
                             </div>
                           </div>
-                          <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
-                            <button type="button" onClick={() => setPendingAddSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
+                          <div className="grid w-full grid-cols-1 sm:grid-cols-2 xl:w-auto gap-2">
+                            <button type="button" onClick={() => setPendingAddSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
                               <Save className="mr-1.5 inline h-4 w-4" />Save Draft
                             </button>
-                            {newItemsCount > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
+                            {newItemsCount > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
                               {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Saving…' : `Save New Item Names (${newItemsCount})`}
                             </button>}
                           </div>
@@ -4452,7 +4331,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                       >
                         Cancel
                       </button>
-                      <button
+                      {additionalDeliveryCards.length === 0 && <button
                         type="button"
                         onClick={() => setPendingAddSaveAction({ action: 'DRAFT' })}
                         disabled={bulkSavingCatalog || savingDraft}
@@ -4460,8 +4339,8 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                       >
                         <Save className="w-4 h-4" />
                         <span>Save All Deliveries to Draft</span>
-                      </button>
-                      {(ingredientCards.some(c => c.isNewItem && !c.saved && c.name?.trim()) || additionalDeliveryCards.some(card => (card.items || []).some(i => i.isNewItem && !i.saved && i.name?.trim()))) && <button
+                      </button>}
+                      {additionalDeliveryCards.length === 0 && (ingredientCards.some(c => c.isNewItem && !c.saved && c.name?.trim()) || additionalDeliveryCards.some(card => (card.items || []).some(i => i.isNewItem && !i.saved && i.name?.trim()))) && <button
                         type="button"
                         onClick={() => setPendingAddSaveAction({ action: 'CATALOG' })}
                         disabled={bulkSavingCatalog || savingDraft}
@@ -4682,7 +4561,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       />
 
       {pendingAddSaveAction && createPortal(
-        <div className="fixed inset-0 z-[125] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !savingDraft && !bulkSavingCatalog) setPendingAddSaveAction(null); }}>
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !savingDraft && !bulkSavingCatalog) setPendingAddSaveAction(null); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="add-save-confirm-title" className="w-full max-w-md rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl">
             <div className={`mb-3 flex h-11 w-11 items-center justify-center rounded-full ${pendingAddSaveAction.action === 'DRAFT' ? 'bg-amber-500/15 text-amber-600' : 'bg-orange-500/15 text-orange-600'}`}>
               <Save className="h-5 w-5" />
@@ -4715,7 +4594,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       )}
 
       {catalogImportResult && createPortal(
-        <div className="fixed inset-0 z-[119] flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setCatalogImportResult(null); }}>
+        <div className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setCatalogImportResult(null); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="catalog-import-result-title" className="w-full max-w-lg rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl">
             <h3 id="catalog-import-result-title" className="text-lg font-bold text-[var(--text-main)]">Ingredient import summary</h3>
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
@@ -4737,7 +4616,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       )}
 
       {draftSaveResult && createPortal(
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setDraftSaveResult(null); }}>
+        <div className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setDraftSaveResult(null); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="ingredient-draft-result-title" className="w-full max-w-md rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl">
             <div className={`mb-3 flex h-11 w-11 items-center justify-center rounded-full ${draftSaveResult.success ? 'bg-emerald-500/15 text-emerald-500' : 'bg-red-500/15 text-red-500'}`}>
               {draftSaveResult.success ? <CheckCircle2 className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import api, { setActiveAuthTokens } from '../services/api';
-import { getSocket } from '../services/socket';
+
 import { useCustomerMenu } from '../hooks/useCustomerMenu';
 import { useCustomerActiveOrders } from '../hooks/useCustomerActiveOrders';
 import {
@@ -15,22 +16,117 @@ import {
   HelpCircle,
   RotateCcw,
   ArrowRight,
-  Star,
   Mail,
   User,
-  KeyRound,
   ShieldCheck,
-  Flame,
   Plus,
   Minus,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  Check,
   MapPin,
+  Loader2,
   Utensils,
   Sun,
   Moon,
 } from 'lucide-react';
 import FAQModal from './FAQModal';
+
+const DeliveryTableDropdown = ({ value, tables, onChange, onOpen, loading = false, compact = false }) => {
+  const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState(null);
+  const rootRef = React.useRef(null);
+  const menuRef = React.useRef(null);
+  const selectedTable = tables.find((table) => table.tableNumber === value);
+
+  const updateMenuPosition = () => {
+    const trigger = rootRef.current?.getBoundingClientRect();
+    if (!trigger) return;
+    const viewportPadding = 8;
+    const width = Math.min(Math.max(trigger.width, 208), window.innerWidth - viewportPadding * 2);
+    const maxHeight = Math.min(256, window.innerHeight - viewportPadding * 2);
+    const spaceBelow = window.innerHeight - trigger.bottom - viewportPadding;
+    const spaceAbove = trigger.top - viewportPadding;
+    const openBelow = spaceBelow >= 160 || spaceBelow >= spaceAbove;
+    const left = Math.min(Math.max(viewportPadding, trigger.left), window.innerWidth - width - viewportPadding);
+    const top = openBelow
+      ? Math.min(trigger.bottom + 6, window.innerHeight - maxHeight - viewportPadding)
+      : Math.max(viewportPadding, trigger.top - maxHeight - 6);
+    setMenuPosition({ left, top, width, maxHeight });
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!rootRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    updateMenuPosition();
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+    };
+  }, [open]);
+
+  return (
+    <div className={`relative min-w-0 ${compact ? 'flex-1' : 'w-full sm:w-auto sm:flex-1'}`} ref={rootRef}>
+      <button
+        type="button"
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+          } else {
+            onOpen?.();
+            updateMenuPosition();
+            setOpen(true);
+          }
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Delivery table: ${selectedTable?.tableNumber || 'Select table'}`}
+        className={`flex w-full items-center gap-2 rounded-xl border border-stone-200 bg-white text-left text-xs font-bold text-stone-900 shadow-sm transition hover:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}
+      >
+        <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+        <span className="min-w-0 flex-1 truncate">{loading ? 'Loading tables…' : selectedTable?.tableNumber || 'Select Table...'}</span>
+        {loading ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-orange-500" /> : <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-stone-500 transition-transform ${open ? 'rotate-180' : ''}`} />}
+      </button>
+      {open && menuPosition && createPortal(
+        <div ref={menuRef} role="listbox" aria-label="Active delivery tables" style={{ position: 'fixed', left: menuPosition.left, top: menuPosition.top, width: menuPosition.width, maxHeight: menuPosition.maxHeight }} className="z-[10000] overflow-y-auto rounded-xl border border-stone-200 bg-white p-1.5 shadow-2xl ring-1 ring-black/10">
+          {loading ? (
+            <p className="flex items-center justify-center gap-2 px-3 py-3 text-xs font-medium text-stone-500"><Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />Loading active tables…</p>
+          ) : tables.length === 0 ? (
+            <p className="px-3 py-3 text-center text-xs font-medium text-stone-500">No active tables available</p>
+          ) : tables.map((table) => {
+            const isSelected = table.tableNumber === value;
+            return (
+              <button
+                key={table.id}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => { onChange(table.tableNumber); setOpen(false); }}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold transition-colors ${isSelected ? 'bg-orange-50 text-orange-700' : 'text-stone-800 hover:bg-stone-100'}`}
+              >
+                <span className="min-w-0 flex-1 truncate">{table.tableNumber}</span>
+                {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-orange-600" />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+};
 
 const loadedMenuImageUrls = new Set();
 
@@ -63,7 +159,7 @@ const CustomerMenuImage = ({ src, alt, priority, onError }) => {
 };
 
 // Helper to extract clean table display name from token or text
-export const parseTableDisplay = (tokenOrName) => {
+const parseTableDisplay = (tokenOrName) => {
   if (!tokenOrName) return 'Dining Table';
   try {
     let clean = String(tokenOrName).trim();
@@ -164,7 +260,7 @@ export const OtpInputBoxes = ({ value, onChange, disabled }) => {
   );
 };
 
-const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
+const CustomerDashboard = ({ tableIdFromRoute }) => {
   const navigate = useNavigate();
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
 
@@ -214,7 +310,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
         const u = JSON.parse(savedCustomer);
         if (u && (!u.role || u.role === 'CUSTOMER')) return u;
       }
-    } catch {}
+    } catch  { /* Optional storage or parsing failure. */ }
 
     try {
       const savedUser = sessionStorage.getItem('user') || localStorage.getItem('user');
@@ -222,7 +318,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
         const u = JSON.parse(savedUser);
         if (u && (!u.role || u.role === 'CUSTOMER')) return u;
       }
-    } catch {}
+    } catch  { /* Optional storage or parsing failure. */ }
 
     return null;
   };
@@ -244,7 +340,6 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
   const { activeOrders, failedOrders, refetch: refetchActiveOrders, dismissFailedOrder } = useCustomerActiveOrders({
     enabled: isSessionVerified,
   });
-  const activeOrder = activeOrders[0] || null;
 
   const [authName, setAuthName] = useState(() => {
     const u = getStoredCustomerUser();
@@ -270,8 +365,9 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
 
   // Change Delivery Table (post-order) state
   const [availableTables, setAvailableTables] = useState([]);
+  const [availableTablesLoading, setAvailableTablesLoading] = useState(false);
   const [deliveryChangeOrderId, setDeliveryChangeOrderId] = useState(null);
-  const [deliveryChangePicking, setDeliveryChangePicking] = useState(false);
+  const [, setDeliveryChangePicking] = useState(false);
   const [deliveryChangeTarget, setDeliveryChangeTarget] = useState('');
   const [deliveryChangeLoading, setDeliveryChangeLoading] = useState(false);
 
@@ -287,7 +383,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
       try {
         const u = JSON.parse(saved);
         if (!u.isGuest) return u.name;
-      } catch { }
+      } catch  { /* Optional storage or parsing failure. */ }
     }
     return '';
   });
@@ -312,7 +408,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
         if (cleanRouteToken.includes('%')) {
           try {
             cleanRouteToken = decodeURIComponent(cleanRouteToken);
-          } catch { }
+          } catch  { /* Optional storage or parsing failure. */ }
         }
 
         const newTableDisplay = parseTableDisplay(cleanRouteToken);
@@ -395,7 +491,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
               const tName = s.table?.tableNumber || `Table ${s.table?.id}`;
               setTableId(tName);
               localStorage.setItem('customer_tableId', tName);
-              
+
               const isUserLoggedIn = checkIsCustomerLoggedIn();
 
               if (isUserLoggedIn) {
@@ -434,6 +530,8 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
     };
 
     initSession();
+  // Session restoration checks are intentionally kept together to preserve the existing login/session flow.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableIdFromRoute]);
 
   // ─── Session Expiry Check (every 30 seconds) ────────────────────────────
@@ -441,7 +539,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
 
   useEffect(() => {
     if (!sessionId || sessionExpired) return;
-    
+
     const checkSessionHealth = async () => {
       try {
         const res = await api.get(`/sessions/${sessionId}`);
@@ -745,7 +843,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
     return 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=700&auto=format&fit=crop&q=80';
   };
 
-  const [checkoutStep, setCheckoutStep] = useState(
+  const [checkoutStep] = useState(
     () => localStorage.getItem('customer_checkoutStep') || 'menu'
   );
 
@@ -754,12 +852,24 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
   useEffect(() => { localStorage.setItem('customer_category', category); }, [category]);
   useEffect(() => { localStorage.setItem('customer_checkoutStep', checkoutStep); }, [checkoutStep]);
 
-  // Fetch available active tables for delivery change picker
-  useEffect(() => {
-    api.get('/tables/active').then(r => {
-      if (r.data?.tables) setAvailableTables(r.data.tables);
-    }).catch(() => { });
-  }, []);
+  // Refresh on picker open so deleted/deactivated tables never remain selectable.
+  const refreshAvailableTables = async () => {
+    setAvailableTablesLoading(true);
+    try {
+      const response = await api.get('/tables/active');
+      const activeTables = response.data?.tables || [];
+      setAvailableTables(activeTables);
+      setDeliveryChangeTarget((current) => (
+        !current || activeTables.some((table) => table.tableNumber === current) ? current : ''
+      ));
+    } catch (error) {
+      console.error('Failed to refresh active tables:', error);
+      setAvailableTables([]);
+      setDeliveryChangeTarget('');
+    } finally {
+      setAvailableTablesLoading(false);
+    }
+  };
 
   const checkForExistingOrder = () => {
     refetchActiveOrders();
@@ -773,75 +883,14 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
   };
 
   // ─── Cart handlers (syncs with backend session cart) ──────────────────────
-  const addToCart = async (item) => {
-    let targetQuantity = 1;
-    setCart((prev) => {
-      targetQuantity = (prev[item.id]?.quantity || 0) + 1;
-      return {
-        ...prev,
-        [item.id]: { ...item, quantity: targetQuantity },
-      };
-    });
 
-    if (sessionId) {
-      try {
-        await api.post(`/cart/${sessionId}/items`, {
-          menuItemId: item.id,
-          quantity: targetQuantity,
-        });
-      } catch (err) {
-        if (err.response?.status === 403) {
-          setSessionExpired(true);
-          return;
-        }
-        console.warn('Backend cart add warning:', err.message);
-      }
-    }
-  };
 
-  const removeFromCart = async (itemId) => {
-    let isDeleting = false;
-    let targetQuantity = 0;
 
-    setCart((prev) => {
-      const currentQty = prev[itemId]?.quantity || 0;
-      if (currentQty <= 1) {
-        isDeleting = true;
-        const updated = { ...prev };
-        delete updated[itemId];
-        return updated;
-      }
-      targetQuantity = currentQty - 1;
-      return {
-        ...prev,
-        [itemId]: { ...prev[itemId], quantity: targetQuantity },
-      };
-    });
-
-    if (sessionId) {
-      try {
-        if (isDeleting) {
-          await api.delete(`/cart/${sessionId}/items/${itemId}`);
-        } else {
-          await api.post(`/cart/${sessionId}/items`, {
-            menuItemId: itemId,
-            quantity: targetQuantity,
-          });
-        }
-      } catch (err) {
-        if (err.response?.status === 403) {
-          setSessionExpired(true);
-          return;
-        }
-        console.warn('Backend cart remove warning:', err.message);
-      }
-    }
-  };
 
   // Add a specific variant with its per-variant quantity to cart.
   // Same variant (same menuItemId) is MERGED (qty accumulates).
   // Different variants (different menuItemId) remain SEPARATE cart lines.
-  const handleAddWithVariantAndQty = async (item, groupKey) => {
+  const handleAddWithVariantAndQty = async (item) => {
     const variantQty = pendingQty[item.id] || 1;
     // Optimistically update cart: merge if same variant already exists
     let finalQty = variantQty;
@@ -1439,21 +1488,16 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                     <span className="text-xs font-bold text-[#171717] whitespace-nowrap shrink-0">
                       New delivery table:
                     </span>
-                    <select
+                    <DeliveryTableDropdown
                       value={deliveryChangeTarget}
-                      onChange={(e) => setDeliveryChangeTarget(e.target.value)}
-                      className="w-full sm:w-auto bg-white border border-[#E7E5E4] text-[#171717] text-xs rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-[#E85D2A] flex-1"
-                    >
-                      <option value="">Select Table...</option>
-                      {availableTables.map(t => (
-                        <option key={t.id} value={t.tableNumber}>
-                          {t.tableNumber}
-                        </option>
-                      ))}
-                    </select>
+                      tables={availableTables}
+                      loading={availableTablesLoading}
+                      onChange={setDeliveryChangeTarget}
+                      onOpen={refreshAvailableTables}
+                    />
                     <div className="flex gap-2 w-full sm:w-auto">
                       <button
-                        disabled={deliveryChangeLoading || !deliveryChangeTarget}
+                        disabled={deliveryChangeLoading || availableTablesLoading || !deliveryChangeTarget}
                         onClick={() => handleDeliveryTableChange(activeOrders[0].id, deliveryChangeTarget)}
                         className="flex-1 sm:flex-none px-4 py-2 bg-[#E85D2A] hover:bg-[#D94E1B] disabled:opacity-50 text-white font-extrabold text-xs rounded-xl transition-all shadow-sm cursor-pointer"
                       >
@@ -1520,20 +1564,16 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                             <button onClick={() => setDeliveryChangeOrderId(null)} className="text-[10px] font-bold text-gray-400 hover:text-gray-600">✕ Close</button>
                           </div>
                           <div className="flex items-center gap-2">
-                            <select
+                            <DeliveryTableDropdown
                               value={deliveryChangeTarget}
-                              onChange={(e) => setDeliveryChangeTarget(e.target.value)}
-                              className="bg-white border border-gray-300 text-gray-900 text-xs rounded-lg px-2 py-1 font-bold flex-1 focus:outline-none"
-                            >
-                              <option value="">Select Table...</option>
-                              {availableTables.map(t => (
-                                <option key={t.id} value={t.tableNumber}>
-                                  {t.tableNumber}
-                                </option>
-                              ))}
-                            </select>
+                              tables={availableTables}
+                              loading={availableTablesLoading}
+                              onChange={setDeliveryChangeTarget}
+                              onOpen={refreshAvailableTables}
+                              compact
+                            />
                             <button
-                              disabled={deliveryChangeLoading || !deliveryChangeTarget}
+                              disabled={deliveryChangeLoading || availableTablesLoading || !deliveryChangeTarget}
                               onClick={() => handleDeliveryTableChange(ord.id, deliveryChangeTarget)}
                               className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-[11px] rounded-lg transition-all"
                             >

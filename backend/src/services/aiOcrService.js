@@ -606,7 +606,7 @@ const findBestFuzzyCatalogMatch = (rawName, sku, catalogItems) => {
         return { item: targetItem, status: 'MATCHED', confidence: 1.0, matchType: 'LEARNED_ALIAS' };
       }
     }
-  } catch (_) {}
+  } catch { /* Optional OCR parsing/lookup fallback. */ }
 
   // 2. Exact Normalized Name Match
   const exactMatch = catalogItems.find(c => normalizeItemName(c.name) === cleanRaw);
@@ -942,7 +942,7 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
 
             // Supplier detection keyword: "Supplier: XYZ", "Vendor: XYZ", "M/s XYZ", "From: XYZ", "Seller: XYZ"
             if (!detectedSupplierName) {
-              const suppMatch = cellVal.match(/^(?:supplier|vendor|distributor|dealer|seller|from|m\/s|party|company|firm)\s*[:\-]?\s*(.+)$/i);
+              const suppMatch = cellVal.match(/^(?:supplier|vendor|distributor|dealer|seller|from|m\/s|party|company|firm)\s*[:-]?\s*(.+)$/i);
               if (suppMatch && suppMatch[1]) {
                 const cand = suppMatch[1].trim();
                 if (cand.length >= 2 && !cand.toLowerCase().includes('invoice') && !cand.toLowerCase().includes('total')) {
@@ -963,7 +963,7 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
 
             // Invoice number keyword: "Invoice #: 123", "Bill No: 123", "Inv No: 123"
             if (!extractedInvoiceNumber) {
-              const invMatch = cellVal.match(/^(?:invoice|inv|bill|memo|receipt|slip|ref)\s*(?:#|no|num|number)?\s*[:\-]?\s*([a-zA-Z0-9\-_/]+)$/i);
+              const invMatch = cellVal.match(/^(?:invoice|inv|bill|memo|receipt|slip|ref)\s*(?:#|no|num|number)?\s*[:-]?\s*([a-zA-Z0-9_/-]+)$/i);
               if (invMatch && invMatch[1]) {
                 const candInv = invMatch[1].trim();
                 if (candInv.length >= 2) extractedInvoiceNumber = candInv;
@@ -972,7 +972,7 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
 
             // Date keyword: "Date: 2026-10-15", "Dated: 15/10/2026"
             if (!extractedDate) {
-              const dateMatch = cellVal.match(/^(?:date|dated|receiving\s*date)\s*[:\-]?\s*([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|[0-9]{1,2}[-/][0-9]{1,2}[-/][0-9]{2,4})/i);
+              const dateMatch = cellVal.match(/^(?:date|dated|receiving\s*date)\s*[:-]?\s*([0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|[0-9]{1,2}[-/][0-9]{1,2}[-/][0-9]{2,4})/i);
               if (dateMatch && dateMatch[1]) {
                 extractedDate = dateMatch[1].trim();
               }
@@ -981,7 +981,7 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
         }
 
         const headers = sheetJson[headerRowIndex].map(h => normalizeHeader(h));
-        
+
         const nameIdx = headers.findIndex(h => h.includes('item') || h.includes('name') || h.includes('product') || h.includes('ingredient'));
         const skuIdx = headers.findIndex(h => h.includes('sku') || h.includes('code'));
         const qtyIdx = headers.findIndex(h => h.includes('qty') || h.includes('quantity') || h.includes('amount') || h.includes('volume'));
@@ -1104,7 +1104,7 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
             if (!cellVal || cellVal.length < 2) continue;
 
             if (!detectedSupplierName) {
-              const suppMatch = cellVal.match(/^(?:supplier|vendor|distributor|dealer|seller|from|m\/s|party|company|firm)\s*[:\-]?\s*(.+)$/i);
+              const suppMatch = cellVal.match(/^(?:supplier|vendor|distributor|dealer|seller|from|m\/s|party|company|firm)\s*[:-]?\s*(.+)$/i);
               if (suppMatch && suppMatch[1]) {
                 const cand = suppMatch[1].trim();
                 if (cand.length >= 2 && !cand.toLowerCase().includes('invoice') && !cand.toLowerCase().includes('total')) {
@@ -1121,7 +1121,7 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
             }
 
             if (!extractedInvoiceNumber) {
-              const invMatch = cellVal.match(/^(?:invoice|inv|bill|memo|receipt|slip|ref)\s*(?:#|no|num|number)?\s*[:\-]?\s*([a-zA-Z0-9\-_/]+)$/i);
+              const invMatch = cellVal.match(/^(?:invoice|inv|bill|memo|receipt|slip|ref)\s*(?:#|no|num|number)?\s*[:-]?\s*([a-zA-Z0-9_/-]+)$/i);
               if (invMatch && invMatch[1]) {
                 const candInv = invMatch[1].trim();
                 if (candInv.length >= 2) extractedInvoiceNumber = candInv;
@@ -1336,7 +1336,7 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
         };
         warnings.push(`Duplicate Invoice Warning: Invoice #${extractedInvoiceNumber} was already received in transaction #${existing.receivingNumber} on ${new Date(existing.receivingDate).toLocaleDateString()}. Re-importing will be blocked to protect inventory balances.`);
       }
-    } catch (_) {}
+    } catch { /* Optional OCR parsing/lookup fallback. */ }
   }
 
   return {

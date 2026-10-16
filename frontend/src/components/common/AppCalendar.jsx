@@ -1,23 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import  { useState, useMemo } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
   Calendar as CalendarIcon,
   Clock,
-  Filter,
   Search,
   List,
   Grid3X3,
   CalendarDays,
-  CalendarRange,
   X,
-  ExternalLink,
-  ChevronDown
+  ExternalLink
 } from 'lucide-react';
 
 const VIEW_MONTH = 'MONTH';
 const VIEW_WEEK = 'WEEK';
-const VIEW_DAY = 'DAY';
 const VIEW_AGENDA = 'AGENDA';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

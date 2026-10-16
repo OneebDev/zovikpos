@@ -1,11 +1,8 @@
-import React, { useMemo } from 'react';
+import  { useMemo } from 'react';
 import {
   ChefHat,
   Clock,
-  CheckCircle2,
-  AlertCircle,
   BrainCircuit,
-  Flame,
 } from 'lucide-react';
 
 const AdminKitchenMonitorView = ({ orders = [] }) => {
@@ -20,17 +17,18 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl flex justify-between items-center">
-        <div>
-          <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display flex items-center space-x-2">
-            <ChefHat className="w-5 h-5 text-orange-400" />
-            <span>Kitchen Operations Oversight Monitor</span>
+      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-5 sm:p-6 rounded-2xl shadow-xl flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display flex items-center gap-2">
+            <ChefHat className="h-5 w-5 shrink-0 text-orange-400" />
+            <span className="min-w-0">Kitchen Operations Oversight Monitor</span>
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">Live read-only oversight monitor for kitchen order preparation workflow.</p>
         </div>
 
-        <span className="px-3 py-1 bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-full text-xs font-black uppercase tracking-wider">
-          {kitchenQueue.length} Orders Active
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-1.5 bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-full text-xs font-black uppercase tracking-wider">
+          <span>{kitchenQueue.length}</span>
+          <span>Orders Active</span>
         </span>
       </div>
 

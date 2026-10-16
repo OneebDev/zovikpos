@@ -11,7 +11,7 @@ export const exportToCSV = (filename, data, headers) => {
       alert('🔒 Read-Only Demo Mode: File downloads and export features are disabled for demo accounts. Please log in with a real account to download files.');
       return;
     }
-  } catch (_) {}
+  } catch { /* Optional storage or parsing failure. */ }
 
   if (!data || data.length === 0) {
     alert('No data available to export.');
@@ -55,7 +55,7 @@ export const printPDFReport = (title, contentHtml) => {
       alert('🔒 Read-Only Demo Mode: PDF report exports are disabled for demo accounts. Please log in with a real account to export PDF reports.');
       return;
     }
-  } catch (_) {}
+  } catch { /* Optional storage or parsing failure. */ }
 
   const printWindow = window.open('', '_blank');
   if (!printWindow) {

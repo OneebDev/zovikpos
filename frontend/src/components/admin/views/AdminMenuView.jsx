@@ -1,12 +1,11 @@
-import React, { useState, useMemo, useRef } from 'react';
+import ThemedSelect from '../../common/ThemedSelect';
+import  { useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus,
   Search,
   Edit2,
   Trash2,
-  CheckCircle2,
-  XCircle,
   Clock,
   Package,
   X,
@@ -75,6 +74,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
   const [selectedMenuItemIds, setSelectedMenuItemIds] = useState(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
+  const mobileActionWidth = selectionMode ? 'mobile-action-third' : 'mobile-action-half';
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -460,17 +460,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
     });
   };
 
-  const toggleSelectGroup = (variants) => {
-    setSelectedMenuItemIds((prev) => {
-      const next = new Set(prev);
-      const allSelected = variants.every((v) => next.has(v.id));
-      variants.forEach((v) => {
-        if (allSelected) next.delete(v.id);
-        else next.add(v.id);
-      });
-      return next;
-    });
-  };
+
 
   const handleBulkDelete = () => {
     if (selectedMenuItemIds.size === 0) return;
@@ -510,15 +500,15 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
-        <div>
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl">
+        <div className="min-w-0 flex-1">
           <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">Menu Catalog Management</h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">Control pricing, dish images, preparation times, categories, and customer availability.</p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
-          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedMenuItemIds.size} />
-          {selectionMode && <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] text-xs font-bold cursor-pointer select-none">
+        <div className="flex w-full min-w-0 flex-nowrap items-center justify-start gap-1.5 overflow-x-auto pb-1 lg:w-auto lg:shrink-0 lg:justify-end lg:gap-2 lg:overflow-visible">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedMenuItemIds.size} className={`${mobileActionWidth} h-10 justify-center px-1 text-[10px] sm:h-auto sm:w-auto sm:px-3 sm:py-2 sm:text-xs`} mobileLabel="Select" mobileActiveLabel="Done" />
+          {selectionMode && <label className="mobile-action-third inline-flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] px-1 text-[10px] font-bold text-[var(--text-muted)] cursor-pointer select-none whitespace-nowrap sm:h-auto sm:w-auto sm:gap-2 sm:px-3 sm:py-2 sm:text-xs">
             <input
               type="checkbox"
               checked={allFilteredMenuItemsSelected}
@@ -532,24 +522,25 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
               className="accent-orange-500"
               aria-label="Select all visible menu items"
             />
-            <span>{allFilteredMenuItemsSelected ? 'Clear visible selection' : `Select visible (${filteredItems.length})`}</span>
+            <span className="sm:hidden">All</span>
+            <span className="hidden sm:inline">{allFilteredMenuItemsSelected ? 'Clear visible selection' : `Select visible (${filteredItems.length})`}</span>
           </label>}
           {selectionMode && selectedMenuItemIds.size > 0 && (
             <button
               onClick={handleBulkDelete}
-              className="px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+              className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-500/20 bg-rose-500/10 px-1 text-[10px] font-bold text-rose-400 shadow-md transition-all hover:bg-rose-500/20 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2.5 sm:text-xs"
             >
-              <Trash2 className="w-4 h-4" />
-              <span>Delete Selected ({selectedMenuItemIds.size})</span>
+              <Trash2 className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+              <span><span className="sm:hidden">Delete</span><span className="hidden sm:inline">Delete Selected ({selectedMenuItemIds.size})</span></span>
             </button>
           )}
 
           <button
             onClick={() => handleOpenAdd()}
-            className="px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold whitespace-nowrap transition-all shadow-md flex items-center space-x-2 cursor-pointer"
+            className={`${mobileActionWidth} flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-orange-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-orange-500 cursor-pointer sm:h-auto sm:w-auto sm:gap-2 sm:px-3 sm:py-2.5 sm:text-xs`}
           >
-            <Plus className="w-4 h-4" />
-            <span>Add New Menu Item</span>
+            <Plus className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <span><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add New Menu Item</span></span>
           </button>
         </div>
       </div>
@@ -794,13 +785,13 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
         <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-hidden">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-2xl w-full shadow-2xl animate-scale-up max-h-[90vh] flex flex-col overflow-hidden">
             {/* Modal Header — Fixed Top */}
-            <div className="flex justify-between items-center p-4 sm:p-5 border-b border-[var(--border-color)] shrink-0 bg-[var(--card-bg)] z-10">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-orange-500/10 text-orange-400 rounded-xl border border-orange-500/20 shrink-0">
+            <div className="flex flex-nowrap items-start justify-between gap-3 p-4 sm:p-5 border-b border-[var(--border-color)] shrink-0 bg-[var(--card-bg)] z-10">
+              <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                <div className="shrink-0 p-2 bg-orange-500/10 text-orange-400 rounded-xl border border-orange-500/20">
                   <Layers className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-extrabold text-[var(--text-main)] font-display">
+                <div className="min-w-0">
+                  <h3 className="text-base sm:text-lg font-extrabold text-[var(--text-main)] font-display leading-snug">
                     {formData.variants.some(v => v.id) ? 'Edit Dish & Portions' : 'Add New Dish / Variants'}
                   </h3>
                   <p className="text-[11px] text-[var(--text-muted)]">Configure item group, image, preparation time, and multiple size portions.</p>
@@ -808,14 +799,14 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
               </div>
               <button
                 onClick={() => setShowItemModal(false)}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer shrink-0"
+                className="ml-1 shrink-0 p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Modal Scrollable Body */}
-            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar text-xs">
+            <form id="menu-item-form" onSubmit={handleSubmit} className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar text-xs">
               {/* IMAGE MANAGEMENT SECTION */}
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
@@ -913,7 +904,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
 
                 <div>
                   <label className="block font-bold text-[var(--text-muted)] uppercase text-[10px] mb-1">Category *</label>
-                  <select
+                  <ThemedSelect
                     value={formData.category === 'CUSTOM' || !categoryOptions.includes(formData.category) ? 'CUSTOM' : formData.category}
                     onChange={(e) => {
                       if (e.target.value === 'CUSTOM') {
@@ -929,7 +920,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                     <option value="CUSTOM">+ Add Custom Category...</option>
-                  </select>
+                  </ThemedSelect>
                   {(formData.category === 'CUSTOM' || !categoryOptions.includes(formData.category)) && (
                     <input
                       type="text"
@@ -949,7 +940,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
               {/* GROUP SELECTION (Dropdown of existing groups + Custom option) */}
               <div>
                 <label className="block font-bold text-[var(--text-muted)] uppercase text-[10px] mb-1">Group Name (Select Existing or New) *</label>
-                <select
+                <ThemedSelect
                   value={formData.groupName}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -966,7 +957,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                     <option key={grp} value={grp}>{grp}</option>
                   ))}
                   <option value="CUSTOM">+ Custom Group Name...</option>
-                </select>
+                </ThemedSelect>
 
                 {formData.groupName === 'CUSTOM' && (
                   <input
@@ -1002,7 +993,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                     <div key={idx} className="flex items-center gap-2 p-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg">
                       {/* Portion/Unit Selection */}
                       <div className="flex-1 space-y-0.5">
-                        <select
+                        <ThemedSelect
                           value={v.unit}
                           onChange={(e) => handleVariantChange(idx, 'unit', e.target.value)}
                           className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -1011,7 +1002,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                             <option key={u} value={u}>{u}</option>
                           ))}
                           <option value="CUSTOM">+ Custom Portion...</option>
-                        </select>
+                        </ThemedSelect>
                         {v.unit === 'CUSTOM' && (
                           <input
                             type="text"
@@ -1106,8 +1097,10 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                 </label>
               </div>
 
-              {/* Modal Sticky Footer — Always Visible at Bottom */}
-              <div className="flex justify-end space-x-3 pt-3 border-t border-[var(--border-color)] bg-[var(--card-bg)] sticky bottom-0 z-10">
+            </form>
+
+            {/* Fixed modal footer stays below the scrollable form content. */}
+            <div className="shrink-0 flex justify-end gap-3 p-3 sm:p-4 border-t border-[var(--border-color)] bg-[var(--card-bg)]">
                 <button
                   type="button"
                   onClick={() => setShowItemModal(false)}
@@ -1117,14 +1110,14 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                 </button>
                 <button
                   type="submit"
+                  form="menu-item-form"
                   disabled={saving}
                   className="px-5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold transition-all shadow-md cursor-pointer flex items-center space-x-1.5 text-xs"
                 >
                   {saving && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                   <span>{saving ? 'Saving...' : `Save ${formData.variants.length > 1 ? `${formData.variants.length} Portions` : 'Item'}`}</span>
                 </button>
-              </div>
-            </form>
+            </div>
           </div>
         </div>,
         document.body

@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   RefreshCw,
   ListOrdered,
+  Loader2,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -100,8 +101,9 @@ const AdminHomeView = ({
 
   if (!stats) {
     return (
-      <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)] animate-pulse">
-        Loading Executive Dashboard Analytics...
+      <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs font-bold text-[var(--text-muted)]">
+        <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+        <span>Loading Executive Dashboard Analytics...</span>
       </div>
     );
   }

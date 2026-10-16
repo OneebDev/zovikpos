@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import  { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Users,
@@ -144,21 +144,21 @@ const AdminStaffView = ({ showToast }) => {
     }
   };
 
-  const fetchStaff = async () => {
+  const fetchStaff = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get('/admin/staff');
       setStaffList(res.data.staff || []);
-    } catch (err) {
+    } catch {
       if (showToast) showToast('Failed to load staff list', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     fetchStaff();
-  }, []);
+  }, [fetchStaff]);
 
   // ── Create Staff ──────────────────────────────────────────────────────────
   const handleCreateStaff = async (e) => {
@@ -199,7 +199,7 @@ const AdminStaffView = ({ showToast }) => {
       setShowResetModal(false);
       setResetPasswordInput('');
       setSelectedStaff(null);
-    } catch (err) {
+    } catch {
       if (showToast) showToast('Failed to reset password', 'error');
     } finally {
       setActionLoading(false);
@@ -237,6 +237,8 @@ const AdminStaffView = ({ showToast }) => {
       s.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.role?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const hasSelectedStaff = selectionMode && selectedStaffIds.size > 0;
+  const mobileActionWidth = 'mobile-action-third';
 
   return (
     <div className="space-y-6">
@@ -253,30 +255,32 @@ const AdminStaffView = ({ showToast }) => {
             Manage administrative, cashier, and kitchen credentials synced directly with Supabase.
           </p>
         </div>
-        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
-          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedStaffIds.size} />
-          {selectionMode && selectedStaffIds.size > 0 && (
+        <div className="flex w-full min-w-0 items-center justify-start gap-1.5 overflow-x-auto pb-1 sm:w-auto sm:justify-end sm:overflow-visible">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedStaffIds.size} mobileLabel="Select" mobileActiveLabel="Done" className={`${mobileActionWidth} h-10 justify-center px-1.5 text-[10px] sm:h-auto sm:w-auto sm:px-3 sm:py-2 sm:text-xs`} />
+          {hasSelectedStaff && (
             <button
               onClick={handleBulkDeleteStaff}
-              className="px-3.5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+              className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center gap-1 rounded-xl border border-rose-500/20 bg-rose-500/10 px-1 text-[10px] font-bold text-rose-400 shadow-md transition-all hover:bg-rose-500/20 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2.5 sm:text-xs`}
             >
-              <Trash2 className="w-4 h-4" />
-              <span>Delete Selected ({selectedStaffIds.size})</span>
+              <Trash2 className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+              <span className="whitespace-nowrap"><span className="sm:hidden">Delete</span><span className="hidden sm:inline">Delete Selected ({selectedStaffIds.size})</span></span>
             </button>
           )}
           <button
+            onClick={() => setShowAddModal(true)}
+            className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center gap-1 rounded-xl bg-orange-600 px-1 text-[10px] font-semibold text-white shadow-md transition-all hover:bg-orange-500 hover:shadow-orange-500/25 cursor-pointer sm:h-auto sm:w-auto sm:gap-2 sm:px-4 sm:py-2.5 sm:text-xs`}
+          >
+            <UserPlus className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            <span className="whitespace-nowrap"><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add New Staff</span></span>
+          </button>
+          <button
             onClick={fetchStaff}
-            className="p-2.5 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] hover:border-orange-400 transition-all cursor-pointer shadow-sm"
+            disabled={loading}
+            aria-label={loading ? 'Refreshing staff list' : 'Refresh staff list'}
+            className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] p-2.5 text-[var(--text-muted)] shadow-sm transition-all hover:border-orange-400 hover:text-[var(--text-main)] cursor-pointer disabled:cursor-wait disabled:opacity-60 sm:h-auto sm:w-auto sm:rounded-xl`}
             title="Refresh list"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-orange-600' : ''}`} />
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-semibold transition-all shadow-md hover:shadow-orange-500/25 flex items-center gap-2 cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Add New Staff</span>
           </button>
         </div>
       </div>
@@ -300,7 +304,7 @@ const AdminStaffView = ({ showToast }) => {
 
       {/* ── Modern Staff Table ──────────────────────────────────────────────── */}
       <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl shadow-sm overflow-hidden">
-        {loading ? (
+        {loading && staffList.length === 0 ? (
           <div className="py-20 text-center flex flex-col items-center justify-center space-y-3">
             <RefreshCw className="w-8 h-8 text-orange-500 animate-spin" />
             <p className="text-xs font-semibold text-[var(--text-muted)]">Loading staff directory...</p>
@@ -314,7 +318,7 @@ const AdminStaffView = ({ showToast }) => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full min-w-max text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/70 text-[11px] font-semibold text-[var(--text-muted)] tracking-wide">
                   {selectionMode && <th className="py-3.5 px-4 w-10 text-center">

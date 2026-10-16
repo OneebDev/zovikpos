@@ -1,14 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import  { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   History,
   Search,
-  Clock,
-  User,
-  CheckCircle2,
   ArrowRight,
   Trash2,
   Download,
   Printer,
+  Loader2,
 } from 'lucide-react';
 import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
@@ -28,7 +26,7 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get('/admin/order-history');
@@ -39,11 +37,11 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     fetchHistory();
-  }, []);
+  }, [fetchHistory]);
 
   const filteredHistory = useMemo(() => {
     return historyList.filter(
@@ -203,8 +201,8 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
           </div>
         </div>
 
-        <div className="flex flex-nowrap items-center gap-1.5 w-full lg:w-auto overflow-x-auto lg:justify-end lg:shrink-0">
-          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedHistoryIds.size} />
+        <div className="flex w-full min-w-0 flex-nowrap items-center justify-start gap-1.5 overflow-x-auto pb-1 lg:w-auto lg:justify-end lg:shrink-0 lg:overflow-visible">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedHistoryIds.size} className="mobile-action-third h-10 justify-center px-1 text-[10px] lg:h-auto lg:w-auto lg:px-3 lg:py-2 lg:text-xs" mobileLabel="Select" mobileActiveLabel="Done" />
           {/* Bulk Delete Selected Button */}
           {selectionMode && selectedHistoryIds.size > 0 && (
             <button
@@ -212,26 +210,26 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
                 setIsBulkDeleting(true);
                 setDeleteModalOpen(true);
               }}
-              className="shrink-0 px-2.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer animate-fade-in"
+              className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-500/20 bg-rose-500/10 px-1 text-[10px] font-bold text-rose-400 shadow-md transition-all hover:bg-rose-500/20 cursor-pointer animate-fade-in lg:h-auto lg:w-auto lg:gap-1.5 lg:px-2.5 lg:py-2 lg:text-xs"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Selected ({selectedHistoryIds.size})</span>
+              <Trash2 className="h-3.5 w-3.5 shrink-0" />
+              <span><span className="lg:hidden">Delete</span><span className="hidden lg:inline">Delete Selected ({selectedHistoryIds.size})</span></span>
             </button>
           )}
 
           <button
             onClick={handleExportCSV}
-            className="shrink-0 px-2.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer"
+            className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-emerald-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-emerald-500 cursor-pointer lg:h-auto lg:w-auto lg:gap-1.5 lg:px-2.5 lg:py-2 lg:text-xs"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
+            <Download className="h-3.5 w-3.5 shrink-0" />
+            <span><span className="lg:hidden">CSV</span><span className="hidden lg:inline">Export CSV</span></span>
           </button>
           <button
             onClick={handleExportPDF}
-            className="shrink-0 px-2.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1 cursor-pointer"
+            className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-orange-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-orange-500 cursor-pointer lg:h-auto lg:w-auto lg:gap-1.5 lg:px-2.5 lg:py-2 lg:text-xs"
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Export PDF</span>
+            <Printer className="h-3.5 w-3.5 shrink-0" />
+            <span><span className="lg:hidden">PDF</span><span className="hidden lg:inline">Export PDF</span></span>
           </button>
         </div>
       </div>
@@ -265,8 +263,9 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
       {/* History Table */}
       <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)] animate-pulse">
-            Loading Status Transition Timeline...
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs font-bold text-[var(--text-muted)]">
+            <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+            <span>Loading Status Transition Timeline...</span>
           </div>
         ) : filteredHistory.length === 0 ? (
           <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)]">
@@ -274,7 +273,7 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full min-w-[1120px] text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
                   {selectionMode && <th className="p-4 w-10 text-center">
@@ -309,32 +308,32 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
                           className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500/20 cursor-pointer"
                         />
                       </td>}
-                      <td className="p-4 font-mono font-extrabold text-orange-400">
+                      <td className="p-4 whitespace-nowrap font-mono font-extrabold text-orange-400">
                         {h.order?.orderNumber || `Order #${h.orderId}`}
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 whitespace-nowrap">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--bg-color)] border border-[var(--border-color)]">
                           {h.fromStatus || 'INITIAL'}
                         </span>
                       </td>
-                      <td className="p-4 text-orange-400">
+                      <td className="p-4 whitespace-nowrap text-orange-400">
                         <ArrowRight className="w-4 h-4" />
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 whitespace-nowrap">
                         <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                           {h.toStatus}
                         </span>
                       </td>
-                      <td className="p-4 font-bold text-[var(--text-main)]">
+                      <td className="p-4 whitespace-nowrap font-bold text-[var(--text-main)]">
                         {h.changedByUser?.name || h.changedByUser?.email || 'System'}
                       </td>
-                      <td className="p-4 uppercase font-bold text-orange-400 text-[10px]">
+                      <td className="p-4 whitespace-nowrap uppercase font-bold text-orange-400 text-[10px]">
                         {h.changedByUser?.role || 'SYSTEM'}
                       </td>
-                      <td className="p-4 text-[11px] text-[var(--text-muted)]">
+                      <td className="p-4 whitespace-nowrap text-[11px] text-[var(--text-muted)]">
                         {new Date(h.createdAt).toLocaleString()}
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="p-4 text-right whitespace-nowrap">
                         <button
                           onClick={() => {
                             setItemToDelete(h);

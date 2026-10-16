@@ -2,6 +2,17 @@ import { io } from 'socket.io-client';
 
 let currentUser = null;
 
+const getTokenForUser = (user) => {
+  if (!user || user.isGuest || typeof window === 'undefined') return null;
+
+  const role = user.role?.toUpperCase();
+  const prefix = role === 'ADMIN' ? 'admin' : role === 'VENDOR' ? 'vendor' : role === 'KITCHEN' ? 'kitchen' : 'customer';
+  return sessionStorage.getItem(`${prefix}_token`) ||
+    localStorage.getItem(`${prefix}_token`) ||
+    sessionStorage.getItem('token') ||
+    localStorage.getItem('token');
+};
+
 const getSocketUrl = () => {
   if (typeof window !== 'undefined' && window.location) {
     return `http://${window.location.hostname}:5001`;
@@ -20,12 +31,6 @@ export const socket = io(getSocketUrl(), {
 
 socket.on('connect', () => {
   console.log('Connected to socket server with ID:', socket.id);
-  if (currentUser) {
-    socket.emit('join', {
-      role: currentUser.role,
-      userId: currentUser.id,
-    });
-  }
 });
 
 socket.on('disconnect', (reason) => {
@@ -33,14 +38,20 @@ socket.on('disconnect', (reason) => {
 });
 
 export const connectSocket = (user) => {
+  const nextUser = user || null;
+  const token = getTokenForUser(nextUser);
+  const currentIdentity = currentUser ? `${currentUser.role}:${currentUser.id}` : 'guest';
+  const nextIdentity = nextUser ? `${nextUser.role}:${nextUser.id}` : 'guest';
+  const previousToken = socket.auth?.token || null;
+
+  socket.auth = token ? { token } : {};
   currentUser = user;
-  if (!socket.connected) {
+
+  if (socket.connected && (currentIdentity !== nextIdentity || previousToken !== token)) {
+    socket.disconnect();
     socket.connect();
-  } else if (user) {
-    socket.emit('join', {
-      role: user.role,
-      userId: user.id,
-    });
+  } else if (!socket.connected) {
+    socket.connect();
   }
   return socket;
 };

@@ -1,3 +1,4 @@
+import ThemedSelect from './ThemedSelect';
 import { useState, useRef, useEffect } from 'react';
 import {
   Calendar as CalendarIcon,
@@ -174,15 +175,34 @@ const DateRangeFilterBar = ({
   };
 
   return (
-    <div className="bg-[var(--bg-color)]/55 border border-[var(--border-color)] rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 relative shadow-sm">
+    <div className="relative flex min-w-0 flex-nowrap items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)]/55 p-3 shadow-sm sm:gap-4 sm:p-4">
       {/* Label */}
-      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)] shrink-0 sm:w-24">
+      <div className="flex shrink-0 items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)] sm:w-24 sm:gap-2">
         <CalendarIcon className="w-3.5 h-3.5 text-orange-500" />
-        <span>Date Range:</span>
+        <span className="hidden sm:inline">Date Range:</span>
+        <span className="sm:hidden">Date</span>
       </div>
 
       {/* Preset Buttons */}
-      <div className="flex flex-1 items-center flex-wrap gap-2">
+      <ThemedSelect
+        value={preset}
+        aria-label="Date range preset"
+        onChange={(event) => {
+          const nextPreset = event.target.value;
+          if (nextPreset === 'CUSTOM') {
+            if (onPresetChange) onPresetChange('CUSTOM');
+            setShowPicker(true);
+            return;
+          }
+          if (onPresetChange) onPresetChange(nextPreset);
+          if (onCustomRangeChange) onCustomRangeChange('', '');
+          setShowPicker(false);
+        }}
+        className="min-w-0 flex-1 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-2.5 py-2.5 text-[11px] font-bold text-[var(--text-main)] sm:hidden"
+      >
+        {presets.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+      </ThemedSelect>
+      <div className="hidden min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto py-1 custom-scrollbar sm:flex">
         {presets.map((p) => {
           const isActive = preset === p.key;
           return (
@@ -199,7 +219,7 @@ const DateRangeFilterBar = ({
                   setShowPicker(false);
                 }
               }}
-              className={`px-3.5 py-2 rounded-xl text-[11px] font-bold tracking-wide transition-all cursor-pointer whitespace-nowrap border ${
+              className={`shrink-0 px-3.5 py-2 rounded-xl text-[11px] font-bold tracking-wide transition-all cursor-pointer whitespace-nowrap border ${
                 isActive
                   ? 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-500/20 ring-2 ring-orange-500/20'
                   : 'text-[var(--text-muted)] border-[var(--border-color)] bg-[var(--card-bg)]/60 hover:text-[var(--text-main)] hover:bg-[var(--bg-color)] hover:border-orange-500/40'
@@ -212,21 +232,21 @@ const DateRangeFilterBar = ({
       </div>
 
       {/* Custom Calendar Trigger & Input View */}
-      <div className="sm:ml-auto flex items-center gap-2 relative" ref={popoverRef}>
+      <div className="relative flex shrink-0 items-center gap-1.5 sm:ml-auto sm:gap-2" ref={popoverRef}>
         <button
           type="button"
           onClick={() => {
             if (preset !== 'CUSTOM' && onPresetChange) onPresetChange('CUSTOM');
             setShowPicker(!showPicker);
           }}
-          className={`flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer min-w-36 ${
+          className={`flex max-w-[8.75rem] min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2.5 text-xs font-semibold transition-all cursor-pointer sm:max-w-none sm:min-w-36 sm:gap-2 sm:px-3.5 ${
             preset === 'CUSTOM' || (customFrom && customTo)
               ? 'bg-orange-500/10 border-orange-500/40 text-orange-400'
               : 'bg-[var(--bg-color)] border-[var(--border-color)] text-[var(--text-muted)] hover:border-orange-500/40'
           }`}
         >
           <CalendarIcon className="w-3.5 h-3.5 text-orange-400" />
-          <span>{displayRangeStr() || 'Choose dates'}</span>
+          <span className="truncate">{displayRangeStr() || 'Choose dates'}</span>
         </button>
 
         {/* Clear Button */}
@@ -239,7 +259,7 @@ const DateRangeFilterBar = ({
               if (onCustomRangeChange) onCustomRangeChange('', '');
               setShowPicker(false);
             }}
-            className="p-1.5 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-rose-400 hover:border-rose-500/30 transition-colors cursor-pointer"
+            className="shrink-0 rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] p-1.5 text-[var(--text-muted)] transition-colors hover:border-rose-500/30 hover:text-rose-400 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>

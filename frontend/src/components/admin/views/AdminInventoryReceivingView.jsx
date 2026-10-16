@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ThemedSelect from '../../common/ThemedSelect';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Truck,
+
   Plus,
   Trash2,
   Save,
@@ -11,9 +12,7 @@ import {
   Upload,
   Sparkles,
   AlertTriangle,
-  Calendar,
   Building2,
-  DollarSign,
   Package,
   Layers,
   X,
@@ -23,17 +22,10 @@ import {
   FileSpreadsheet,
   Clock,
   Download,
-  FileUp,
-  HelpCircle,
   Edit3,
   Camera,
-  ChevronDown,
-  ChevronUp,
   Info,
-  CheckCircle,
-  Sparkle,
   PackageCheck,
-  Tag,
 } from 'lucide-react';
 import api from '../../../services/api';
 import { exportToCSV } from '../../../utils/exportUtils';
@@ -321,7 +313,6 @@ const ITEM_ALIASES = {
   'ٹشو': ['tissue', 'tissue paper', 'napkins']
 };
 
-const PERISHABLE_CATEGORIES = ['Meat / Protein', 'Dairy', 'Vegetables', 'Beverages', 'Desserts'];
 
 // Normalize unit string
 const normalizeUnit = (unitStr) => {
@@ -395,6 +386,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   const [receiveSubmitMessage, setReceiveSubmitMessage] = useState('');
   const [cardReceiveMessages, setCardReceiveMessages] = useState({});
   const [savingDraft, setSavingDraft] = useState(false);
+  const [draftSaveScope, setDraftSaveScope] = useState(null);
   const draftSaveLock = useRef(false);
   const [draftSaveResult, setDraftSaveResult] = useState(null);
   const [pendingReceivingSaveAction, setPendingReceivingSaveAction] = useState(null);
@@ -409,7 +401,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   const [editingDraftId, setEditingDraftId] = useState(null);
   const [pendingResumeDraft, setPendingResumeDraft] = useState(null);
   const [resumeDraftSaving, setResumeDraftSaving] = useState(false);
-  
+
   // Header Form State
   // Internal Reference starts BLANK -- user must click icon to generate
   const [receivingRef, setReceivingRef] = useState(initialDraft?.receivingRef || ''); // RCV-YYYYMMDD-XXX
@@ -420,7 +412,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   const [branchesList, setBranchesList] = useState([]);
   const [receivingDate, setReceivingDate] = useState(initialDraft?.receivingDate || getTodayDateString());
   const [notes, setNotes] = useState(initialDraft?.notes || '');
-  
+
   // AI Extracted Metadata
   const [aiDetectedSupplier, setAiDetectedSupplier] = useState(initialDraft?.aiDetectedSupplier || '');
   const [aiDetectedInvoiceNumber, setAiDetectedInvoiceNumber] = useState(initialDraft?.aiDetectedInvoiceNumber || '');
@@ -534,7 +526,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   const [historySearch, setHistorySearch] = useState('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState('ALL');
 
-  const [refClickSeq, setRefClickSeq] = useState(0);
+  const [, setRefClickSeq] = useState(0);
 
   // Upload merge choice modal: 'append' | 'replace' | 'separate'
   const [pendingUploadRows, setPendingUploadRows] = useState(null);
@@ -573,7 +565,6 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     } catch (e) {
       console.warn('[StockIn] Draft save to sessionStorage failed:', e?.message);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receivingRows, receivingRef, supplierId, supplierInvoiceNumber, batchNumber, branchId, receivingDate, notes, aiDetectedSupplier, aiDetectedInvoiceNumber, discountAmount, discountMode, subTab, receivingMethod, additionalCards]);
 
   // Generate unique Internal Reference -- instant date + unique sequence generator
@@ -595,15 +586,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   };
 
   // Generate unique Batch Number for receiving row
-  const generateAutoBatchForRow = (index) => {
-    const dateStr = getTodayCompactDate();
-    const rand = Math.floor(1000 + Math.random() * 9000);
-    const batch = `BATCH-${dateStr}-${rand}`;
-    handleRowChange(index, 'batchNumber', batch);
-    if (showToast) showToast(`Batch # Generated: ${batch}`, 'info');
-  };
 
-  const fetchReceivings = async ({ silent = false } = {}) => {
+
+  const fetchReceivings = useCallback(async ({ silent = false } = {}) => {
     const requestId = ++historyRequestRef.current;
     if (!silent) setHistoryLoading(true);
     try {
@@ -620,11 +605,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     } finally {
       if (!silent && requestId === historyRequestRef.current) setHistoryLoading(false);
     }
-  };
+  }, [historyStatusFilter, historySearch, showToast]);
 
-  const eligibleReceivingIds = receivingsList
-    .filter(record => ['DRAFT', 'CANCELLED'].includes(String(record.status).toUpperCase()))
-    .map(record => record.id);
+  const eligibleReceivingIds = receivingsList.map(record => record.id);
   const allEligibleReceivingsSelected = eligibleReceivingIds.length > 0 && eligibleReceivingIds.every(id => selectedReceivingIds.has(id));
 
   const handleBulkDeleteReceivings = async () => {
@@ -637,6 +620,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       setBulkDeleteConfirm(false);
       setSelectedReceivingIds(new Set());
       await fetchReceivings();
+      await onRefresh?.();
     } catch (error) {
       showToast?.(error.response?.data?.error || 'Could not delete the selected receiving records.', 'error');
     } finally {
@@ -666,7 +650,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     setEditingDraftId(draft.id);
     try {
       localStorage.setItem('zovikpos_active_draft_id', String(draft.id));
-    } catch (_) {}
+    } catch { /* Optional storage or parsing failure. */ }
     setReceivingRef(draft.receivingNumber || '');
     setSupplierId(draft.supplierId ? String(draft.supplierId) : '');
     setSupplierInvoiceNumber(draft.invoiceNumber || '');
@@ -783,10 +767,10 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             localStorage.removeItem('zovikpos_active_draft_id');
           }
         }
-      } catch (_) {
+      } catch {
         try {
           localStorage.removeItem('zovikpos_active_draft_id');
-        } catch (_) {}
+        } catch { /* Optional storage or parsing failure. */ }
       }
     };
     checkPersistedDraft();
@@ -800,7 +784,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
           setBranchesList(res.data.branches);
           setBranchId(String(res.data.branches[0].id));
         }
-      } catch (_) {
+      } catch {
         // Fallback handled smoothly
       }
     };
@@ -811,7 +795,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     if (subTab === 'HISTORY') {
       fetchReceivings();
     }
-  }, [subTab, historyStatusFilter, historySearch]);
+  }, [subTab, fetchReceivings]);
 
   // Download Comprehensive Stock Excel Template (All item columns included; Ref & Invoice # excluded)
   const handleDownloadEasyExcelTemplate = () => {
@@ -889,7 +873,6 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       showToast('Downloaded Full Excel Format Template!');
     }
   };
-
 
   // Calculate grand total cost across item rows
   const calculatedGrandTotal = useMemo(() => {
@@ -1004,7 +987,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
   // Open Single Item "Save in Catalog" modal (supports Card #1 and additional delivery cards)
   const handleOpenSaveCatalogModal = (index, cardId = null) => {
-    let row = null;
+    let row;
     let cardSupplierId = supplierId;
 
     if (cardId) {
@@ -1021,7 +1004,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     const initialCost = parseFloat(row.unitCost) || 0;
 
     // Check if an existing catalog item matches name
-    const existingSameName = localInventory.find(i => 
+    const existingSameName = localInventory.find(i =>
       i.name.toLowerCase().trim() === initialName.toLowerCase()
     );
 
@@ -1338,7 +1321,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
           if (res.data) {
             const rawMatched = res.data.matchedItems || [];
             const rawUnmatched = res.data.unmatchedItems || [];
-            
+
             // Map rows and combine duplicate items by inventoryItemId (or name+cost)
             const rowMap = new Map();
             const processRow = (raw, isMatched) => {
@@ -1359,7 +1342,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   try {
                     const expD = new Date(raw.expiryDate);
                     expiryStr = !isNaN(expD.getTime()) ? getTodayDateString(expD) : String(raw.expiryDate);
-                  } catch (_) {
+                  } catch {
                     expiryStr = String(raw.expiryDate);
                   }
                 }
@@ -1403,6 +1386,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             const detectedSupplier = res.data.detectedSupplierName || res.data.supplierName || '';
             const detectedInvoiceNumber = res.data.rawInvoiceNumber || res.data.invoiceNumber || '';
             const detectedDate = res.data.receivingDate || '';
+            if (detectedDate) setReceivingDate(String(detectedDate).slice(0, 10));
             const extractedInvoiceDiscount = {
               invoiceDiscount: res.data.invoiceDiscount ?? null,
               invoiceDiscountPercent: res.data.invoiceDiscountPercent ?? null
@@ -1514,7 +1498,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
       if (ext === 'csv') reader.readAsText(file);
       else reader.readAsDataURL(file);
-    } catch (err) {
+    } catch {
       setParsingCsv(false);
       if (showToast) showToast('Error reading uploaded file.', 'error');
     }
@@ -1563,7 +1547,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             try {
               const expD = new Date(item.expiryDate);
               expiryStr = !isNaN(expD.getTime()) ? getTodayDateString(expD) : String(item.expiryDate);
-            } catch (_) {
+            } catch {
               expiryStr = String(item.expiryDate);
             }
           }
@@ -1652,7 +1636,6 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             setSupplierInvoiceNumber(finalInv);
             setAiDetectedInvoiceNumber(finalInv);
 
-
             // Auto-generate Header Reference, Supplier Invoice Number & Shipment Batch if empty
             if (!receivingRef) {
               const randRef = Math.floor(1000 + Math.random() * 9000);
@@ -1699,7 +1682,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         await runOcrExtraction(dataUrl, file.name);
       };
       reader.readAsDataURL(file);
-    } catch (err) {
+    } catch {
       setExtractingOcr(false);
       if (showToast) showToast('Error reading invoice file.', 'error');
     }
@@ -1779,6 +1762,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     setReceivingActionScope('primary');
     if (targetStatus === 'DRAFT') {
       setSavingDraft(true);
+      setDraftSaveScope('primary');
     }
 
     try {
@@ -1834,7 +1818,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       } else {
         res = await api.post('/inventory/receivings', payload);
       }
-      
+
       const savedRec = res.data?.receiving;
 
       if (targetStatus === 'DRAFT') {
@@ -1843,7 +1827,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
           setEditingDraftId(newDraftId);
           try {
             localStorage.setItem('zovikpos_active_draft_id', String(newDraftId));
-          } catch (_) {}
+          } catch { /* Optional storage or parsing failure. */ }
         }
         if (showToast) {
           showToast('Draft has been saved successfully.', 'success');
@@ -1856,7 +1840,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         try {
           localStorage.removeItem('zovikpos_active_draft_id');
           sessionStorage.removeItem(DRAFT_STORAGE_KEY);
-        } catch (_) {}
+        } catch { /* Optional storage or parsing failure. */ }
 
         const record = {
           receivingRef: savedRec?.receivingNumber || receivingRef,
@@ -1887,6 +1871,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       setLoading(false);
       setReceivingActionScope(null);
       if (targetStatus === 'DRAFT') draftSaveLock.current = false;
+      if (targetStatus === 'DRAFT') setDraftSaveScope(null);
       setSavingDraft(false);
     }
   };
@@ -1896,7 +1881,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     setEditingDraftId(null);
     try {
       localStorage.removeItem('zovikpos_active_draft_id');
-    } catch (_) {}
+    } catch { /* Optional storage or parsing failure. */ }
     setCompletedReceiving(null);
     setReceivingRef('');
     setSupplierId('');
@@ -1918,7 +1903,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     setUploadedInvoiceFileName('');
     setUploadedInvoiceMimeType('');
     setOcrFile(null);
-    try { sessionStorage.removeItem(DRAFT_STORAGE_KEY); } catch (_) {}
+    try { sessionStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* Optional storage or parsing failure. */ }
   };
 
   // Confirm existing Draft from History
@@ -1928,13 +1913,13 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     confirmingDraftLocks.current.add(key);
     setConfirmingDraftIds(prev => new Set(prev).add(key));
     try {
-      const res = await api.post(`/inventory/receivings/${receivingId}/receive`);
+      await api.post(`/inventory/receivings/${receivingId}/receive`);
       if (showToast) showToast('Stock has been updated successfully.', 'success');
       if (String(editingDraftId) === String(receivingId)) {
         setEditingDraftId(null);
         try {
           localStorage.removeItem('zovikpos_active_draft_id');
-        } catch (_) {}
+        } catch { /* Optional storage or parsing failure. */ }
       }
       await fetchReceivings({ silent: true });
       if (onRefresh) onRefresh();
@@ -1986,8 +1971,6 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     setReceivingRows(prev => {
       const activeRows = prev.filter(r => r.searchTerm || r.inventoryItemId);
       const merged = [...activeRows];
-      let mergedCount = 0;
-      let addedCount = 0;
 
       for (const newRow of rowsToMerge) {
         const newNameNorm = (newRow.searchTerm || newRow.rawScannedName || '').trim().toLowerCase();
@@ -2016,11 +1999,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               ? `${existing.notes} | ${newRow.notes}`
               : (existing.notes || newRow.notes || '')
           };
-          mergedCount++;
         } else {
           // Add unique row
           merged.push(newRow);
-          addedCount++;
         }
       }
 
@@ -2209,13 +2190,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   };
 
   // Generate distinct row Batch in an additional card
-  const generateAutoBatchForRowInCard = (cardId, rowIndex) => {
-    const dateStr = getTodayCompactDate();
-    const rand = Math.floor(1000 + Math.random() * 9000);
-    const batch = `BATCH-${dateStr}-${rand}`;
-    handleCardRowChange(cardId, rowIndex, 'batchNumber', batch);
-    if (showToast) showToast(`Batch # Generated: ${batch}`, 'info');
-  };
+
 
   // Update top-level field in an additional card
   const handleUpdateCardField = (cardId, field, value) => {
@@ -2365,7 +2340,10 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     if (targetStatus === 'DRAFT') draftSaveLock.current = true;
     setLoading(true);
     setReceivingActionScope(targetStatus === 'RECEIVED' ? cardId : `draft:${cardId}`);
-    if (targetStatus === 'DRAFT') setSavingDraft(true);
+    if (targetStatus === 'DRAFT') {
+      setSavingDraft(true);
+      setDraftSaveScope(cardId);
+    }
 
     try {
       const docBatchNumber = card.batchNumber.trim() || null;
@@ -2430,6 +2408,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       setLoading(false);
       setReceivingActionScope(null);
       if (targetStatus === 'DRAFT') draftSaveLock.current = false;
+      if (targetStatus === 'DRAFT') setDraftSaveScope(null);
       setSavingDraft(false);
     }
   };
@@ -2500,6 +2479,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     setLoading(true);
     setReceivingActionScope('all-drafts');
     setSavingDraft(true);
+    setDraftSaveScope('all');
     const savedCardIds = [];
     let primarySavedId = editingDraftId || null;
     let savedCount = 0;
@@ -2551,7 +2531,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
           primarySavedId = response.data?.receiving?.id || primarySavedId;
           if (primarySavedId) {
             setEditingDraftId(primarySavedId);
-            try { localStorage.setItem('zovikpos_active_draft_id', String(primarySavedId)); } catch (_) {}
+            try { localStorage.setItem('zovikpos_active_draft_id', String(primarySavedId)); } catch { /* Optional storage or parsing failure. */ }
           }
         } else {
           savedCardIds.push(delivery.key);
@@ -2576,6 +2556,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       setLoading(false);
       setReceivingActionScope(null);
       setSavingDraft(false);
+      setDraftSaveScope(null);
       draftSaveLock.current = false;
     }
   };
@@ -2594,139 +2575,14 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   };
 
   // Submit ALL Cards (Card 1 + all Additional Cards)
-  const handleReceiveAllDeliveries = async (targetStatus = 'RECEIVED') => {
-    if (loading || savingDraft) return;
 
-    // Validate Card 1
-    const card1Rows = receivingRows.filter(r => r.searchTerm || r.inventoryItemId);
-    for (let i = 0; i < card1Rows.length; i++) {
-      const r = card1Rows[i];
-      if (!r.inventoryItemId) {
-        if (showToast) showToast(`Card #1, Item #${i + 1} ("${r.searchTerm || 'Unnamed'}") is not matched to catalog.`, 'error');
-        return;
-      }
-      if (!r.quantity || parseFloat(r.quantity) <= 0) {
-        if (showToast) showToast(`Card #1, Item #${i + 1} quantity must be > 0.`, 'error');
-        return;
-      }
-    }
-
-    // Validate Additional Cards
-    for (let cIdx = 0; cIdx < additionalCards.length; cIdx++) {
-      const card = additionalCards[cIdx];
-      const supName = suppliers.find(s => String(s.id) === String(card.supplierId))?.name || card.aiDetectedSupplier || `Card #${cIdx + 2}`;
-      const cardRows = card.receivingRows.filter(r => r.searchTerm || r.inventoryItemId);
-      if (cardRows.length === 0) {
-        if (showToast) showToast(`${supName} has no items. Add at least one item or remove the card.`, 'error');
-        return;
-      }
-      for (let i = 0; i < cardRows.length; i++) {
-        const r = cardRows[i];
-        if (!r.inventoryItemId) {
-          if (showToast) showToast(`${supName}, Item #${i + 1} ("${r.searchTerm || 'Unnamed'}") is not matched to catalog.`, 'error');
-          return;
-        }
-        if (!r.quantity || parseFloat(r.quantity) <= 0) {
-          if (showToast) showToast(`${supName}, Item #${i + 1} quantity must be > 0.`, 'error');
-          return;
-        }
-      }
-    }
-
-    if (card1Rows.length === 0 && additionalCards.length === 0) {
-      if (showToast) showToast('Add at least one receiving item before submitting.', 'error');
-      return;
-    }
-
-    setLoading(true);
-    setReceivingActionScope('all');
-    let successCount = 0;
-    const deliveryCount = (card1Rows.length > 0 ? 1 : 0) + additionalCards.length;
-    try {
-      // Submit Card 1 when it contains rows; additional supplier cards can be submitted on their own.
-      const docBatch1 = batchNumber.trim() || null;
-      const payload1 = {
-        supplierId: supplierId ? parseInt(supplierId, 10) : null,
-        branchId: branchId ? parseInt(branchId, 10) : null,
-        receivingRef: receivingRef.trim(),
-        invoiceNumber: supplierInvoiceNumber.trim() || null,
-        batchNumber: docBatch1,
-        receivingDate,
-        notes: notes ? String(notes).trim() : null,
-        subtotal: sumReceivingSubtotals(card1Rows),
-        discount: calculatedDiscountAmount,
-        discountPercent: discountMode === 'PERCENT' ? Number(discountAmount) || 0 : null,
-        status: targetStatus,
-        items: card1Rows.map(r => ({
-          inventoryItemId: parseInt(r.inventoryItemId, 10),
-          quantity: parseFloat(r.quantity),
-          unit: r.unit,
-          unitCost: parseFloat(r.unitCost) || 0,
-          batchNumber: docBatch1 || (r.batchNumber ? String(r.batchNumber).trim() : null),
-          expiryDate: r.expiryDate || null,
-          notes: r.notes ? String(r.notes).trim() : null
-        }))
-      };
-      if (card1Rows.length > 0) {
-        await api.post('/inventory/receivings', payload1);
-        successCount++;
-      }
-
-      // 2. Submit Additional Cards
-      for (const card of additionalCards) {
-        const rowsToSubmit = card.receivingRows.filter(r => r.inventoryItemId && parseFloat(r.quantity) > 0);
-        const docBatchCard = card.batchNumber.trim() || null;
-        const payloadCard = {
-          supplierId: card.supplierId ? parseInt(card.supplierId, 10) : null,
-          branchId: card.branchId ? parseInt(card.branchId, 10) : null,
-          receivingRef: card.receivingRef.trim(),
-          invoiceNumber: card.supplierInvoiceNumber.trim() || null,
-          batchNumber: docBatchCard,
-          receivingDate: card.receivingDate,
-          notes: card.notes ? String(card.notes).trim() : null,
-          subtotal: sumReceivingSubtotals(rowsToSubmit),
-          discount: getReceivingDiscountAmount(sumReceivingSubtotals(rowsToSubmit), card.discountAmount, card.discountMode),
-          discountPercent: card.discountMode === 'PERCENT' ? Number(card.discountAmount) || 0 : null,
-          status: targetStatus,
-          items: rowsToSubmit.map(r => ({
-            inventoryItemId: parseInt(r.inventoryItemId, 10),
-            quantity: parseFloat(r.quantity),
-            unit: r.unit,
-            unitCost: parseFloat(r.unitCost) || 0,
-            batchNumber: docBatchCard || (r.batchNumber ? String(r.batchNumber).trim() : null),
-            expiryDate: r.expiryDate || null,
-            notes: r.notes ? String(r.notes).trim() : null
-          }))
-        };
-        await api.post('/inventory/receivings', payloadCard);
-        successCount++;
-      }
-
-      // Cleanup
-      setAdditionalCards([]);
-      handleResetForNewReceiving();
-      if (showToast) {
-        showToast(`Successfully received all ${successCount} separate supplier deliveries into stock!`, 'success');
-      }
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      console.error('Submit all deliveries error:', err);
-      const reason = err.response?.data?.error || 'Request failed.';
-      if (showToast) showToast(successCount > 0
-        ? `Partial receiving result: ${successCount} of ${deliveryCount} supplier deliveries were posted. The remaining form data is still available. Failure: ${reason}`
-        : `No supplier deliveries were posted. ${reason}`, 'error');
-    } finally {
-      setLoading(false);
-      setReceivingActionScope(null);
-    }
-  };
 
   return (
     <div className="space-y-6">
 
       {/* Upper Navigation & Mode Switcher */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)] p-4 sm:p-5 rounded-3xl border border-[var(--border-color)] shadow-sm">
-        <div>
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--card-bg)] p-4 sm:p-5 rounded-3xl border border-[var(--border-color)] shadow-sm">
+        <div className="min-w-0 flex-1">
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
             <span className="p-2 rounded-2xl bg-orange-500/10 text-orange-400"><PackageCheck className="w-5 h-5" /></span>
             Receive Stock
@@ -2736,11 +2592,11 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
           </p>
         </div>
 
-        <div className="flex items-center space-x-2 w-full sm:w-auto">
+        <div className="flex min-w-0 items-center gap-2 w-full lg:w-auto lg:shrink-0">
           <button
             type="button"
             onClick={() => { setSubTab('NEW_RECEIVING'); setCompletedReceiving(null); }}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center justify-center space-x-2 border ${
+            className={`flex min-w-0 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-2xl border px-2 py-2.5 text-[10px] font-black transition-all cursor-pointer sm:px-4 sm:text-xs lg:flex-initial ${
               subTab === 'NEW_RECEIVING'
                 ? 'bg-orange-600 text-white border-orange-600 shadow-md'
                 : 'bg-[var(--bg-color)] text-[var(--text-muted)] border-[var(--border-color)] hover:text-[var(--text-main)]'
@@ -2756,7 +2612,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               if (subTab === 'HISTORY') fetchReceivings();
               else { setHistoryLoading(true); setSubTab('HISTORY'); }
             }}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center justify-center space-x-2 border ${
+            className={`flex min-w-0 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-2xl border px-2 py-2.5 text-[10px] font-black transition-all cursor-pointer sm:px-4 sm:text-xs lg:flex-initial ${
               subTab === 'HISTORY'
                 ? 'bg-orange-600 text-white border-orange-600 shadow-md'
                 : 'bg-[var(--bg-color)] text-[var(--text-muted)] border-[var(--border-color)] hover:text-[var(--text-main)]'
@@ -2872,21 +2728,21 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
               {/* Section 1: Receiving Method Cards */}
               <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl p-4 sm:p-5 space-y-3">
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
                   <label className="block text-[11px] font-black uppercase text-[var(--text-muted)] tracking-wider">
                     1. Choose Receiving Method
                   </label>
-                  <span className="text-[10px] text-orange-400 font-semibold flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 inline" /> All methods use the same smart review & validation system
+                  <span className="min-w-0 break-words text-[10px] leading-relaxed text-orange-400 font-semibold flex items-start sm:items-center gap-1">
+                    <Sparkles className="w-3 h-3 inline shrink-0" /> All methods use the same smart review &amp; validation system
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {/* Method 1: Add Items Manually */}
                   <button
                     type="button"
                     onClick={() => setReceivingMethod('MANUAL')}
-                    className={`p-4 rounded-2xl border transition-all text-left flex items-center space-x-3 cursor-pointer ${
+                    className={`min-w-0 w-full p-3 sm:p-4 rounded-2xl border transition-all text-left flex items-start sm:items-center gap-3 cursor-pointer ${
                       receivingMethod === 'MANUAL'
                         ? 'bg-orange-500/10 border-orange-500 text-orange-400 ring-2 ring-orange-500/20'
                         : 'bg-[var(--bg-color)] border-[var(--border-color)] text-[var(--text-muted)] hover:border-orange-500/50'
@@ -2895,9 +2751,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <div className="p-2.5 rounded-xl bg-orange-500/20 text-orange-400 shrink-0">
                       <Edit3 className="w-5 h-5" />
                     </div>
-                    <div>
-                      <h4 className="text-xs font-black text-[var(--text-main)]">Add Items Manually</h4>
-                      <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Enter items and quantities using touch-friendly form.</p>
+                    <div className="min-w-0">
+                      <h4 className="break-words text-xs font-black text-[var(--text-main)]">Add Items Manually</h4>
+                      <p className="break-words text-[10px] leading-relaxed text-[var(--text-muted)] mt-0.5">Enter items and quantities using touch-friendly form.</p>
                     </div>
                   </button>
 
@@ -2905,7 +2761,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   <button
                     type="button"
                     onClick={() => setReceivingMethod('EXCEL')}
-                    className={`p-4 rounded-2xl border transition-all text-left flex items-center space-x-3 cursor-pointer ${
+                    className={`min-w-0 w-full p-3 sm:p-4 rounded-2xl border transition-all text-left flex items-start sm:items-center gap-3 cursor-pointer ${
                       receivingMethod === 'EXCEL'
                         ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400 ring-2 ring-emerald-500/20'
                         : 'bg-[var(--bg-color)] border-[var(--border-color)] text-[var(--text-muted)] hover:border-emerald-500/50'
@@ -2914,9 +2770,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0">
                       <FileSpreadsheet className="w-5 h-5" />
                     </div>
-                    <div>
-                      <h4 className="text-xs font-black text-[var(--text-main)]">Upload Excel / CSV</h4>
-                      <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Upload stock Excel file and auto-match catalog items.</p>
+                    <div className="min-w-0">
+                      <h4 className="break-words text-xs font-black text-[var(--text-main)]">Upload Excel / CSV</h4>
+                      <p className="break-words text-[10px] leading-relaxed text-[var(--text-muted)] mt-0.5">Upload stock Excel file and auto-match catalog items.</p>
                     </div>
                   </button>
 
@@ -2927,7 +2783,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       setReceivingMethod('INVOICE');
                       setShowOcrModal(true);
                     }}
-                    className={`p-4 rounded-2xl border transition-all text-left flex items-center space-x-3 cursor-pointer ${
+                    className={`min-w-0 w-full p-3 sm:p-4 rounded-2xl border transition-all text-left flex items-start sm:items-center gap-3 cursor-pointer ${
                       receivingMethod === 'INVOICE'
                         ? 'bg-orange-500/10 border-orange-500 text-orange-400 ring-2 ring-orange-500/20'
                         : 'bg-[var(--bg-color)] border-[var(--border-color)] text-[var(--text-muted)] hover:border-orange-500/50'
@@ -2936,9 +2792,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <div className="p-2.5 rounded-xl bg-orange-500/20 text-orange-400 shrink-0">
                       <Camera className="w-5 h-5" />
                     </div>
-                    <div>
-                      <h4 className="text-xs font-black text-[var(--text-main)]">Upload Invoice</h4>
-                      <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Upload paper bill, image, or PDF for AI recognition.</p>
+                    <div className="min-w-0">
+                      <h4 className="break-words text-xs font-black text-[var(--text-main)]">Upload Invoice</h4>
+                      <p className="break-words text-[10px] leading-relaxed text-[var(--text-muted)] mt-0.5">Upload paper bill, image, or PDF for AI recognition.</p>
                     </div>
                   </button>
                 </div>
@@ -2999,14 +2855,19 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <div className="bg-[var(--card-bg)] border-2 border-orange-500/35 rounded-3xl p-4 sm:p-6 space-y-4 shadow-lg shadow-black/5">
               {/* Section 2: Supplier & Receiving Details */}
               <div className="bg-[var(--bg-color)]/35 border border-[var(--border-color)] rounded-2xl p-4 sm:p-5 space-y-4">
-                <div className="border-b border-[var(--border-color)]/50 pb-3">
-                  <h3 className="text-sm font-black text-[var(--text-main)] uppercase tracking-wider flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-orange-400" />
-                    Delivery Card #1 — Supplier &amp; Receiving Details
-                  </h3>
-                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                    Reference, Batch &amp; Invoice are tracked per delivery card — not per item.
-                  </p>
+                <div className="flex min-w-0 flex-col items-start gap-2 border-b border-[var(--border-color)]/50 pb-3 sm:flex-row sm:items-start sm:gap-3">
+                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-orange-500/30 bg-orange-500/10 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wide text-orange-400">
+                    <Building2 className="h-3.5 w-3.5" />
+                    Delivery Card #1
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="break-words text-[13px] font-black leading-snug text-[var(--text-main)] sm:text-sm">
+                      Supplier: {suppliers.find((supplier) => String(supplier.id) === String(supplierId))?.name || aiDetectedSupplier || 'Local Market / Other'}
+                    </h3>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-muted)]">
+                      Supplier &amp; receiving details. Reference, Batch &amp; Invoice are tracked per delivery card.
+                    </p>
+                  </div>
                 </div>
 
                 {/* AI Detected Supplier Suggestion Banner */}
@@ -3023,7 +2884,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                  
+
                   {/* Internal Receiving Reference (Dynamic DB Sequence) */}
                   <div>
                     <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
@@ -3093,7 +2954,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       <span>Supplier</span>
                       {aiDetectedSupplier && <span className="text-[10px] text-orange-400 font-normal flex items-center gap-1"><Sparkles className="w-3 h-3 inline" /> AI Detected</span>}
                     </label>
-                    <select
+                    <ThemedSelect
                       value={supplierId}
                       onChange={(e) => setSupplierId(e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -3104,7 +2965,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           {sup.name}
                         </option>
                       ))}
-                    </select>
+                    </ThemedSelect>
                   </div>
 
                   {/* Supplier Invoice # */}
@@ -3142,7 +3003,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                       Branch
                     </label>
-                    <select
+                    <ThemedSelect
                       value={branchId}
                       onChange={(e) => setBranchId(e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -3156,7 +3017,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       ) : (
                         <option value="">Default Branch</option>
                       )}
-                    </select>
+                    </ThemedSelect>
                   </div>
 
                   {/* Receiving Date */}
@@ -3176,18 +3037,21 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
               {/* Section 3: Unified Review Stock Items Cards */}
               <div className="bg-[var(--bg-color)]/35 border border-[var(--border-color)] rounded-2xl p-4 sm:p-5 space-y-4">
-                <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
-                  <div>
-                    <h3 className="text-sm font-black text-[var(--text-main)] uppercase tracking-wider flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 border-b border-[var(--border-color)] pb-3">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-black text-[var(--text-main)] uppercase tracking-wider flex flex-wrap items-center gap-x-2 gap-y-1">
                       <Package className="w-4 h-4 text-orange-400" />
-                      Review Stock ({receivingRows.length} Items)
+                      <span>Review Stock</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                        {receivingRows.length} Items
+                      </span>
                     </h3>
-                    <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                    <p className="text-[11px] leading-relaxed text-[var(--text-muted)] mt-1 max-w-2xl">
                       Check and correct any extracted quantities, costs, batch # or expiry dates before confirming.
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                     {(receivingRows.length > 0 || batchNumber || receivingRef || supplierInvoiceNumber || supplierId) && (
                       <button
                         type="button"
@@ -3197,7 +3061,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                             if (showToast) showToast('Form and scanned items have been cleared.', 'info');
                           }
                         }}
-                        className="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-extrabold transition-all cursor-pointer flex items-center space-x-1.5 border border-rose-500/20"
+                        className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap border border-rose-500/20"
                         title="Clear all rows and reset form"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -3208,16 +3072,15 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 </div>
 
                 {/* Top Summary Bar: Total Items | Matched Items | Suggested | New Items | Needs Review */}
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-[var(--bg-color)]/80 border border-[var(--border-color)]">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-1.5">
+                <div className="flex flex-col gap-3 p-3 rounded-2xl bg-[var(--bg-color)]/80 border border-[var(--border-color)]">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-2.5">
+                    <div className="min-w-0 flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0"></span>
                       <span className="text-xs font-black text-[var(--text-main)]">
                         {totalItemsCount} Total Items
                       </span>
                     </div>
-                    <span className="text-[var(--text-muted)] text-xs">|</span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="min-w-0 flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
                       <span className="text-xs font-black text-emerald-400">
                         {matchedItemsCount} Matched Items
@@ -3225,8 +3088,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     </div>
                     {reviewMatchCount > 0 && (
                       <>
-                        <span className="text-[var(--text-muted)] text-xs">|</span>
-                        <div className="flex items-center gap-1.5">
+                        <div className="min-w-0 flex items-center gap-1.5">
                           <span className="w-2.5 h-2.5 rounded-full bg-orange-500 shrink-0"></span>
                           <span className="text-xs font-black text-orange-400">
                             {reviewMatchCount} Suggested
@@ -3234,8 +3096,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         </div>
                       </>
                     )}
-                    <span className="text-[var(--text-muted)] text-xs">|</span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="min-w-0 flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
                       <span className="text-xs font-black text-amber-400">
                         {newItemsCount} New Items
@@ -3243,8 +3104,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     </div>
                     {needsReviewCount > 0 && (
                       <>
-                        <span className="text-[var(--text-muted)] text-xs">|</span>
-                        <div className="flex items-center gap-1.5">
+                        <div className="min-w-0 flex items-center gap-1.5">
                           <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0"></span>
                           <span className="text-xs font-black text-rose-400">
                             {needsReviewCount} Needs Review
@@ -3385,7 +3245,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                       if (!q) return true;
                                       const nameMatch = i.name.toLowerCase().includes(q);
                                       const catMatch = i.category?.toLowerCase().includes(q);
-                                      
+
                                       let aliasMatch = false;
                                       for (const [alias, targets] of Object.entries(ITEM_ALIASES)) {
                                         if (alias.includes(q) && targets.some(t => i.name.toLowerCase().includes(t))) {
@@ -3435,7 +3295,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           </div>
 
                           {/* Badges & Actions: AI Detected / 4 Distinct Statuses / Save in Catalog */}
-                          <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+                          <div className={`flex ${!row.inventoryItemId && !row.suggestedItem ? 'flex-nowrap min-w-0 gap-1.5' : 'flex-wrap gap-2'} items-center self-end sm:self-auto`}>
                             {row.isAiDetected && (
                               <span className="px-2 py-0.5 rounded-lg bg-orange-500/20 text-orange-400 text-[9px] font-black uppercase tracking-wider border border-orange-500/30 flex items-center gap-1">
                                 <Sparkles className="w-3 h-3" /> AI Detected
@@ -3475,13 +3335,13 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                             {/* Status 3: New Item (Not in Catalog) */}
                             {!row.inventoryItemId && !row.suggestedItem ? (
                               <>
-                                <span className="px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-400 text-[10px] font-black uppercase tracking-wider border border-amber-500/30 flex items-center gap-1">
+                                <span className="shrink-0 px-1.5 sm:px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-400 text-[9px] sm:text-[10px] font-black uppercase tracking-wider border border-amber-500/30 flex items-center gap-1">
                                   <AlertTriangle className="w-3 h-3" /> New Item
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleOpenSaveCatalogModal(index)}
-                                  className="px-2.5 py-1 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-[11px] font-black shadow-sm transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                                  className="min-w-0 shrink px-1.5 sm:px-2.5 py-1 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-[9px] sm:text-[11px] font-black shadow-sm transition-all cursor-pointer flex items-center gap-1 whitespace-nowrap active:scale-95"
                                   title="Save this new item into Inventory Catalog"
                                 >
                                   <Plus className="w-3.5 h-3.5" />
@@ -3508,7 +3368,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                             <button
                               type="button"
                               onClick={() => handleRemoveRow(index)}
-                              className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer border border-rose-500/20"
+                              className="shrink-0 p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer border border-rose-500/20"
                               title="Remove item"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -3517,45 +3377,47 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         </div>
 
                         {/* Card Fields: Quantity, Unit, Cost per Unit, Expiry Date (Optional), Subtotal */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-center pt-1 border-t border-[var(--border-color)]/60">
-                          
-                          {/* Quantity & Unit */}
-                          <div>
-                            <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
+                        <div className="receiving-card-fields grid min-w-0 grid-cols-2 gap-2.5 pt-1 border-t border-[var(--border-color)]/60 sm:grid-cols-5 sm:items-center sm:gap-2.5">
+
+                          {/* Quantity */}
+                          <div className="min-w-0">
+                            <label className="block whitespace-nowrap font-extrabold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[9px] sm:text-[10px]">
                               Quantity Received *
                             </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="number"
-                                step="any"
-                                min="0.01"
-                                value={row.quantity}
-                                onChange={(e) => handleRowChange(index, 'quantity', e.target.value)}
-                                placeholder="0"
-                                className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
-                              />
-                              <select
-                                value={row.unit}
-                                onChange={(e) => handleRowChange(index, 'unit', e.target.value)}
-                                className="px-2.5 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
-                              >
-                                <option value="KG">KG</option>
-                                <option value="G">G</option>
-                                <option value="L">L</option>
-                                <option value="ML">ML</option>
-                                <option value="PCS">PCS</option>
-                                <option value="DOZEN">DOZEN</option>
-                                <option value="BOX">BOX</option>
-                                <option value="PACK">PACK</option>
-                                <option value="BOTTLE">BOTTLE</option>
-                                <option value="BAG">BAG</option>
-                              </select>
-                            </div>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0.01"
+                              value={row.quantity}
+                              onChange={(e) => handleRowChange(index, 'quantity', e.target.value)}
+                              placeholder="0"
+                              className="w-full min-w-0 px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                            />
                           </div>
 
+                          {/* Unit */}
+                          <div className="min-w-0">
+                            <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">Unit</label>
+                            <ThemedSelect
+                              value={row.unit}
+                              onChange={(e) => handleRowChange(index, 'unit', e.target.value)}
+                              className="w-full px-2.5 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                            >
+                              <option value="KG">KG</option>
+                              <option value="G">G</option>
+                              <option value="L">L</option>
+                              <option value="ML">ML</option>
+                              <option value="PCS">PCS</option>
+                              <option value="DOZEN">DOZEN</option>
+                              <option value="BOX">BOX</option>
+                              <option value="PACK">PACK</option>
+                              <option value="BOTTLE">BOTTLE</option>
+                              <option value="BAG">BAG</option>
+                            </ThemedSelect>
+                          </div>
 
                           {/* Cost per Unit */}
-                          <div>
+                          <div className="col-span-2 min-w-0 sm:col-span-1">
                             <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
                               Cost per Unit (Rs.)
                             </label>
@@ -3574,7 +3436,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           </div>
 
                           {/* Expiry Date (Optional) */}
-                          <div>
+                          <div className="col-span-2 min-w-0 sm:col-span-1">
                             <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px] flex justify-between items-center">
                               <span>Expiry Date</span>
                               <span className="text-[9px] text-[var(--text-muted)] font-normal normal-case">(Optional)</span>
@@ -3591,7 +3453,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           </div>
 
                           {/* Subtotal */}
-                          <div className="flex flex-col items-start sm:items-end justify-center bg-[var(--card-bg)]/80 p-2.5 rounded-xl border border-[var(--border-color)]">
+                          <div className="col-span-2 flex min-w-0 flex-col items-start justify-center rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]/80 p-2.5 sm:col-span-1 sm:items-end">
                             <span className="text-[10px] font-black uppercase text-[var(--text-muted)] tracking-wider">
                               Subtotal
                             </span>
@@ -3645,7 +3507,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       </span>
                       <label className="flex items-center gap-2 text-xs font-bold text-[var(--text-main)]">
                         Discount
-                        <select value={discountMode} onChange={e => setDiscountMode(e.target.value)} aria-label="Card 1 discount type" className="rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 text-xs text-[var(--text-main)]"><option value="PERCENT">%</option><option value="AMOUNT">Rs.</option></select>
+                        <ThemedSelect value={discountMode} onChange={e => setDiscountMode(e.target.value)} aria-label="Card 1 discount type" className="rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 text-xs text-[var(--text-main)]"><option value="PERCENT">%</option><option value="AMOUNT">Rs.</option></ThemedSelect>
                         <input type="number" min="0" max={discountMode === 'PERCENT' ? 100 : undefined} step="0.01" value={discountAmount} onChange={e => setDiscountAmount(e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0))} aria-label="Card 1 discount value" className="w-24 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2.5 py-1.5 font-mono text-xs text-[var(--text-main)] focus:border-orange-500 focus:outline-none" />
                         {discountMode === 'PERCENT' && <span className="text-[10px] text-[var(--text-muted)]">Rs. {calculatedDiscountAmount.toLocaleString('en-PK')}</span>}
                       </label>
@@ -3657,7 +3519,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                   <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
                     <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
-                      <Save className="mr-1.5 inline h-4 w-4" />Save Draft
+                      {draftSaveScope === 'primary' && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === 'primary' && savingDraft ? 'Saving…' : 'Save Draft'}
                     </button>
                     {newItemsCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
                       {catalogSaveScope === 'primary' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'primary' ? 'Saving…' : `Save New Item Names (${newItemsCount})`}
@@ -3689,17 +3551,18 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 return (
                   <div key={card.id} className="bg-[var(--card-bg)] border-2 border-orange-500/40 rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl animate-scale-up">
                     {/* Header of Additional Card */}
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-[var(--border-color)] pb-3">
-                      <div className="flex items-center gap-3">
-                        <span className="px-3 py-1.5 rounded-xl bg-orange-500/20 text-orange-300 font-black text-xs uppercase tracking-wider border border-orange-500/30 flex items-center gap-1.5">
-                          <Building2 className="w-4 h-4 text-orange-400" />
-                          Delivery Card #{cardIdx + 2} (Different Supplier)
+                    <div className="flex flex-col items-stretch gap-3 border-b border-[var(--border-color)] pb-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
+                        <span className="inline-flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-orange-500/30 bg-orange-500/20 px-3 py-1.5 text-[10px] font-black uppercase leading-tight tracking-wide text-orange-300 sm:text-xs">
+                          <Building2 className="h-4 w-4 shrink-0 text-orange-400" />
+                          <span>Delivery Card #{cardIdx + 2}</span>
+                          <span className="text-orange-200/80">(Different Supplier)</span>
                         </span>
-                        <div>
-                          <h4 className="text-sm font-black text-[var(--text-main)]">
+                        <div className="min-w-0">
+                          <h4 className="break-words text-sm font-black leading-snug text-[var(--text-main)]">
                             Supplier: {cardSup?.name || card.aiDetectedSupplier || 'Local Market / Other'}
                           </h4>
-                          <p className="text-[10px] text-[var(--text-muted)]">
+                          <p className="mt-0.5 text-[10px] leading-relaxed text-[var(--text-muted)]">
                             Independent receiving session with distinct Reference, Batch &amp; Invoice numbers
                           </p>
                         </div>
@@ -3708,7 +3571,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       <button
                         type="button"
                         onClick={() => handleRemoveAdditionalCard(card.id)}
-                        className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border border-rose-500/20 shrink-0"
+                        className="flex w-fit shrink-0 items-center gap-1.5 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-400 transition-all hover:bg-rose-500/20 cursor-pointer"
                         title="Discard this supplier receiving card"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -3773,7 +3636,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                           Supplier
                         </label>
-                        <select
+                        <ThemedSelect
                           value={card.supplierId}
                           onChange={(e) => handleUpdateCardField(card.id, 'supplierId', e.target.value)}
                           className="w-full px-3.5 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -3784,7 +3647,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                               {sup.name}
                             </option>
                           ))}
-                        </select>
+                        </ThemedSelect>
                       </div>
 
                       {/* Supplier Invoice # */}
@@ -3930,7 +3793,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                               </div>
 
                               {/* Row inputs */}
-                              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1">
+                              <div className="receiving-card-fields grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1">
                                 <div>
                                   <label className="block text-[9px] font-bold text-[var(--text-muted)] uppercase mb-0.5">Quantity</label>
                                   <input
@@ -3945,16 +3808,16 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                                 <div>
                                   <label className="block text-[9px] font-bold text-[var(--text-muted)] uppercase mb-0.5">Unit</label>
-                                  <select
+                                  <ThemedSelect
                                     value={r.unit}
                                     onChange={(e) => handleCardRowChange(card.id, rIdx, 'unit', e.target.value)}
                                     className="w-full px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none cursor-pointer"
                                   >
                                     {STANDARD_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                                  </select>
+                                  </ThemedSelect>
                                 </div>
 
-                                <div>
+                                <div className="col-span-2 min-w-0 sm:col-span-1">
                                   <label className="block text-[9px] font-bold text-[var(--text-muted)] uppercase mb-0.5">Unit Cost (Rs.)</label>
                                   <input
                                     type="number"
@@ -3966,7 +3829,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                   />
                                 </div>
 
-                                <div>
+                                <div className="col-span-2 min-w-0 sm:col-span-1">
                                   <label className="block text-[9px] font-bold text-[var(--text-muted)] uppercase mb-0.5">
                                     Expiry <span className="font-normal lowercase">(optional)</span>
                                   </label>
@@ -4005,7 +3868,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           <span className="text-xs font-bold text-[var(--text-main)]">{cardValidCount} of {card.receivingRows.length} items valid</span>
                           <span className="text-xs font-bold text-[var(--text-main)]">Subtotal: <strong className="font-mono text-orange-400">Rs. {cardTotal.toLocaleString('en-PK')}</strong></span>
                           <label className="flex items-center gap-2 text-xs font-bold text-[var(--text-main)]">Discount
-                            <select value={card.discountMode || 'AMOUNT'} onChange={e => handleUpdateCardField(card.id, 'discountMode', e.target.value)} aria-label={`Card ${cardIdx + 2} discount type`} className="rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 text-xs text-[var(--text-main)]"><option value="PERCENT">%</option><option value="AMOUNT">Rs.</option></select>
+                            <ThemedSelect value={card.discountMode || 'AMOUNT'} onChange={e => handleUpdateCardField(card.id, 'discountMode', e.target.value)} aria-label={`Card ${cardIdx + 2} discount type`} className="rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 text-xs text-[var(--text-main)]"><option value="PERCENT">%</option><option value="AMOUNT">Rs.</option></ThemedSelect>
                             <input type="number" min="0" max={card.discountMode === 'PERCENT' ? 100 : undefined} step="0.01" value={card.discountAmount ?? 0} onChange={e => handleUpdateCardField(card.id, 'discountAmount', e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0))} aria-label={`Card ${cardIdx + 2} discount value`} className="w-24 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-1.5 font-mono text-xs text-[var(--text-main)] focus:border-orange-500 focus:outline-none" />
                             {card.discountMode === 'PERCENT' && <span className="text-[10px] text-[var(--text-muted)]">Rs. {cardDiscountValue.toLocaleString('en-PK')}</span>}
                           </label>
@@ -4014,18 +3877,18 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         {cardReceiveMessages[card.id] && <div role="alert" className="mt-2 max-w-xl rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300">{cardReceiveMessages[card.id]}</div>}
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
-                        <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="px-4 py-2 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
-                          <Save className="mr-1.5 inline h-4 w-4" />Save Draft
+                      <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+                        <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap rounded-xl border border-orange-500/35 bg-[var(--card-bg)] px-4 py-2 text-center text-xs font-bold text-orange-600 hover:bg-orange-500/10 disabled:opacity-50 sm:w-auto">
+                          {draftSaveScope === card.id && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === card.id && savingDraft ? 'Saving…' : 'Save Draft'}
                         </button>
-                        {cardNewCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="px-4 py-2 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
+                        {cardNewCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-2 text-center text-xs font-bold text-amber-700 hover:bg-amber-500/15 disabled:opacity-50 sm:w-auto">
                           {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Saving…' : `Save New Item Names (${cardNewCount})`}
                         </button>}
                         <button
                           type="button"
                           onClick={() => executeSubmitAdditionalCard(card.id, 'RECEIVED')}
                           disabled={loading || savingDraft || bulkSavingCatalog}
-                          className="flex-1 sm:flex-initial px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black shadow-md cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                          className="flex w-full flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-orange-600 px-5 py-2 text-center text-xs font-black text-white shadow-md cursor-pointer hover:bg-orange-500 disabled:opacity-60 disabled:cursor-not-allowed sm:w-auto sm:flex-initial"
                         >
                           {receivingActionScope === card.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                           <span>{receivingActionScope === card.id ? 'Receiving…' : `Confirm & Receive (Card #${cardIdx + 2})`}</span>
@@ -4070,8 +3933,8 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       disabled={loading || savingDraft || bulkSavingCatalog}
                       className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-600 border border-orange-500/35 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                     >
-                      <Save className="w-4 h-4" />
-                      <span>Save All Deliveries to Draft</span>
+                      {draftSaveScope === 'all' && savingDraft ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      <span>{draftSaveScope === 'all' && savingDraft ? 'Saving drafts…' : 'Save All Deliveries to Draft'}</span>
                     </button>
                     {allDeliveryNewItemsCount > 0 && <button
                       type="button"
@@ -4180,7 +4043,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   <label className="block text-[10px] font-black uppercase text-[var(--text-main)] mb-1 tracking-wider">
                     Category *
                   </label>
-                  <select
+                  <ThemedSelect
                     value={catalogModalData.category}
                     onChange={(e) => setCatalogModalData(prev => ({ ...prev, category: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -4188,14 +4051,14 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     {CATALOG_CATEGORIES.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-black uppercase text-[var(--text-main)] mb-1 tracking-wider">
                     Unit of Measure *
                   </label>
-                  <select
+                  <ThemedSelect
                     value={catalogModalData.unit}
                     onChange={(e) => setCatalogModalData(prev => ({ ...prev, unit: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
@@ -4203,7 +4066,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     {STANDARD_UNITS.map(u => (
                       <option key={u} value={u}>{u}</option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                 </div>
               </div>
 
@@ -4391,8 +4254,8 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       {/* History SubTab */}
       {subTab === 'HISTORY' && (
         <div className="space-y-4">
-          <div className="bg-[var(--card-bg)] p-4 rounded-3xl border border-[var(--border-color)] flex flex-col sm:flex-row justify-between items-center gap-3">
-            <div className="relative w-full sm:w-80">
+          <div className="bg-[var(--card-bg)] p-4 rounded-3xl border border-[var(--border-color)] grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <div className="relative w-full min-w-0">
               <input
                 type="text"
                 value={historySearch}
@@ -4403,17 +4266,20 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-[var(--text-muted)]" />
             </div>
 
-            <div className="flex items-center space-x-2 w-full sm:w-auto">
-              <select
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-2 sm:w-auto">
+              <label className="flex min-w-0 flex-col gap-1 text-[10px] font-bold text-[var(--text-muted)]">
+                <span>Status</span>
+              <ThemedSelect
                 value={historyStatusFilter}
                 onChange={(e) => setHistoryStatusFilter(e.target.value)}
-                className="px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] cursor-pointer"
+                className="min-w-0 w-full px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] cursor-pointer sm:min-w-36"
               >
                 <option value="ALL">All Statuses</option>
                 <option value="RECEIVED">Received</option>
                 <option value="DRAFT">Draft</option>
                 <option value="CANCELLED">Cancelled</option>
-              </select>
+              </ThemedSelect>
+              </label>
 
               <button
                 type="button"
@@ -4425,8 +4291,8 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <BulkSelectionModeButton
                 active={historySelectionMode}
                 selectedCount={selectedReceivingIds.size}
@@ -4436,7 +4302,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 }}
               />
               {historySelectionMode && (
-                <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2 text-xs font-semibold text-[var(--text-muted)]">
+                <label className="inline-flex min-w-0 items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2 text-xs font-semibold text-[var(--text-muted)]">
                   <input
                     type="checkbox"
                     checked={allEligibleReceivingsSelected}
@@ -4449,26 +4315,61 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     })}
                     className="accent-orange-500"
                   />
-                  Select eligible ({eligibleReceivingIds.length})
+                  Select all ({eligibleReceivingIds.length})
                 </label>
               )}
             </div>
             {historySelectionMode && selectedReceivingIds.size > 0 && (
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setSelectedReceivingIds(new Set())} className="rounded-xl border border-[var(--border-color)] px-3 py-2 text-xs font-bold text-[var(--text-muted)] hover:text-[var(--text-main)]">Clear</button>
-                <button type="button" onClick={() => setBulkDeleteConfirm(true)} className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white hover:bg-rose-500">
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => setSelectedReceivingIds(new Set())} className="shrink-0 rounded-xl border border-[var(--border-color)] px-3 py-2 text-xs font-bold text-[var(--text-muted)] hover:text-[var(--text-main)]">Clear</button>
+                <button type="button" onClick={() => setBulkDeleteConfirm(true)} className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white hover:bg-rose-500">
                   <Trash2 className="h-3.5 w-3.5" /> Delete Selected ({selectedReceivingIds.size})
                 </button>
               </div>
             )}
           </div>
+          {historySelectionMode && <p className="-mt-1 text-[10px] leading-relaxed text-[var(--text-muted)]">Received records can also be deleted. Their quantities will be subtracted from stock; a stock adjustment entry will remain for audit.</p>}
 
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl overflow-hidden shadow-sm">
+          <div className="space-y-3 md:hidden">
+            {historyLoading ? (
+              <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 text-center text-xs text-orange-400"><span className="inline-flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin" />Loading receiving history…</span></div>
+            ) : receivingsList.length === 0 ? (
+              <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 text-center text-xs text-[var(--text-muted)]">No receiving records found.</div>
+            ) : receivingsList.map((rec) => (
+              <article key={`mobile-${rec.id}`} className="space-y-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-3.5 shadow-sm">
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-start gap-2">
+                    {historySelectionMode && <input type="checkbox" checked={selectedReceivingIds.has(rec.id)} disabled={historyLoading} onChange={() => setSelectedReceivingIds(current => { const next = new Set(current); if (next.has(rec.id)) next.delete(rec.id); else next.add(rec.id); return next; })} className="mt-1 shrink-0 accent-orange-500 disabled:opacity-30" aria-label={`Select ${rec.receivingNumber || 'receiving record'} for deletion`} />}
+                    <div className="min-w-0">
+                      <p className="break-all font-mono text-xs font-black text-orange-400">{rec.receivingNumber || rec.invoiceNumber}</p>
+                      <p className="mt-1 text-[11px] font-medium text-[var(--text-muted)]">{new Date(rec.receivingDate).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                  <span className={`shrink-0 rounded-xl border px-2 py-1 text-[9px] font-black uppercase ${rec.status === 'RECEIVED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : rec.status === 'DRAFT' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>{rec.status}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-y border-[var(--border-color)] py-2.5 text-xs">
+                  <div className="col-span-2 min-w-0"><span className="block text-[9px] font-bold uppercase text-[var(--text-muted)]">Supplier</span><span className="break-words font-semibold text-[var(--text-main)]">{rec.supplier?.name || 'Local Market / Not Provided'}</span></div>
+                  <div><span className="block text-[9px] font-bold uppercase text-[var(--text-muted)]">Items</span><span className="font-bold text-[var(--text-main)]">{rec.itemCount ?? rec.items?.length ?? 0} items</span></div>
+                  <div><span className="block text-[9px] font-bold uppercase text-[var(--text-muted)]">Total Cost</span><span className="font-mono font-black text-emerald-400">Rs. {(rec.totalCost || 0).toLocaleString()}</span></div>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button type="button" onClick={() => { setSelectedReceiving(rec); setShowDetailsModal(true); }} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-color)] px-2.5 py-1.5 text-[10px] font-bold text-[var(--text-main)]"><Eye className="h-3.5 w-3.5" />View</button>
+                  {rec.status === 'DRAFT' && <>
+                    <button type="button" onClick={() => requestResumeDraft(rec)} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[10px] font-bold text-amber-400">Resume</button>
+                    <button type="button" onClick={() => handleConfirmDraft(rec.id)} disabled={confirmingDraftIds.has(String(rec.id))} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[10px] font-bold text-white disabled:opacity-60">{confirmingDraftIds.has(String(rec.id)) && <RefreshCw className="h-3 w-3 animate-spin" />}Confirm</button>
+                  </>}
+                  <button type="button" onClick={() => setReceivingToDelete(rec)} disabled={deleteReceivingLoading} aria-label={`Delete receiving ${rec.receivingNumber || rec.invoiceNumber}`} className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-1.5 text-rose-400 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="hidden overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] shadow-sm md:block">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+              <table className="w-full min-w-max text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
-                    {historySelectionMode && <th className="p-4 w-10"><input type="checkbox" checked={allEligibleReceivingsSelected} disabled={eligibleReceivingIds.length === 0 || historyLoading} onChange={() => setSelectedReceivingIds(current => { const next = new Set(current); if (allEligibleReceivingsSelected) eligibleReceivingIds.forEach(id => next.delete(id)); else eligibleReceivingIds.forEach(id => next.add(id)); return next; })} className="accent-orange-500" aria-label="Select all eligible receiving records" /></th>}
+                    {historySelectionMode && <th className="p-4 w-10"><input type="checkbox" checked={allEligibleReceivingsSelected} disabled={eligibleReceivingIds.length === 0 || historyLoading} onChange={() => setSelectedReceivingIds(current => { const next = new Set(current); if (allEligibleReceivingsSelected) eligibleReceivingIds.forEach(id => next.delete(id)); else eligibleReceivingIds.forEach(id => next.add(id)); return next; })} className="accent-orange-500" aria-label="Select all receiving records" /></th>}
                     <th className="p-4">Reference</th>
                     <th className="p-4">Date</th>
                     <th className="p-4">Supplier</th>
@@ -4494,7 +4395,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   ) : (
                     receivingsList.map((rec) => (
                       <tr key={rec.id} className="hover:bg-[var(--bg-color)]/40 transition-colors">
-                        {historySelectionMode && <td className="p-4"><input type="checkbox" checked={selectedReceivingIds.has(rec.id)} disabled={!['DRAFT', 'CANCELLED'].includes(String(rec.status).toUpperCase()) || historyLoading} onChange={() => setSelectedReceivingIds(current => { const next = new Set(current); if (next.has(rec.id)) next.delete(rec.id); else next.add(rec.id); return next; })} className="accent-orange-500 disabled:opacity-30" aria-label={`Select ${rec.receivingNumber || 'receiving record'} for deletion`} /></td>}
+                        {historySelectionMode && <td className="p-4"><input type="checkbox" checked={selectedReceivingIds.has(rec.id)} disabled={historyLoading} onChange={() => setSelectedReceivingIds(current => { const next = new Set(current); if (next.has(rec.id)) next.delete(rec.id); else next.add(rec.id); return next; })} className="accent-orange-500 disabled:opacity-30" aria-label={`Select ${rec.receivingNumber || 'receiving record'} for deletion`} /></td>}
                         <td className="p-4 font-mono font-bold text-orange-400">
                           {rec.receivingNumber || rec.invoiceNumber}
                         </td>
@@ -4557,18 +4458,16 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                 </button>
                               </>
                             )}
-                            {['DRAFT', 'CANCELLED'].includes(String(rec.status).toUpperCase()) && (
-                              <button
+                            <button
                                 type="button"
                                 onClick={() => setReceivingToDelete(rec)}
                                 disabled={deleteReceivingLoading}
                                 className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors cursor-pointer disabled:opacity-50"
-                                title="Delete draft/cancelled receiving"
+                                title="Delete receiving and reverse stock if received"
                                 aria-label={`Delete receiving ${rec.receivingNumber || rec.invoiceNumber}`}
                               >
                                 <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -4623,8 +4522,8 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
       {/* Receiving Details Modal */}
       {showDetailsModal && selectedReceiving && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-slate-950/80 p-2 backdrop-blur-md sm:p-4">
+          <div className="my-auto max-h-[calc(100dvh-1rem)] w-full max-w-2xl space-y-4 overflow-y-auto rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 shadow-2xl sm:max-h-[90vh] sm:p-6">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <div>
                 <h3 className="text-base font-black text-orange-400 font-mono">
@@ -4639,12 +4538,12 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 bg-[var(--bg-color)] p-3.5 rounded-2xl text-xs font-semibold">
+            <div className="grid grid-cols-1 gap-3 rounded-2xl bg-[var(--bg-color)] p-3.5 text-xs font-semibold sm:grid-cols-3">
               <div>Supplier: <strong className="text-[var(--text-main)] block mt-0.5">{selectedReceiving.supplier?.name || 'Local Market / Not Provided'}</strong></div>
               <div>Invoice #: <strong className="text-[var(--text-main)] font-mono block mt-0.5">{selectedReceiving.invoiceNumber || 'Not Provided'}</strong></div>
               <div>Status: <strong className="text-orange-400 block mt-0.5">{selectedReceiving.status}</strong></div>
             </div>
-            <div className="grid grid-cols-3 gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)] p-3.5 text-xs">
+            <div className="grid grid-cols-1 gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)] p-3.5 text-xs sm:grid-cols-3">
               <div className="text-[var(--text-muted)]">Subtotal<strong className="mt-1 block font-mono text-[var(--text-main)]">Rs. {Number(selectedReceiving.subtotal || selectedReceiving.totalCost || 0).toLocaleString('en-PK')}</strong></div>
               <div className="text-[var(--text-muted)]">Discount<strong className="mt-1 block font-mono text-orange-400">Rs. {Number(selectedReceiving.discount || 0).toLocaleString('en-PK')}</strong></div>
               <div className="text-[var(--text-muted)]">Total after discount<strong className="mt-1 block font-mono text-emerald-400">Rs. {Number(selectedReceiving.totalCost || 0).toLocaleString('en-PK')}</strong></div>
@@ -4653,7 +4552,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             <div className="space-y-2">
               <h4 className="text-xs font-bold uppercase text-[var(--text-muted)]">Items Received</h4>
               <div className="max-h-60 overflow-x-auto overflow-y-auto border border-[var(--border-color)] rounded-2xl">
-                <table className="w-full text-left text-xs">
+                <table className="w-full min-w-max text-left text-xs">
                   <thead className="bg-[var(--bg-color)] text-[10px] uppercase text-[var(--text-muted)]">
                     <tr>
                       <th className="p-3">Item</th>
@@ -4752,12 +4651,12 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
       {/* Upload Choice Modal (Same Supplier Merge vs Different Supplier Separate Card) */}
       {showMergeChoiceModal && (pendingUploadData || pendingUploadRows) && createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl p-6 shadow-2xl max-w-lg w-full mx-4 space-y-5 animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center overflow-x-hidden bg-black/80 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-200">
+          <div className="box-border w-full min-w-0 max-w-lg mx-0 overflow-x-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 shadow-2xl sm:p-6 space-y-4 sm:space-y-5 animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
 
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 {pendingUploadData?.isSameSupplier ? (
                   <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     <Sparkles className="w-5 h-5" />
@@ -4767,7 +4666,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <Building2 className="w-5 h-5" />
                   </div>
                 )}
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-base font-black text-[var(--text-main)] font-display">
                     {pendingUploadData?.isSameSupplier
                       ? 'Same Supplier Detected'
@@ -4847,30 +4746,33 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   <button
                     type="button"
                     onClick={handleCreateSeparateCard}
-                    className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 hover:from-orange-500 hover:to-amber-400 text-white font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-600/25 active:scale-[0.98]"
+                    className="grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 px-3 py-3 sm:px-4 sm:py-3.5 text-xs font-black leading-snug text-white shadow-lg shadow-orange-600/25 transition-all hover:from-orange-500 hover:to-amber-400 active:scale-[0.98] cursor-pointer"
                   >
-                    <Layers className="w-4 h-4" />
-                    <span>Create Separate Card for {pendingUploadData?.supplierName || 'Supplier'} (Independent Ref#, Batch#, Inv#)</span>
+                    <Layers className="h-4 w-4" />
+                    <span className="block w-full min-w-0 text-center" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal' }}>
+                      <span className="block">Create Separate Card for {pendingUploadData?.supplierName || 'Supplier'}</span>
+                      <span className="mt-0.5 block text-[10px] font-semibold opacity-90">Independent reference, batch &amp; invoice numbers</span>
+                    </span>
                   </button>
 
                   {/* Button 2: Merge into Card 1 anyway */}
                   <button
                     type="button"
                     onClick={handleMergeAppend}
-                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/40 text-[var(--text-main)] font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-[var(--border-color)]"
+                    className="grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)] px-3 py-2.5 text-xs font-bold leading-snug text-[var(--text-main)] transition-all hover:bg-[var(--border-color)]/40 cursor-pointer"
                   >
-                    <Plus className="w-4 h-4 text-emerald-400" />
-                    <span>Merge into Card #1 Anyway (Combine Items)</span>
+                    <Plus className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400 sm:mt-0" />
+                    <span className="block w-full min-w-0 text-center" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal' }}>Merge into Card #1 Anyway (Combine Items)</span>
                   </button>
 
                   {/* Button 3: Replace Card 1 */}
                   <button
                     type="button"
                     onClick={handleMergeReplace}
-                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-400 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-orange-500/20"
+                    className="grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-2xl border border-orange-500/20 bg-[var(--bg-color)] px-3 py-2.5 text-xs font-bold leading-snug text-orange-400 transition-all hover:bg-orange-500/10 cursor-pointer"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Replace Card #1 with New Scanned Delivery</span>
+                    <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0 sm:mt-0" />
+                    <span className="block w-full min-w-0 text-center" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal' }}>Replace Card #1 with New Scanned Delivery</span>
                   </button>
                 </>
               ) : (
@@ -4879,30 +4781,30 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   <button
                     type="button"
                     onClick={handleMergeAppend}
-                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
+                    className="grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 px-3 py-3 text-xs font-black leading-snug text-white shadow-lg shadow-emerald-500/20 transition-all hover:from-emerald-500 hover:to-teal-500 active:scale-[0.98] cursor-pointer"
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>Merge Items into Card #1 (Combine Quantities &amp; Avoid Duplicates)</span>
+                    <Plus className="mt-0.5 h-4 w-4 shrink-0 sm:mt-0" />
+                    <span className="block w-full min-w-0 text-center" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal' }}>Merge Items into Card #1 (Combine Quantities &amp; Avoid Duplicates)</span>
                   </button>
 
                   {/* Same Supplier: Create Separate Card anyway */}
                   <button
                     type="button"
                     onClick={handleCreateSeparateCard}
-                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-300 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-orange-500/20"
+                    className="grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-2xl border border-orange-500/20 bg-[var(--bg-color)] px-3 py-2.5 text-xs font-bold leading-snug text-orange-300 transition-all hover:bg-orange-500/10 cursor-pointer"
                   >
-                    <Layers className="w-4 h-4 text-orange-400" />
-                    <span>Keep as Separate Delivery Card (Independent Ref#, Batch#, Inv#)</span>
+                    <Layers className="mt-0.5 h-4 w-4 shrink-0 text-orange-400 sm:mt-0" />
+                    <span className="block w-full min-w-0 text-center" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal' }}>Keep as Separate Delivery Card (Independent Ref#, Batch#, Inv#)</span>
                   </button>
 
                   {/* Same Supplier: Replace */}
                   <button
                     type="button"
                     onClick={handleMergeReplace}
-                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-400 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-orange-500/20"
+                    className="grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-2xl border border-orange-500/20 bg-[var(--bg-color)] px-3 py-2.5 text-xs font-bold leading-snug text-orange-400 transition-all hover:bg-orange-500/10 cursor-pointer"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Replace All (Start Fresh with New Items)</span>
+                    <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0 sm:mt-0" />
+                    <span className="block w-full min-w-0 text-center" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal' }}>Replace All (Start Fresh with New Items)</span>
                   </button>
                 </>
               )}
@@ -4910,7 +4812,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <button
                 type="button"
                 onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
-                className="w-full py-2.5 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-muted)] font-bold text-xs transition-all cursor-pointer border border-[var(--border-color)]"
+                className="w-full min-w-0 whitespace-normal break-words px-3 py-2.5 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-muted)] font-bold text-xs leading-snug transition-all cursor-pointer border border-[var(--border-color)]"
               >
                 Cancel Import
               </button>
@@ -4926,11 +4828,12 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         onConfirm={bulkDeleteConfirm ? handleBulkDeleteReceivings : handleDeleteReceiving}
         title={bulkDeleteConfirm ? 'Delete Selected Receiving Records' : 'Delete Receiving Record'}
         message={bulkDeleteConfirm
-          ? 'Delete the selected draft/cancelled receiving records? Confirmed stock receipts are protected.'
-          : `Delete receiving ${receivingToDelete?.receivingNumber || receivingToDelete?.invoiceNumber || ''}? Only draft or cancelled records can be removed.`}
+          ? 'Delete all selected receiving records, including confirmed receipts? Received quantities will be subtracted from current inventory.'
+          : `Delete receiving ${receivingToDelete?.receivingNumber || receivingToDelete?.invoiceNumber || ''}? If it is received, its quantities will be subtracted from current inventory.`}
         itemName={bulkDeleteConfirm ? undefined : receivingToDelete?.supplier?.name || 'Receiving record'}
         itemCount={bulkDeleteConfirm ? selectedReceivingIds.size : 1}
-        isBulk={bulkDeleteConfirm}
+        isScopeAll={bulkDeleteConfirm}
+        requiredConfirmationText={bulkDeleteConfirm ? 'DELETE' : ''}
         itemDetails={receivingToDelete ? {
           reference: receivingToDelete.receivingNumber || receivingToDelete.invoiceNumber || 'N/A',
           status: receivingToDelete.status,
@@ -4941,8 +4844,8 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         loading={bulkDeleteConfirm ? bulkDeleteReceivingLoading : deleteReceivingLoading}
         dangerLevel="danger"
         warningNotes={[
-          'Confirmed stock receipts are protected and cannot be deleted.',
-          'Deleting a draft/cancelled record also removes its saved receiving item rows.',
+          'Received quantities will be subtracted from stock; stock may become negative if those quantities have already been used.',
+          'Receiving records and linked receiving/batch logs will be permanently removed. A stock adjustment entry will remain for audit. This cannot be undone.',
         ]}
       />
 
@@ -4970,9 +4873,11 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <button type="button" disabled={loading || savingDraft || bulkSavingCatalog} onClick={() => setPendingReceivingSaveAction(null)} className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] px-4 py-2.5 text-sm font-semibold text-[var(--text-muted)] disabled:opacity-50">Cancel</button>
               <button type="button" disabled={loading || savingDraft || bulkSavingCatalog} onClick={confirmReceivingSaveAction} className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-500 disabled:opacity-50">
                 {(loading || savingDraft || bulkSavingCatalog) && <RefreshCw className="h-4 w-4 animate-spin" />}
-                {pendingReceivingSaveAction.action === 'DRAFT'
-                  ? (pendingReceivingSaveAction.cardId ? 'Save Draft' : 'Save All Drafts')
-                  : (pendingReceivingSaveAction.cardId ? 'Save New Item Names' : 'Save All New Item Names')}
+                {loading || savingDraft || bulkSavingCatalog
+                  ? (pendingReceivingSaveAction.action === 'DRAFT' ? 'Saving draft…' : 'Saving item names…')
+                  : pendingReceivingSaveAction.action === 'DRAFT'
+                    ? (pendingReceivingSaveAction.cardId ? 'Save Draft' : 'Save All Drafts')
+                    : (pendingReceivingSaveAction.cardId ? 'Save New Item Names' : 'Save All New Item Names')}
               </button>
             </div>
           </section>
@@ -5024,5 +4929,3 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 };
 
 export default AdminInventoryReceivingView;
-
-

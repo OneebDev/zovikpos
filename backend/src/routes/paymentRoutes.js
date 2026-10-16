@@ -18,7 +18,7 @@ router.get('/settings', optionalAuthMiddleware, getPaymentSettings);
 router.use(authMiddleware);
 
 router.put('/settings', roleMiddleware(['ADMIN', 'VENDOR']), updatePaymentSettings);
-router.post('/submit', submitTransactionId);
+router.post('/submit', roleMiddleware(['ADMIN', 'VENDOR', 'CUSTOMER']), submitTransactionId);
 router.put('/:id/verify', roleMiddleware(['ADMIN', 'VENDOR']), verifyTransaction);
 
 module.exports = router;

@@ -1,54 +1,45 @@
-import React, { useState, useEffect } from 'react';
+import  { useState, useEffect, useRef } from 'react';
 import AdminSidebar from './AdminSidebar';
 import {
   Menu,
-  Sun,
-  Moon,
-  Search,
-  Bell,
   Building2,
-  User,
-  Shield,
   RefreshCw,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import DemoStatusBadge from '../DemoStatusBadge';
 
-const titleMap = {
-  dashboard: 'Executive Dashboard Overview',
-  orders: 'Orders Management & Transactions',
-  payments: 'Payment Monitoring & Verification',
-  menu: 'Menu Catalog & Categories',
-  inventory: 'Stock Inventory & Audit Logs',
-  staff: 'Staff Account Management & Roles',
-  customers: 'Customer Roster & Analytics',
-  tables: 'Tables & Cryptographic QR Cards',
-  kitchen: 'Kitchen Live Operations Monitor',
-  'payment-availability': 'Payment Availability Controls',
-  notifications: 'System Notifications & Alerts Center',
-  'ai-insights': 'AI Demand Forecasts & Analytics',
-  reports: 'Executive Reports & Analytics',
-  'audit-logs': 'System Immutable Audit Logs',
-  'order-history': 'Order Status Transition Timeline',
-  branches: 'Branch Management & Outlets',
-};
-
-const AdminLayout = ({ activeTab, onSelectTab, user, onLogout, children, onRefresh, branches = [], selectedBranchId = 'all', onSelectBranch }) => {
+const AdminLayout = ({ activeTab, onSelectTab, user, onLogout, children, onRefresh, refreshing = false, branches = [], selectedBranchId = 'all', onSelectBranch }) => {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('admin_sidebar_collapsed') === 'true');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const branchMenuRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem('admin_sidebar_collapsed', collapsed);
   }, [collapsed]);
 
-  const toggleTheme = () => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(nextTheme);
-    localStorage.setItem('theme', nextTheme);
-    const root = window.document.documentElement;
-    if (nextTheme === 'dark') root.classList.add('dark');
-    else root.classList.remove('dark');
-  };
+  useEffect(() => {
+    if (!branchMenuOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!branchMenuRef.current?.contains(event.target)) setBranchMenuOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setBranchMenuOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [branchMenuOpen]);
+
+  const selectedBranchName = selectedBranchId === 'all'
+    ? 'All Outlets / Branches'
+    : branches.find((branch) => String(branch.id) === String(selectedBranchId))?.name || 'Select Branch';
+
+
 
   return (
     <div className="responsive-shell admin-responsive min-h-screen w-full min-w-0 bg-[var(--bg-color)] text-[var(--text-main)] flex font-sans transition-colors duration-300">
@@ -83,30 +74,57 @@ const AdminLayout = ({ activeTab, onSelectTab, user, onLogout, children, onRefre
               </button>
 
               {/* Dynamic Branch Selector Dropdown */}
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs text-[var(--text-muted)] font-bold shadow-sm min-w-0 flex-1 sm:flex-none">
-                <Building2 className="w-4 h-4 text-orange-400 shrink-0" />
-                <select
-                  value={selectedBranchId}
-                  onChange={(e) => onSelectBranch && onSelectBranch(e.target.value)}
-                  className="bg-transparent text-[var(--text-main)] focus:outline-none cursor-pointer font-bold min-w-0 w-full sm:w-auto"
+              <div className="relative min-w-0 flex-1 sm:flex-none" ref={branchMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setBranchMenuOpen((open) => !open)}
+                  aria-label={`Selected branch: ${selectedBranchName}`}
+                  aria-haspopup="listbox"
+                  aria-expanded={branchMenuOpen}
+                  className="flex w-full min-w-0 items-center gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-3 py-2 text-left text-xs font-bold text-[var(--text-main)] shadow-sm transition hover:border-orange-400/60 focus:outline-none focus:ring-2 focus:ring-orange-500/30 sm:w-auto sm:max-w-80"
                 >
-                  <option value="all">All Outlets / Branches</option>
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
+                  <Building2 className="h-4 w-4 shrink-0 text-orange-500" />
+                  <span className="min-w-0 flex-1 truncate">{selectedBranchName}</span>
+                  <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-transform ${branchMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {branchMenuOpen && (
+                  <div role="listbox" aria-label="Branches" className="absolute left-0 top-[calc(100%+0.5rem)] z-50 max-h-72 w-full min-w-64 overflow-y-auto rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] p-1.5 shadow-2xl ring-1 ring-black/5 sm:min-w-72">
+                    {[
+                      { id: 'all', name: 'All Outlets / Branches' },
+                      ...branches.filter((branch) => branch.isActive !== false).map((branch) => ({ id: String(branch.id), name: branch.name })),
+                    ].map((branch) => {
+                      const isSelected = String(selectedBranchId) === String(branch.id);
+                      return (
+                        <button
+                          key={branch.id}
+                          type="button"
+                          role="option"
+                          aria-selected={isSelected}
+                          onClick={() => {
+                            onSelectBranch?.(branch.id);
+                            setBranchMenuOpen(false);
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold transition-colors ${isSelected ? 'bg-orange-500/10 text-orange-600 dark:text-orange-300' : 'text-[var(--text-main)] hover:bg-[var(--bg-color)]'}`}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{branch.name}</span>
+                          {isSelected && <Check className="h-4 w-4 shrink-0 text-orange-500" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Refresh Button */}
               {onRefresh && (
                 <button
                   onClick={onRefresh}
-                  className="p-2 shrink-0 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer shadow-sm hover:border-orange-500/40"
-                  title="Refresh Page Data"
+                  disabled={refreshing}
+                  aria-label={refreshing ? 'Refreshing page data' : 'Refresh page data'}
+                  className="p-2 shrink-0 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer shadow-sm hover:border-orange-500/40 disabled:cursor-wait disabled:opacity-60"
+                  title={refreshing ? 'Refreshing page data…' : 'Refresh page data'}
                 >
-                  <RefreshCw className="w-4 h-4 text-orange-400" />
+                  <RefreshCw className={`w-4 h-4 text-orange-400 ${refreshing ? 'animate-spin' : ''}`} />
                 </button>
               )}
             </div>

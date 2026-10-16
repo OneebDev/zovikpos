@@ -1,4 +1,4 @@
-import React from 'react';
+import 'react';
 import AdminDashboard from '../../components/AdminDashboard';
 
 const AdminDashboardPage = ({ user, onLogout }) => {

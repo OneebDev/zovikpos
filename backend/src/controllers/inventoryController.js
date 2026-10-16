@@ -1,4 +1,4 @@
-const { generateRealAIInsightsWithGroq } = require('../services/groqService');
+const { generateRealAIInsightsWithGroq, callGroqAPI, getGroqModel } = require('../services/groqService');
 const { prisma } = require('../config/db');
 const { getInventoryForecast } = require('../services/aiService');
 const { emitToAdmin, emitToVendor } = require('../sockets/socket');
@@ -29,7 +29,9 @@ const getOrCalculateForecast = async (item, historicalSales, features, forceRefr
       let savedFeatures = {};
       try {
         savedFeatures = JSON.parse(existing.features || '{}');
-      } catch {}
+      } catch {
+        // Forecast feature metadata is optional; the cached prediction is still usable.
+      }
 
       return {
         forecast: existing.predictedQty,
@@ -474,7 +476,7 @@ const stockIn = async (req, res) => {
           changeQty: addQty,
           type: 'PURCHASE',
           reason: notes || `Stock In - Received ${addQty} ${item.unit}`,
-          cost: newCost * addQty,
+          cost: purchaseUnitCost * addQty,
           batchNumber: batchNumber || null,
           expiryDate: expiryDate ? new Date(expiryDate) : null,
           supplierId: supplierId ? parseInt(supplierId, 10) : item.supplierId,
@@ -557,7 +559,7 @@ const adjustStock = async (req, res) => {
  */
 const restockItem = async (req, res) => {
   const { id } = req.params;
-  const { quantity, reason } = req.body;
+  const { quantity } = req.body;
 
   if (quantity === undefined || parseFloat(quantity) <= 0) {
     return res.status(400).json({ error: 'Restock quantity must be greater than zero.' });
@@ -671,8 +673,6 @@ const saveRecipeForMenuItem = async (req, res) => {
  */
 const deleteRecipeForMenuItem = async (req, res) => {
   const { menuItemId } = req.params;
-  const staffUserId = req.user?.id;
-
   try {
     const mId = parseInt(menuItemId, 10);
     const menuItem = await prisma.menuItem.findUnique({
@@ -703,8 +703,6 @@ const deleteRecipeForMenuItem = async (req, res) => {
  */
 const bulkDeleteRecipes = async (req, res) => {
   const { menuItemIds = [] } = req.body;
-  const staffUserId = req.user?.id;
-
   if (!Array.isArray(menuItemIds) || menuItemIds.length === 0) {
     return res.status(400).json({ error: 'Array of menuItemIds is required.' });
   }
@@ -750,7 +748,7 @@ const getRecipeMargins = async (req, res) => {
             try {
               const convertedQty = convertUnit(r.quantity, r.unit, inv.unit);
               foodCost += convertedQty * inv.costPrice;
-            } catch (err) {
+            } catch {
               foodCost += r.quantity * inv.costPrice;
             }
           }
@@ -1158,8 +1156,6 @@ const getInventoryLogs = async (req, res) => {
  */
 const deleteInventoryLog = async (req, res) => {
   const { id } = req.params;
-  const staffUserId = req.user?.id;
-
   try {
     const logId = parseInt(id, 10);
     const existing = await prisma.inventoryLog.findUnique({ where: { id: logId } });
@@ -1376,7 +1372,9 @@ const getInventoryAlerts = async (req, res) => {
         try {
           const feat = JSON.parse(cachedForecast.features || '{}');
           percentChange = feat.percentChange || 0.0;
-        } catch {}
+        } catch {
+          // Cached forecast data remains usable without optional feature metadata.
+        }
       } else {
         // Simple fast heuristic if no forecast generated yet
         const sumSales = historicalSales.reduce((a, b) => a + b, 0);
@@ -1548,7 +1546,7 @@ const generateReceivingRef = async (req, res) => {
 
     const reference = `${datePrefix}-${String(maxSeq + 1).padStart(3, '0')}`;
     return res.json({ reference });
-  } catch (error) {
+  } catch {
     const fallbackDate = new Date().toISOString().split('T')[0].replace(/-/g, '');
     return res.json({ reference: `RCV-${fallbackDate}-001` });
   }
@@ -1591,7 +1589,7 @@ const getReceivings = async (req, res) => {
           const serialized = String(receiving.notes).slice(markerIndex + marker.length).split('\n')[0].trim();
           const parsed = JSON.parse(serialized);
           if (Array.isArray(parsed)) draftItems = parsed;
-        } catch (error) {
+        } catch {
           console.warn(`Receiving draft lines could not be decoded for record ${receiving.id}.`);
         }
       }
@@ -2116,7 +2114,7 @@ const confirmReceiving = async (req, res) => {
             }
           }
         } catch (parseErr) {
-          throw new Error(`Saved draft items could not be read safely: ${parseErr.message}`);
+          throw new Error(`Saved draft items could not be read safely: ${parseErr.message}`, { cause: parseErr });
         }
       }
 
@@ -2274,48 +2272,79 @@ const cancelReceiving = async (req, res) => {
   }
 };
 
-/**
- * Delete a draft or cancelled stock receiving record safely
- * Hard deletion permitted for DRAFT or CANCELLED records where stock has NOT been received.
- */
+/** Remove selected receiving records and reverse their received quantities atomically. */
+const removeReceivingRecords = async (tx, ids, userId = null) => {
+  const records = await tx.inventoryReceiving.findMany({ where: { id: { in: ids } }, include: { items: true } });
+  const recordIds = records.map((record) => record.id);
+  const itemIds = records.flatMap((record) => record.items.map((item) => item.id));
+  const quantityByInventoryItem = new Map();
+
+  for (const record of records) {
+    if (String(record.status).toUpperCase() !== 'RECEIVED') continue;
+    for (const item of record.items) {
+      quantityByInventoryItem.set(item.inventoryItemId, (quantityByInventoryItem.get(item.inventoryItemId) || 0) + Number(item.quantity || 0));
+    }
+  }
+
+  for (const [inventoryItemId, quantity] of quantityByInventoryItem) {
+    const item = await tx.inventoryItem.findUnique({ where: { id: inventoryItemId }, select: { stockLevel: true, costPrice: true } });
+    if (!item) continue;
+    const quantityAfter = item.stockLevel - quantity;
+    await tx.inventoryItem.update({ where: { id: inventoryItemId }, data: { stockLevel: quantityAfter } });
+    await tx.inventoryLog.create({
+      data: {
+        inventoryItemId,
+        type: 'ADJUSTMENT',
+        quantity,
+        quantityBefore: item.stockLevel,
+        quantityAfter,
+        changeQty: -quantity,
+        cost: quantity * (item.costPrice || 0),
+        reason: 'Stock reversed after receiving history cleanup',
+        userId,
+      },
+    });
+  }
+
+  const logConditions = [];
+  if (recordIds.length) logConditions.push({ receivingId: { in: recordIds } });
+  if (itemIds.length) logConditions.push({ receivingItemId: { in: itemIds } });
+  if (logConditions.length) await tx.inventoryLog.deleteMany({ where: { OR: logConditions } });
+  if (recordIds.length) {
+    await tx.inventoryReceivingItem.deleteMany({ where: { receivingId: { in: recordIds } } });
+    await tx.inventoryReceiving.deleteMany({ where: { id: { in: recordIds } } });
+  }
+  return records;
+};
+
+/** Delete a receiving record, reversing stock when it had already been received. */
 const deleteReceiving = async (req, res) => {
   const { id } = req.params;
 
   try {
     const recId = parseInt(id, 10);
-    const receiving = await prisma.inventoryReceiving.findUnique({
-      where: { id: recId },
-      include: { items: true, logs: true }
-    });
+    const receiving = await prisma.inventoryReceiving.findUnique({ where: { id: recId }, select: { id: true, receivingNumber: true, status: true } });
 
     if (!receiving) {
       return res.status(404).json({ error: 'Stock receiving record not found.' });
     }
 
-    if (receiving.status === 'RECEIVED') {
-      return res.status(400).json({
-        error: 'Completed and confirmed stock receiving records cannot be deleted as they represent immutable inventory ledger movements. You can review or adjust inventory via stock adjustments.'
-      });
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.inventoryReceivingItem.deleteMany({ where: { receivingId: recId } });
-      await tx.inventoryReceiving.delete({ where: { id: recId } });
-    });
+    const [deletedReceiving] = await prisma.$transaction((tx) => removeReceivingRecords(tx, [recId], req.user?.id || null));
+    if (!deletedReceiving) return res.status(404).json({ error: 'Stock receiving record not found.' });
 
     await logAudit({
       userId: req.user?.id || 1,
       action: 'STOCK_RECEIVING_DELETED',
       entity: 'InventoryReceiving',
       entityId: String(recId),
-      oldValue: { receivingNumber: receiving.receivingNumber, status: receiving.status },
+      oldValue: { receivingNumber: receiving.receivingNumber, status: receiving.status, stockReversed: receiving.status === 'RECEIVED' },
       req
     });
 
     emitToAdmin('inventory:update', { receivingDeletedId: recId });
     emitToVendor('inventory:update', { receivingDeletedId: recId });
 
-    return res.json({ message: `Stock receiving record #${receiving.receivingNumber} deleted successfully.` });
+    return res.json({ message: `Stock receiving record #${receiving.receivingNumber} deleted successfully${receiving.status === 'RECEIVED' ? '; received quantities were subtracted from inventory.' : '.'}` });
   } catch (error) {
     console.error('Delete receiving error:', error);
     return res.status(500).json({ error: error.message || 'Failed to delete receiving record.' });
@@ -2323,7 +2352,7 @@ const deleteReceiving = async (req, res) => {
 };
 
 /**
- * Bulk delete draft/cancelled receiving records within a specific branch or scope
+ * Bulk delete selected receiving records and reverse quantities from confirmed receipts.
  */
 const bulkDeleteReceivings = async (req, res) => {
   const { ids, branchId, status = 'DRAFT' } = req.body;
@@ -2334,9 +2363,7 @@ const bulkDeleteReceivings = async (req, res) => {
       const parsedIds = [...new Set(ids.map(id => Number.parseInt(id, 10)).filter(Number.isInteger))];
       if (!parsedIds.length) return res.status(400).json({ error: 'Select at least one valid receiving record.' });
       where.id = { in: parsedIds };
-      // Bulk deletion is restricted to drafts and cancelled records even if a client
-      // includes protected received record IDs in its request.
-      where.status = { in: ['DRAFT', 'CANCELLED'] };
+      where.status = { in: ['DRAFT', 'CANCELLED', 'RECEIVED'] };
     } else if (status === 'DRAFT' || status === 'CANCELLED') {
       where.status = status;
     } else {
@@ -2358,21 +2385,15 @@ const bulkDeleteReceivings = async (req, res) => {
 
     const targetIds = targets.map(t => t.id);
 
-    await prisma.$transaction(async (tx) => {
-      await tx.inventoryReceivingItem.deleteMany({
-        where: { receivingId: { in: targetIds } }
-      });
-      await tx.inventoryReceiving.deleteMany({
-        where: { id: { in: targetIds } }
-      });
-    });
+    const receivedCount = targets.filter((record) => String(record.status).toUpperCase() === 'RECEIVED').length;
+    await prisma.$transaction((tx) => removeReceivingRecords(tx, targetIds, req.user?.id || null));
 
     await logAudit({
       userId: req.user?.id || 1,
       action: 'BULK_STOCK_RECEIVING_DELETED',
       entity: 'InventoryReceiving',
       entityId: `bulk_${targetIds.length}`,
-      oldValue: { count: targetIds.length, targetIds },
+      oldValue: { count: targetIds.length, receivedCount, targetIds, stockReversed: receivedCount > 0 },
       req
     });
 
@@ -2380,7 +2401,7 @@ const bulkDeleteReceivings = async (req, res) => {
     emitToVendor('inventory:update', { bulkDeletedReceivings: targetIds });
 
     return res.json({
-      message: `Successfully deleted ${targetIds.length} draft/cancelled receiving records.`,
+      message: `Successfully deleted ${targetIds.length} receiving records${receivedCount ? `; stock was reversed for ${receivedCount} received record(s)` : ''}.`,
       count: targetIds.length
     });
   } catch (error) {
@@ -2933,7 +2954,7 @@ const getSmartAIInsights = async (req, res) => {
     const isAiAvailable = !!aiGroqResult;
     const aiErrorMessage = isAiAvailable ? null : 'AI analysis is temporarily unavailable.';
 
-    const executiveSummary = aiGroqResult?.executiveSummary || 
+    const executiveSummary = aiGroqResult?.executiveSummary ||
       (isAiAvailable ? `Monitored ${items.length} inventory items across ${completedOrders30Days.length} recent order(s).` : null);
 
     const finalOptimizations = (aiGroqResult?.foodCostOptimization && aiGroqResult.foodCostOptimization.length > 0)
@@ -3139,7 +3160,7 @@ const bulkImportPresetRecipes = async (req, res) => {
 
         const toCreate = [];
         for (const ing of items) {
-          const invItem = inventoryItems.find(i => 
+          const invItem = inventoryItems.find(i =>
             i.name.toLowerCase().trim().includes(ing.name.toLowerCase().trim()) ||
             ing.name.toLowerCase().trim().includes(i.name.toLowerCase().trim())
           );

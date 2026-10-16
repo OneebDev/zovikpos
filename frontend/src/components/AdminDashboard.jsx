@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { getSocket } from '../services/socket';
@@ -56,18 +56,31 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [toastMessage, setToastMessage] = useState(null);
   const [inventoryFocus, setInventoryFocus] = useState(null);
 
-  const showToast = (msg, type = 'success') => {
+  const showToast = useCallback((msg, type = 'success') => {
     setToastMessage({ text: msg, type });
     setTimeout(() => setToastMessage(null), 3500);
+  }, []);
+
+  const refreshBranchOptions = async () => {
+    try {
+      const res = await api.get('/admin/branches');
+      const nextBranches = res.data.branches || [];
+      setBranches(nextBranches);
+      setSelectedBranchId((currentId) => (
+        currentId === 'all' || nextBranches.some((branch) => branch.isActive !== false && String(branch.id) === String(currentId))
+          ? currentId
+          : 'all'
+      ));
+    } catch (err) {
+      console.error('Refresh branches error:', err);
+    }
   };
 
   useEffect(() => {
-    api.get('/admin/branches')
-      .then(res => setBranches(res.data.branches || []))
-      .catch(err => console.error('Fetch branches error:', err));
+    refreshBranchOptions();
   }, []);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     setLoading(true);
 
     const bQuery = selectedBranchId && selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : '';
@@ -76,40 +89,39 @@ const AdminDashboard = ({ user, onLogout }) => {
     const rangeQuery = dashboardDateRange
       ? `&from=${dashboardDateRange.from || ''}&to=${dashboardDateRange.to || ''}`
       : '';
-    api.get(`/admin/stats?period=${period}${bQuery}${rangeQuery}`)
-      .then(res => setStats(res.data))
-      .catch(err => console.error('Fetch stats error:', err))
-      .finally(() => setLoading(false));
+    try {
+      await Promise.all([
+        api.get(`/admin/stats?period=${period}${bQuery}${rangeQuery}`)
+          .then(res => setStats(res.data))
+          .catch(err => console.error('Fetch stats error:', err)),
+        api.get(`/menu?all=true${bQuery}`)
+          .then(res => setMenuItems(res.data.items || []))
+          .catch(err => console.error('Fetch menu error:', err)),
+        api.get(`/inventory${bQuerySingle}`)
+          .then(res => setInventory(res.data.items || []))
+          .catch(err => console.error('Fetch inventory error:', err)),
+        api.get(`/orders?period=${period}${bQuery}`)
+          .then(res => setAdminOrders(res.data.orders || []))
+          .catch(err => console.error('Fetch orders error:', err)),
+        api.get('/inventory/logs')
+          .then(res => setLogs(res.data.logs || []))
+          .catch(err => console.error('Fetch logs error:', err)),
+        api.get('/inventory/alerts')
+          .then(res => {
+            setAlerts(res.data.alerts || []);
+            setAlertsContext(res.data.context || null);
+          })
+          .catch(err => console.error('Fetch alerts error:', err)),
+        api.get('/admin/audit-logs')
+          .then(res => setAuditLogs(res.data.logs || []))
+          .catch(err => console.error('Fetch audit logs error:', err)),
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }, [dashboardDateRange, period, selectedBranchId]);
 
-    api.get(`/menu?all=true${bQuery}`)
-      .then(res => setMenuItems(res.data.items || []))
-      .catch(err => console.error('Fetch menu error:', err));
-
-    api.get(`/inventory${bQuerySingle}`)
-      .then(res => setInventory(res.data.items || []))
-      .catch(err => console.error('Fetch inventory error:', err));
-
-    api.get(`/orders?period=${period}${bQuery}`)
-      .then(res => setAdminOrders(res.data.orders || []))
-      .catch(err => console.error('Fetch orders error:', err));
-
-    api.get('/inventory/logs')
-      .then(res => setLogs(res.data.logs || []))
-      .catch(err => console.error('Fetch logs error:', err));
-
-    api.get('/inventory/alerts')
-      .then(res => {
-        setAlerts(res.data.alerts || []);
-        setAlertsContext(res.data.context || null);
-      })
-      .catch(err => console.error('Fetch alerts error:', err));
-
-    api.get('/admin/audit-logs')
-      .then(res => setAuditLogs(res.data.logs || []))
-      .catch(err => console.error('Fetch audit logs error:', err));
-  };
-
-  const fetchLightData = async () => {
+  const fetchLightData = useCallback(async () => {
     try {
       const bQuery = selectedBranchId && selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : '';
       const bQuerySingle = selectedBranchId && selectedBranchId !== 'all' ? `?branchId=${selectedBranchId}` : '';
@@ -129,13 +141,13 @@ const AdminDashboard = ({ user, onLogout }) => {
     } catch (err) {
       console.error('Fetch light data error:', err);
     }
-  };
+  }, [dashboardDateRange, period, selectedBranchId]);
 
   useEffect(() => {
     if (user && user.role === 'ADMIN') {
       fetchDashboardData();
     }
-  }, [user, period, selectedBranchId, dashboardDateRange]);
+  }, [user, fetchDashboardData]);
 
   // Real-time socket sync
   useEffect(() => {
@@ -161,7 +173,7 @@ const AdminDashboard = ({ user, onLogout }) => {
         socket.off('menu:update', handleRealtimeSync);
       };
     }
-  }, [user, period, selectedBranchId, dashboardDateRange]);
+  }, [user, fetchLightData]);
 
   const handleRecalculateAI = async () => {
     setForecastingLoading(true);
@@ -186,6 +198,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       user={user}
       onLogout={onLogout}
       onRefresh={fetchDashboardData}
+      refreshing={loading}
       branches={branches}
       selectedBranchId={selectedBranchId}
       onSelectBranch={setSelectedBranchId}
@@ -225,7 +238,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       )}
 
       {activeTab === 'orders' && (
-        <AdminOrdersView orders={adminOrders} loading={loading} onRefresh={fetchDashboardData} showToast={showToast} />
+        <AdminOrdersView orders={adminOrders} loading={loading && adminOrders.length === 0} onRefresh={fetchDashboardData} showToast={showToast} />
       )}
 
       {activeTab === 'payments' && (
@@ -289,7 +302,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       {activeTab === 'audit-logs' && (
         <AdminAuditLogsView
           logs={auditLogs}
-          loading={loading}
+          loading={loading && auditLogs.length === 0}
           onRefresh={fetchDashboardData}
           showToast={showToast}
         />
@@ -297,7 +310,7 @@ const AdminDashboard = ({ user, onLogout }) => {
 
       {activeTab === 'order-history' && <AdminOrderStatusHistoryView showToast={showToast} />}
 
-      {activeTab === 'branches' && <AdminBranchesView showToast={showToast} />}
+      {activeTab === 'branches' && <AdminBranchesView showToast={showToast} onBranchesChanged={refreshBranchOptions} />}
     </AdminLayout>
   );
 };

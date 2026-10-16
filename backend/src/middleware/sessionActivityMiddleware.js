@@ -10,9 +10,13 @@ const sessionActivityMiddleware = async (req, res, next) => {
       prisma.session.updateMany({
         where: { id: sessionId, status: 'ACTIVE' },
         data: { expiresAt: new Date(Date.now() + SESSION_TTL_MS) },
-      }).catch(() => {}); // silently ignore errors
+      }).catch(() => {
+        // Session activity refresh is best effort and must not delay the request.
+      });
     }
-  } catch {}
+  } catch {
+    // Invalid request metadata should not prevent the main request from proceeding.
+  }
   next();
 };
 

@@ -205,10 +205,13 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
                 setEmail(config.demoEmail);
                 setPassword(config.demoPassword);
               }}
-              className="w-full py-2.5 px-3 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-600 dark:text-orange-400 text-xs font-bold rounded-xl transition-all flex items-center justify-center space-x-2 cursor-pointer"
+              className="w-full min-w-0 py-2.5 px-3 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-600 dark:text-orange-400 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Zap className="w-3.5 h-3.5" />
-              <span>Fill Demo Credentials ({config.demoEmail})</span>
+              <Zap className="w-3.5 h-3.5 shrink-0" />
+              <span className="min-w-0 text-center leading-tight">
+                <span className="block">Fill Demo Credentials</span>
+                <span className="mt-0.5 block break-all text-[10px] font-medium opacity-75">{config.demoEmail}</span>
+              </span>
             </button>
           )}
         </form>

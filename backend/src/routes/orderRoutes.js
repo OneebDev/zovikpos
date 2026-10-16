@@ -29,6 +29,6 @@ router.delete('/bulk', roleMiddleware(['ADMIN', 'VENDOR']), bulkDeleteOrders);
 router.delete('/:id', roleMiddleware(['ADMIN', 'VENDOR']), deleteOrder);
 router.get('/:id', getOrderById);
 router.put('/:id/status', roleMiddleware(['ADMIN', 'VENDOR', 'KITCHEN', 'CUSTOMER']), updateOrderStatus);
-router.put('/:id/transfer-table', transferSingleOrderTable);
+router.put('/:id/transfer-table', roleMiddleware(['ADMIN', 'VENDOR', 'CUSTOMER']), transferSingleOrderTable);
 
 module.exports = router;

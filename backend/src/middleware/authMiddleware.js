@@ -42,7 +42,7 @@ const authMiddleware = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, getAccessSecret());
-    
+
     // Check if user is still active in database (using fast cached getter)
     if (decoded.id) {
       const dbUser = await getDbUserCached(decoded.id);
@@ -115,12 +115,9 @@ const optionalAuthMiddleware = async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, ACCESS_SECRET);
+    const decoded = jwt.verify(token, getAccessSecret());
     if (decoded.id) {
-      const dbUser = await prisma.user.findUnique({
-        where: { id: decoded.id },
-        select: { id: true, email: true, name: true, role: true, isActive: true, branchId: true }
-      });
+      const dbUser = await getDbUserCached(decoded.id);
       if (dbUser && dbUser.isActive) {
         req.user = {
           ...decoded,

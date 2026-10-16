@@ -1,23 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import ThemedSelect from '../../common/ThemedSelect';
+import  { useState, useMemo } from 'react';
 import {
   Search,
-  Filter,
   Download,
   Printer,
   Eye,
-  CheckCircle2,
-  Clock,
-  XCircle,
-  AlertCircle,
-  DollarSign,
-  User,
-  ShoppingBag,
-  CreditCard,
   X,
-  FileText,
-  Calendar as CalendarIcon,
   Trash2,
-  List,
+  Loader2,
 } from 'lucide-react';
 import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
 import DateRangeFilterBar, { getPresetRange } from '../../common/DateRangeFilterBar';
@@ -209,9 +199,10 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
     }
   };
 
-  const cancellableOrFailedCount = useMemo(() => {
-    return orders.filter(o => o.status === 'CANCELLED' || o.status === 'PAYMENT_FAILED').length;
-  }, [orders]);
+  const cancellableOrFailedCount = useMemo(
+    () => orders.filter((order) => order.status === 'CANCELLED' || order.status === 'PAYMENT_FAILED').length,
+    [orders]
+  );
 
   const selectableOrders = filteredOrders;
   const allSelectableOrdersSelected = selectableOrders.length > 0 && selectableOrders.every((order) => selectedOrderIds.has(order.id));
@@ -231,52 +222,36 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
-        <div>
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl">
+        <div className="min-w-0 flex-1">
           <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">Orders Management</h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">Filter, inspect, calendar timeline, and export complete dining order lifecycles.</p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedOrderIds.size} />
+        <div className="flex w-full min-w-0 flex-nowrap items-center justify-start gap-1.5 overflow-x-auto pb-1 lg:w-auto lg:shrink-0 lg:justify-end lg:overflow-visible">
+          <BulkSelectionModeButton active={selectionMode} onClick={toggleSelectionMode} selectedCount={selectedOrderIds.size} className="mobile-action-third h-10 justify-center px-1 text-[10px] sm:h-auto sm:w-auto sm:px-3 sm:py-2 sm:text-xs" mobileLabel="Select" mobileActiveLabel="Done" />
           {selectionMode && selectedOrderIds.size > 0 && (
             <button
               type="button"
               onClick={() => { setIsBulkDeleting(true); setDeleteModalOpen(true); }}
-              className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+              className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-500/20 bg-rose-500/10 px-1 text-[10px] font-bold text-rose-400 transition-all hover:bg-rose-500/20 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs"
             >
-              <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedOrderIds.size})
+              <Trash2 className="h-3.5 w-3.5 shrink-0" /> <span><span className="sm:hidden">Delete</span><span className="hidden sm:inline">Delete Selected ({selectedOrderIds.size})</span></span>
             </button>
           )}
-
-
-          {/* Delete All Cancelled Scoped Action */}
-          {!selectionMode && (activeTab === 'CANCELLED' || activeTab === 'PAYMENT_FAILED' || cancellableOrFailedCount > 0) && (
-            <button
-              onClick={() => {
-                setIsBulkDeleting(true);
-                setDeleteModalOpen(true);
-              }}
-              className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Cancelled ({cancellableOrFailedCount})</span>
-            </button>
-          )}
-
           <button
             onClick={handleExportCSV}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-emerald-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-emerald-500 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
+            <Download className="h-3.5 w-3.5 shrink-0" />
+            <span><span className="sm:hidden">CSV</span><span className="hidden sm:inline">Export CSV</span></span>
           </button>
           <button
             onClick={handleExportPDF}
-            className="px-3.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-1.5 cursor-pointer"
+            className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-orange-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-orange-500 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs"
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Export PDF</span>
+            <Printer className="h-3.5 w-3.5 shrink-0" />
+            <span><span className="sm:hidden">PDF</span><span className="hidden sm:inline">Export PDF</span></span>
           </button>
         </div>
       </div>
@@ -337,7 +312,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
         </div>
 
         <div className="sm:col-span-4">
-          <select
+          <ThemedSelect
             value={paymentMethodFilter}
             onChange={(e) => setPaymentMethodFilter(e.target.value)}
             className="w-full px-4 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 transition-colors cursor-pointer"
@@ -346,7 +321,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
             <option value="COD">Pay at Counter (COD)</option>
             <option value="EASYPAISA">Easypaisa</option>
             <option value="JAZZCASH">JazzCash</option>
-          </select>
+          </ThemedSelect>
         </div>
       </div>
 
@@ -368,8 +343,9 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
       {/* Orders Data Table */}
       <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden">
           {loading ? (
-            <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)] animate-pulse">
-              Loading Orders...
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs font-bold text-[var(--text-muted)]">
+              <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+              <span>Loading Orders...</span>
             </div>
           ) : filteredOrders.length === 0 ? (
             <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)]">
@@ -377,7 +353,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full min-w-[1080px] text-left border-collapse">
                 <thead>
                   <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
                     {selectionMode && <th className="p-4 w-10 text-center">
@@ -420,7 +396,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
                               aria-label={`Select order ${order.orderNumber} for deletion`}
                             />
                         </td>}
-                        <td className="p-4 font-mono font-extrabold text-orange-400">
+                        <td className="p-4 whitespace-nowrap font-mono font-extrabold text-orange-400">
                           {order.orderNumber}
                         </td>
                         <td className="p-4">
@@ -446,8 +422,8 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
                         <td className="p-4 text-[var(--text-muted)] text-[11px]">
                           {new Date(order.createdAt).toLocaleString()}
                         </td>
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end space-x-2">
+                        <td className="p-4 text-right whitespace-nowrap">
+                          <div className="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
                             <button
                               onClick={() => setSelectedOrder(order)}
                               className="px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded-xl font-bold transition-all flex items-center space-x-1 cursor-pointer"

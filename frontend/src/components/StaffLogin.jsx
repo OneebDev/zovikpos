@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import  { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import { connectSocket } from '../services/socket';
+
 import { Lock, Mail, ShieldCheck, Flame, UserCheck, AlertCircle, ArrowRight } from 'lucide-react';
 
 const StaffLogin = ({ onLoginSuccess }) => {

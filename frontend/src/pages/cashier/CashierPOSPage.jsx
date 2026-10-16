@@ -1,4 +1,4 @@
-import React from 'react';
+import 'react';
 import VendorDashboard from '../../components/VendorDashboard';
 
 const CashierPOSPage = ({ user, onLogout }) => {

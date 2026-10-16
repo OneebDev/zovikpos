@@ -1,10 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import  { useState, useMemo } from 'react';
 import {
   Bell,
-  AlertTriangle,
   Package,
   CreditCard,
-  Clock,
   CheckCircle2,
   Trash2,
 } from 'lucide-react';

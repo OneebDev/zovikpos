@@ -27,13 +27,13 @@ const generateTableToken = (tableNumber, branchId = 1) => {
     .createHmac('sha256', QR_SECRET)
     .update(payload)
     .digest('base64url');
-  
+
   return `${payload}:${signature}`;
 };
 
 /**
  * Verify a table QR token (supports both raw and URL-encoded formats)
- * @param {string} token 
+ * @param {string} token
  * @returns {{ valid: boolean, tableNumber?: string, branchId?: number, normalizedToken?: string, error?: string }}
  */
 const verifyTableToken = (token) => {
@@ -77,8 +77,8 @@ const verifyTableToken = (token) => {
 
 /**
  * Generate a unique dynamic order tracking token
- * @param {number} orderId 
- * @param {string} orderNumber 
+ * @param {number} orderId
+ * @param {string} orderNumber
  * @returns {string} Signed tracking token
  */
 const generateOrderTrackingToken = (orderId, orderNumber) => {
@@ -94,7 +94,7 @@ const generateOrderTrackingToken = (orderId, orderNumber) => {
 
 /**
  * Verify an order tracking token (supports URL-encoded formats)
- * @param {string} token 
+ * @param {string} token
  * @returns {{ valid: boolean, orderId?: number, orderNumber?: string, normalizedToken?: string, error?: string }}
  */
 const verifyOrderTrackingToken = (token) => {
@@ -106,7 +106,9 @@ const verifyOrderTrackingToken = (token) => {
   if (cleanToken.includes('%')) {
     try {
       cleanToken = decodeURIComponent(cleanToken);
-    } catch {}
+    } catch {
+      // Invalid percent encoding is rejected by the token structure check below.
+    }
   }
 
   const parts = cleanToken.split(':');
