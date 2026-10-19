@@ -13,15 +13,22 @@ const { prisma } = require('../config/db');
  */
 const logAudit = async ({ userId = null, action, entity, entityId = null, oldValue = null, newValue = null, req = null }) => {
   try {
-    const ip = req ? (req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || null) : null;
+    const ip = req ? (req.ip || req.headers?.['x-forwarded-for'] || req.connection?.remoteAddress || null) : null;
     const finalUserId = userId || (req?.user?.id || null);
+    let validUserId = null;
+    if (finalUserId) {
+      try {
+        const userExists = await prisma.user.findUnique({ where: { id: finalUserId }, select: { id: true } });
+        if (userExists) validUserId = finalUserId;
+      } catch {}
+    }
 
     const oldStr = oldValue !== null && oldValue !== undefined ? (typeof oldValue === 'object' ? JSON.stringify(oldValue) : String(oldValue)) : null;
     const newStr = newValue !== null && newValue !== undefined ? (typeof newValue === 'object' ? JSON.stringify(newValue) : String(newValue)) : null;
 
     await prisma.auditLog.create({
       data: {
-        userId: finalUserId,
+        userId: validUserId,
         action,
         entity,
         entityId: entityId ? String(entityId) : null,

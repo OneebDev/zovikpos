@@ -25,6 +25,9 @@ const {
   updateBranch,
   deleteBranch,
   bulkDeleteBranches,
+  getDisputes,
+  createAdminDispute,
+  updateDispute,
 } = require('../controllers/adminController');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
@@ -60,6 +63,11 @@ router.put('/customers/:id/block', blockCustomerAccount);
 router.put('/customers/:id/unblock', unblockCustomerAccount);
 router.delete('/customers/bulk', bulkDeleteCustomers);
 router.delete('/customers/:id', deleteCustomerAccount);
+
+// Centralized Dispute Management
+router.get('/disputes', getDisputes);
+router.post('/disputes', createAdminDispute);
+router.put('/disputes/:id', updateDispute);
 
 // Branch Management
 router.get('/branches', getBranches);

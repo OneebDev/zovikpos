@@ -4,6 +4,12 @@ const { logAudit } = require('../middleware/auditMiddleware');
 const supabaseAdmin = require('../config/supabaseAdmin');
 const { emitToAccount } = require('../sockets/socket');
 const { clearUserCache } = require('../middleware/authMiddleware');
+const {
+  getAllDisputes,
+  getDisputeCounts,
+  createDispute,
+  updateDisputeStatus: updateDisputeStatusService,
+} = require('../services/disputeService');
 
 /**
  * Helper: sync a user action to Supabase Auth (silent fail if admin client not ready)
@@ -1426,7 +1432,7 @@ const resetStaffPassword = async (req, res) => {
   }
 };
 
-/**
+// UIT Student Roll Number Extractor & Email Validation
 const UIT_STUDENT_EMAIL_REGEX = /^[0-9]{2}[a-zA-Z]{2,3}-[0-9]{1,4}-[a-zA-Z]{2,5}@students\.uitu\.edu\.pk$/i;
 
 const extractStudentRollNumber = (email) => {
@@ -1518,12 +1524,43 @@ const getCustomerList = async (req, res) => {
       }
     });
 
+    // Fetch dispute records and summary metrics
+    const allDisputes = await getAllDisputes();
+    const disputeCounts = await getDisputeCounts();
+
+    const customerDisputesMap = new Map();
+    allDisputes.forEach((d) => {
+      const keyId = d.customerId ? String(d.customerId) : null;
+      const keyEmail = (d.customerEmail || '').toLowerCase();
+      if (keyId) {
+        if (!customerDisputesMap.has(keyId)) customerDisputesMap.set(keyId, []);
+        customerDisputesMap.get(keyId).push(d);
+      }
+      if (keyEmail) {
+        if (!customerDisputesMap.has(keyEmail)) customerDisputesMap.set(keyEmail, []);
+        customerDisputesMap.get(keyEmail).push(d);
+      }
+    });
+
     const formattedCustomers = customers.map((c) => {
       const paidOrders = c.orders.filter(o => ['PAID', 'PREPARING', 'READY', 'COMPLETED'].includes(o.status));
       const totalSpent = paidOrders.reduce((sum, o) => sum + o.total, 0.0);
       const lastOrder = c.orders.length > 0 ? c.orders[0].createdAt : null;
       const rollNumber = extractStudentRollNumber(c.email);
       const isBlocked = c.isActive === false;
+
+      // Customer specific disputes
+      const userDisputesById = customerDisputesMap.get(String(c.id)) || [];
+      const userDisputesByEmail = customerDisputesMap.get(c.email?.toLowerCase()) || [];
+      const seenDisputeIds = new Set();
+      const userDisputes = [];
+      [...userDisputesById, ...userDisputesByEmail].forEach((d) => {
+        if (!seenDisputeIds.has(d.id)) {
+          seenDisputeIds.add(d.id);
+          userDisputes.push(d);
+        }
+      });
+      const openDisputes = userDisputes.filter(d => ['OPEN', 'UNDER_REVIEW'].includes(d.status));
 
       let blockInfo = null;
       if (isBlocked) {
@@ -1565,6 +1602,7 @@ const getCustomerList = async (req, res) => {
         name: c.name || 'Guest Customer',
         email: c.email || 'N/A',
         rollNumber,
+        isStudent: Boolean(rollNumber),
         totalOrders: c.orders.length,
         paidOrdersCount: paidOrders.length,
         totalSpent: parseFloat(totalSpent.toFixed(2)),
@@ -1574,12 +1612,28 @@ const getCustomerList = async (req, res) => {
         isBlocked,
         blockInfo,
         blockHistory: history,
+        disputes: userDisputes,
+        openDisputesCount: openDisputes.length,
+        hasDisputes: userDisputes.length > 0,
         recentOrders: c.orders.slice(0, 5),
         recentSessions: c.sessions,
       };
     });
 
-    return res.json({ customers: formattedCustomers });
+    const totalCustomers = customers.length;
+    const activeCustomers = customers.filter(c => c.isActive !== false).length;
+    const blockedCustomers = customers.filter(c => c.isActive === false).length;
+
+    return res.json({
+      summary: {
+        totalCustomers,
+        activeCustomers,
+        blockedCustomers,
+        openDisputes: disputeCounts.activeCount,
+        totalDisputes: disputeCounts.total,
+      },
+      customers: formattedCustomers,
+    });
   } catch (error) {
     console.error('Get customer list error:', error);
     return res.status(500).json({ error: 'Failed to retrieve customer roster.' });
@@ -1802,6 +1856,58 @@ const unblockCustomerAccount = async (req, res) => {
 };
 
 /**
+ * Dispute Management Controller Methods
+ */
+const getDisputes = async (req, res) => {
+  try {
+    const { status, category, search, customerId, orderNumber, from, to } = req.query;
+    const disputes = await getAllDisputes({ status, category, search, customerId, orderNumber, from, to });
+    const summary = await getDisputeCounts();
+    return res.json({ disputes, summary });
+  } catch (err) {
+    console.error('Get disputes error:', err);
+    return res.status(500).json({ error: 'Failed to retrieve disputes.' });
+  }
+};
+
+const createAdminDispute = async (req, res) => {
+  try {
+    const { customerId, customerEmail, customerName, orderId, orderNumber, category, reason, description } = req.body;
+    const dispute = await createDispute({
+      customerId,
+      customerEmail,
+      customerName,
+      orderId,
+      orderNumber,
+      category,
+      reason,
+      description,
+    });
+    return res.status(201).json({ message: 'Dispute recorded successfully.', dispute });
+  } catch (err) {
+    console.error('Create dispute error:', err);
+    return res.status(400).json({ error: err.message || 'Failed to record dispute.' });
+  }
+};
+
+const updateDispute = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, resolution } = req.body;
+    const updated = await updateDisputeStatusService(id, {
+      status,
+      resolution,
+      resolvedBy: req.user?.name || 'Administrator',
+      req,
+    });
+    return res.json({ message: 'Dispute status updated successfully.', dispute: updated });
+  } catch (err) {
+    console.error('Update dispute error:', err);
+    return res.status(400).json({ error: err.message || 'Failed to update dispute.' });
+  }
+};
+
+/**
  * Get System-Wide Order Status History Timeline Records
  */
 const getOrderStatusHistoryList = async (req, res) => {
@@ -1928,4 +2034,7 @@ module.exports = {
   deleteBranch,
   bulkDeleteBranches,
   clearDashboardStatsCache,
+  getDisputes,
+  createAdminDispute,
+  updateDispute,
 };
