@@ -3,6 +3,7 @@ const { emitToVendor, emitToUser, emitToKitchen, emitToAdmin, broadcastEvent } =
 const { sendPaymentConfirmedEmail, sendOrderCancellationEmail } = require('../services/emailService');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { deductInventoryForConfirmedOrder, restoreInventoryForOrder } = require('../services/inventoryDeductionService');
+const { clearDashboardStatsCache } = require('./adminController');
 
 /**
  * Get current Payment Availability Settings (COD & Online)
@@ -79,6 +80,8 @@ const updatePaymentSettings = async (req, res) => {
       newValue: payload,
       req,
     });
+
+    clearDashboardStatsCache();
 
     return res.json({
       message: 'Payment availability settings updated successfully.',
@@ -293,6 +296,8 @@ const verifyTransaction = async (req, res) => {
         newValue: { status: newStatus, paymentStatus: newPaymentStatus },
       }).catch(err => console.error('[Audit Log Error]', err));
     });
+
+    clearDashboardStatsCache();
 
     return res.json({
       message: approve ? 'Payment verified and order sent to kitchen.' : 'Payment rejected.',

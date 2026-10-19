@@ -201,6 +201,19 @@ const getProfile = async (req, res) => {
   }
 };
 
+const UIT_STUDENT_EMAIL_REGEX = /^[0-9]{2}[a-zA-Z]{2,3}-[0-9]{1,4}-[a-zA-Z]{2,5}@students\.uitu\.edu\.pk$/i;
+
+const validateStudentEmail = (email) => {
+  if (!email || typeof email !== 'string') return false;
+  return UIT_STUDENT_EMAIL_REGEX.test(email.trim().toLowerCase());
+};
+
+const extractStudentRollNumber = (email) => {
+  if (!email || typeof email !== 'string') return null;
+  const match = email.trim().match(/^([0-9]{2}[a-zA-Z]{2,3}-[0-9]{1,4}-[a-zA-Z]{2,5})@students\.uitu\.edu\.pk$/i);
+  return match ? match[1].toUpperCase() : null;
+};
+
 /**
  * Send persistent 6-digit OTP code to email
  */
@@ -212,6 +225,25 @@ const sendOTP = async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
+
+  // Validate strict UIT student email domain and format (e.g. 23SP-051-SE@students.uitu.edu.pk)
+  if (!validateStudentEmail(normalizedEmail)) {
+    return res.status(400).json({
+      error: 'Please enter a valid UIT student email address (e.g., 23SP-051-SE@students.uitu.edu.pk). Only @students.uitu.edu.pk domain is permitted.',
+    });
+  }
+
+  // Server-side enforcement: Check if student account is blocked
+  const existingUser = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+    select: { id: true, role: true, isActive: true },
+  });
+  if (existingUser && existingUser.isActive === false) {
+    return res.status(403).json({
+      error: 'This student account has been restricted by administration. Ordering is blocked. Please contact admin.',
+    });
+  }
+
   const safeName = typeof name === 'string' ? name.trim().slice(0, 120) : 'Customer';
 
   try {
@@ -295,6 +327,21 @@ const verifyOTP = async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
+
+  // Validate strict UIT student email domain and format
+  if (!validateStudentEmail(normalizedEmail)) {
+    return res.status(400).json({ error: 'Please enter a valid UIT student email address (e.g., 23SP-051-SE@students.uitu.edu.pk).' });
+  }
+
+  // Server-side enforcement: Check if student account is blocked
+  const preCheckUser = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+    select: { id: true, role: true, isActive: true },
+  });
+  if (preCheckUser && preCheckUser.isActive === false) {
+    return res.status(403).json({ error: 'This student account has been restricted by administration. Ordering is blocked.' });
+  }
+
   const inputHash = hashOTP(normalizedEmail, otp.trim());
 
   try {
@@ -443,4 +490,6 @@ module.exports = {
   sendOTP,
   verifyOTP,
   logout,
+  validateStudentEmail,
+  extractStudentRollNumber,
 };

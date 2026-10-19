@@ -63,8 +63,31 @@ export const useCustomerActiveOrders = ({ enabled = true } = {}) => {
     const FAILED_STATUSES = ['PAYMENT_FAILED', 'REJECTED', 'CANCELLED'];
 
     const handleOrderUpdate = (updatedOrder) => {
+      if (!updatedOrder) return;
       const activeSId = localStorage.getItem('customer_sessionId');
-      if (!updatedOrder || updatedOrder.sessionId !== activeSId) return;
+      let currentCustomer = null;
+      try {
+        currentCustomer = JSON.parse(localStorage.getItem('customer_user') || localStorage.getItem('user') || 'null');
+      } catch {}
+
+      // Handle deletion broadcast
+      if (updatedOrder.orderDeletedId || updatedOrder.bulkDeletedOrderIds) {
+        queryClient.setQueryData([...ACTIVE_ORDERS_QUERY_KEY, activeSId], (oldData = getInitialCache()) => {
+          const deletedIds = updatedOrder.bulkDeletedOrderIds || [updatedOrder.orderDeletedId];
+          const newActive = (oldData?.activeOrders || []).filter(o => !deletedIds.includes(o.id));
+          const newFailed = (oldData?.failedOrders || []).filter(o => !deletedIds.includes(o.id));
+          const updatedResult = { activeOrders: newActive, failedOrders: newFailed };
+          localStorage.setItem('customer_active_orders_cache', JSON.stringify(updatedResult));
+          return updatedResult;
+        });
+        return;
+      }
+
+      const isMatch = Boolean(
+        (activeSId && updatedOrder.sessionId === activeSId) ||
+        (currentCustomer?.id && updatedOrder.userId === currentCustomer.id)
+      );
+      if (!isMatch) return;
 
       queryClient.setQueryData([...ACTIVE_ORDERS_QUERY_KEY, activeSId], (oldData = getInitialCache()) => {
         const currentActive = oldData?.activeOrders || [];
@@ -81,6 +104,7 @@ export const useCustomerActiveOrders = ({ enabled = true } = {}) => {
             newActive = [updatedOrder, ...newActive];
           }
         } else {
+          // Immediately purge completed, refunded, or non-active orders from tracking
           newActive = newActive.filter((o) => o.id !== updatedOrder.id);
         }
 

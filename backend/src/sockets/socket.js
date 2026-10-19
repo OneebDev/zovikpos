@@ -48,7 +48,26 @@ const initSocket = (server) => {
       if (user.role === 'ADMIN') socket.join('admins');
     }
 
-    // Deliberately do not accept client-provided roles or user IDs for room access.
+    // Allow customers to subscribe to their active dining session and order tracking updates
+    socket.on('join:session', (sessionId) => {
+      if (typeof sessionId === 'string' && sessionId.length > 5) {
+        socket.join(`session-${sessionId}`);
+      }
+    });
+
+    socket.on('leave:session', (sessionId) => {
+      if (sessionId) socket.leave(`session-${sessionId}`);
+    });
+
+    socket.on('join:tracking', (tokenOrId) => {
+      if (tokenOrId) {
+        socket.join(`tracking-${tokenOrId}`);
+      }
+    });
+
+    socket.on('leave:tracking', (tokenOrId) => {
+      if (tokenOrId) socket.leave(`tracking-${tokenOrId}`);
+    });
   });
 
   return io;
@@ -60,8 +79,19 @@ const getIO = () => {
 };
 
 const emitToUser = (userId, event, data) => {
-  if (io && userId !== undefined && userId !== null) {
+  if (!io) return;
+  if (userId !== undefined && userId !== null) {
     io.to(`customer-orders-${userId}`).emit(event, data);
+  }
+  // Deliver instantly to customer's active session and tracking rooms
+  if (data?.sessionId) {
+    io.to(`session-${data.sessionId}`).emit(event, data);
+  }
+  if (data?.trackingToken) {
+    io.to(`tracking-${data.trackingToken}`).emit(event, data);
+  }
+  if (data?.id) {
+    io.to(`tracking-${data.id}`).emit(event, data);
   }
 };
 

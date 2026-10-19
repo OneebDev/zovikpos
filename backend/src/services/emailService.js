@@ -227,9 +227,14 @@ const sendOrderPlacementEmail = async (order) => {
   const htmlUserName = escapeHtml(userName);
   const htmlOrderNum = escapeHtml(orderNum);
   const htmlTableNumber = escapeHtml(order.tableNumber || 'Takeaway');
-  const htmlPaymentMethod = escapeHtml(order.paymentMethod || 'COD');
-  const htmlPaymentStatus = escapeHtml(order.paymentStatus);
-  const subject = `Order Confirmed: ${orderNum} - ZovikPOS`;
+  const isCOD = (order.paymentMethod || '').toUpperCase() === 'COD';
+  const htmlPaymentMethod = isCOD ? 'Cash on Delivery (Pay at Counter)' : escapeHtml(order.paymentMethod || 'Online');
+  const htmlPaymentStatus = isCOD ? 'Unpaid (Due at Pickup)' : escapeHtml(order.paymentStatus);
+
+  const subject = isCOD
+    ? `COD Order Confirmed: ${orderNum} (Pay at Counter) - ZovikPOS`
+    : `Order Confirmed: ${orderNum} - ZovikPOS`;
+
   let baseUrl = 'http://localhost:5173';
   try {
     const configuredUrl = new URL(process.env.FRONTEND_URL || baseUrl);
@@ -245,15 +250,19 @@ const sendOrderPlacementEmail = async (order) => {
   const { text: itemsText, html: itemsHtml } = buildItemsHtml(order.orderItems);
   const etaMins = order.etaPrediction?.adjustedEta ? `${Math.round(order.etaPrediction.adjustedEta)} mins` : '10-15 mins';
 
+  const codInstructionText = isCOD
+    ? `\nPAYMENT NOTICE: Payment of Rs. ${order.total.toFixed(2)} is due at pickup. Please pay in cash at the counter.\n`
+    : '';
+
   const textContent = `Hi ${userName},
 
 Thank you for your order!
 Order Number: ${orderNum}
 Table: ${order.tableNumber || 'Takeaway'}
 Estimated Ready Time: ~${etaMins}
-Payment Method: ${order.paymentMethod || 'COD'}
-Payment Status: ${order.paymentStatus}
-
+Payment Method: ${isCOD ? 'Cash on Delivery (Pay at Counter)' : order.paymentMethod || 'Online'}
+Payment Status: ${isCOD ? 'Payment Due at Pickup / Counter' : order.paymentStatus}
+${codInstructionText}
 Order Breakdown:
 ${itemsText}
 Total Amount: Rs. ${order.total.toFixed(2)}
@@ -263,13 +272,25 @@ ${trackingUrl}
 
 ZovikPOS Team`;
 
+  const codCalloutHtml = isCOD ? `
+    <div style="background-color: #FEF3C7; border: 1px solid #F59E0B; border-radius: 12px; padding: 14px 18px; margin-bottom: 24px;">
+      <p style="margin: 0; font-size: 13px; font-weight: 700; color: #92400E;">
+        💵 Payment Due at Counter: Please have Rs. ${escapeHtml(order.total.toFixed(2))} ready in cash to pay at the counter upon collecting your meal.
+      </p>
+    </div>
+  ` : '';
+
   const contentHtml = `
     <p style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600; color: #171717;">
       Hi ${htmlUserName},
     </p>
     <p style="margin: 0 0 20px 0; font-size: 14px; color: #57534E; line-height: 1.5;">
-      Your order has been received and is queued for preparation. Here are your order details:
+      ${isCOD
+        ? 'Your order has been confirmed. Payment is due at pickup or delivery according to the existing COD workflow. Here are your order details:'
+        : 'Your order has been received and is queued for preparation. Here are your order details:'}
     </p>
+
+    ${codCalloutHtml}
 
     <!-- Info Box -->
     <div style="background-color: #FFF8F2; border: 1px solid #E7E5E4; border-radius: 14px; padding: 18px; margin-bottom: 24px;">
@@ -328,7 +349,9 @@ ZovikPOS Team`;
     </div>
   `;
 
-  const htmlContent = emailWrapper('Order Confirmed!', `Order ${orderNum} is being prepared`, contentHtml);
+  const headerTitle = isCOD ? 'COD Order Confirmed' : 'Order Confirmed!';
+  const headerSubtitle = isCOD ? `Order ${orderNum} · Payment due at pickup` : `Order ${orderNum} is being prepared`;
+  const htmlContent = emailWrapper(headerTitle, headerSubtitle, contentHtml);
   await sendMailGeneric(userEmail, subject, textContent, htmlContent);
 };
 
@@ -339,29 +362,42 @@ const sendPaymentConfirmedEmail = async (order) => {
   const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
   const orderNum = order.orderNumber || `#000${order.id}`;
   const htmlOrderNum = escapeHtml(orderNum);
-  const subject = `Payment Received: ${orderNum} - ZovikPOS`;
-  const textContent = `Your payment of Rs. ${order.total.toFixed(2)} for ${orderNum} has been confirmed.`;
+  const isCOD = (order.paymentMethod || '').toUpperCase() === 'COD';
+
+  const subject = isCOD
+    ? `Cash Payment Received: ${orderNum} - ZovikPOS`
+    : `Payment Verified: ${orderNum} - ZovikPOS`;
+
+  const textContent = isCOD
+    ? `Your cash payment of Rs. ${order.total.toFixed(2)} for ${orderNum} has been received at the counter.`
+    : `Your payment of Rs. ${order.total.toFixed(2)} for ${orderNum} has been verified and confirmed.`;
 
   const contentHtml = `
     <div style="text-align: center; margin-bottom: 20px;">
       <div style="display: inline-block; background-color: #DCFCE7; border-radius: 50%; padding: 16px; margin-bottom: 12px;">
-        <span style="font-size: 28px;">✅</span>
+        <span style="font-size: 28px;">${isCOD ? '💵' : '✅'}</span>
       </div>
-      <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: #15803D;">Payment Verified &amp; Confirmed</h3>
+      <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: #15803D;">
+        ${isCOD ? 'Cash Payment Received at Counter' : 'Online Payment Verified &amp; Confirmed'}
+      </h3>
     </div>
 
     <p style="font-size: 14px; color: #57534E; line-height: 1.6; text-align: center; margin-bottom: 24px;">
-      We have successfully received your payment of <strong style="color: #171717;">Rs. ${escapeHtml(order.total.toFixed(2))}</strong> via <strong style="color: #171717;">${escapeHtml(order.paymentMethod || 'Online')}</strong> for order <strong style="color: #E85D2A;">${htmlOrderNum}</strong>.
+      ${isCOD
+        ? `We have successfully received your cash payment of <strong style="color: #171717;">Rs. ${escapeHtml(order.total.toFixed(2))}</strong> at the counter for order <strong style="color: #E85D2A;">${htmlOrderNum}</strong>.`
+        : `We have successfully verified your payment of <strong style="color: #171717;">Rs. ${escapeHtml(order.total.toFixed(2))}</strong> via <strong style="color: #171717;">${escapeHtml(order.paymentMethod || 'Online')}</strong> for order <strong style="color: #E85D2A;">${htmlOrderNum}</strong>.`}
     </p>
 
     <div style="background-color: #FFF8F2; border: 1px solid #E7E5E4; border-radius: 12px; padding: 14px 18px; text-align: center;">
       <p style="margin: 0; font-size: 13px; font-weight: 600; color: #57534E;">
-        🍳 Your order is currently being prepared by the kitchen team!
+        🍳 Thank you! Your receipt has been generated.
       </p>
     </div>
   `;
 
-  const htmlContent = emailWrapper('Payment Confirmed', `Receipt for ${orderNum}`, contentHtml);
+  const htmlTitle = isCOD ? 'Cash Payment Received' : 'Payment Confirmed';
+  const htmlSub = isCOD ? `Counter Receipt for ${orderNum}` : `Receipt for ${orderNum}`;
+  const htmlContent = emailWrapper(htmlTitle, htmlSub, contentHtml);
   await sendMailGeneric(userEmail, subject, textContent, htmlContent);
 };
 
@@ -373,8 +409,24 @@ const sendOrderReadyEmail = async (order) => {
   const orderNum = order.orderNumber || `#000${order.id}`;
   const htmlOrderNum = escapeHtml(orderNum);
   const htmlTableNumber = escapeHtml(order.tableNumber || 'Main Counter');
-  const subject = `Order Ready for Pickup: ${orderNum} 🛎️ - ZovikPOS`;
-  const textContent = `Your order ${orderNum} is ready! Please collect your meal.`;
+  const isCOD = (order.paymentMethod || '').toUpperCase() === 'COD';
+  const isUnpaid = isCOD && order.paymentStatus !== 'PAID' && order.paymentStatus !== 'VERIFIED';
+
+  const subject = isUnpaid
+    ? `Order Ready for Pickup — Payment Due at Pickup: ${orderNum} 🛎️ - ZovikPOS`
+    : `Order Ready for Pickup: ${orderNum} 🛎️ - ZovikPOS`;
+
+  const textContent = isUnpaid
+    ? `Your order ${orderNum} is ready! Please pay Rs. ${order.total.toFixed(2)} in cash at the counter when collecting your meal.`
+    : `Your order ${orderNum} is ready! Please collect your meal.`;
+
+  const paymentReminderHtml = isUnpaid ? `
+    <div style="background-color: #FEF3C7; border: 1px solid #F59E0B; border-radius: 12px; padding: 14px 18px; text-align: center; margin-top: 16px;">
+      <p style="margin: 0; font-size: 13px; font-weight: 700; color: #92400E;">
+        💵 Payment Due at Pickup: Please pay Rs. ${escapeHtml(order.total.toFixed(2))} in cash at the counter before collecting your meal.
+      </p>
+    </div>
+  ` : '';
 
   const contentHtml = `
     <div style="text-align: center; margin-bottom: 20px;">
@@ -393,9 +445,13 @@ const sendOrderReadyEmail = async (order) => {
         📍 Pickup Table / Tag: ${htmlTableNumber}
       </p>
     </div>
+
+    ${paymentReminderHtml}
   `;
 
-  const htmlContent = emailWrapper('Meal Ready!', `Order ${orderNum} ready at counter`, contentHtml);
+  const titleText = isUnpaid ? 'Meal Ready · Payment Due' : 'Meal Ready!';
+  const subText = isUnpaid ? `Order ${orderNum} ready · Pay Rs. ${order.total.toFixed(2)} at counter` : `Order ${orderNum} ready at counter`;
+  const htmlContent = emailWrapper(titleText, subText, contentHtml);
   await sendMailGeneric(userEmail, subject, textContent, htmlContent);
 };
 

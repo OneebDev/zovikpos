@@ -13,6 +13,8 @@ const {
   bulkDeleteStaff,
   resetStaffPassword,
   getCustomerList,
+  blockCustomerAccount,
+  unblockCustomerAccount,
   deleteCustomerAccount,
   bulkDeleteCustomers,
   getOrderStatusHistoryList,
@@ -54,6 +56,8 @@ router.post('/staff/:id/reset-password', resetStaffPassword);
 
 // Customer Management & Roster
 router.get('/customers', getCustomerList);
+router.put('/customers/:id/block', blockCustomerAccount);
+router.put('/customers/:id/unblock', unblockCustomerAccount);
 router.delete('/customers/bulk', bulkDeleteCustomers);
 router.delete('/customers/:id', deleteCustomerAccount);
 

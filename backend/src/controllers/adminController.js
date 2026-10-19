@@ -43,6 +43,10 @@ async function syncToSupabaseAuth(action, payload) {
 const dashboardStatsCache = new Map();
 const DASHBOARD_CACHE_TTL_MS = 15 * 1000; // 15s fast cache
 
+const clearDashboardStatsCache = () => {
+  dashboardStatsCache.clear();
+};
+
 /**
  * Executive Dashboard Analytics with AI ETA accuracy, demand forecasts, and trends
  */
@@ -88,6 +92,9 @@ const getDashboardStats = async (req, res) => {
         return res.status(400).json({ error: 'Invalid end date. Use YYYY-MM-DD.' });
       }
       dateFilter.lte = new Date(`${to}T23:59:59.999`);
+    }
+    if (from && to && dateFilter.gte > dateFilter.lte) {
+      return res.status(400).json({ error: 'Invalid date range: start date cannot be after end date.' });
     }
     if (!from && !to) dateFilter.gte = startDate;
     const branchFilter = (branchId && branchId !== 'all') ? { branchId: parseInt(branchId, 10) } : {};
@@ -372,38 +379,62 @@ const getDashboardStats = async (req, res) => {
       revenueTimeline = Object.values(monthsMap);
     }
     if (from || to || period === 'all') {
+      const isCustomRange = Boolean(from || to);
       const first = from ? new Date(`${from}T00:00:00`) : paidOrders.reduce((earliest, order) => new Date(order.createdAt) < earliest ? new Date(order.createdAt) : earliest, new Date());
-      const last = to ? new Date(`${to}T00:00:00`) : paidOrders.reduce((latest, order) => new Date(order.createdAt) > latest ? new Date(order.createdAt) : latest, new Date());
+      const last = to ? new Date(`${to}T23:59:59.999`) : paidOrders.reduce((latest, order) => new Date(order.createdAt) > latest ? new Date(order.createdAt) : latest, new Date());
       const spanDays = Math.max(0, Math.ceil((last - first) / (24 * 60 * 60 * 1000)));
-      const monthly = period === 'all' || spanDays > 92;
-      const timeline = new Map();
-      if (paidOrders.length > 0 || (from && to)) {
-        const cursor = new Date(first.getFullYear(), first.getMonth(), monthly ? 1 : first.getDate());
-        const finalBucket = new Date(last.getFullYear(), last.getMonth(), monthly ? 1 : last.getDate());
-        while (cursor <= finalBucket) {
-          const key = monthly
-            ? `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
-            : `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
-          const label = monthly
-            ? cursor.toLocaleDateString('en', { month: 'short', year: '2-digit' })
-            : cursor.toLocaleDateString('en', { month: 'short', day: 'numeric' });
-          timeline.set(key, { label, revenue: 0, orderCount: 0 });
-          if (monthly) cursor.setMonth(cursor.getMonth() + 1);
-          else cursor.setDate(cursor.getDate() + 1);
+
+      // If it's a single day (same-day custom range, e.g. from === to or same calendar day)
+      const isSingleDay = isCustomRange && (from === to || (first.toDateString() === last.toDateString()));
+
+      if (isSingleDay) {
+        const hoursMap = {};
+        for (let h = 8; h <= 23; h += 2) {
+          const key = `${String(h).padStart(2, '0')}:00`;
+          hoursMap[key] = { label: key, revenue: 0, orderCount: 0 };
         }
-        paidOrders.forEach((order) => {
-          const date = new Date(order.createdAt);
-          const key = monthly
-            ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-            : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-          const point = timeline.get(key);
-          if (point) {
-            point.revenue += order.total || 0;
-            point.orderCount += 1;
+        paidOrders.forEach(o => {
+          const d = new Date(o.createdAt);
+          const hour = d.getHours();
+          const slotHour = Math.floor(hour / 2) * 2;
+          const key = `${String(Math.max(8, Math.min(22, slotHour))).padStart(2, '0')}:00`;
+          if (hoursMap[key]) {
+            hoursMap[key].revenue += (o.total || 0);
+            hoursMap[key].orderCount += 1;
           }
         });
+        revenueTimeline = Object.values(hoursMap);
+      } else {
+        const monthly = isCustomRange ? spanDays > 92 : (period === 'all' || spanDays > 92);
+        const timeline = new Map();
+        if (paidOrders.length > 0 || (from && to)) {
+          const cursor = new Date(first.getFullYear(), first.getMonth(), monthly ? 1 : first.getDate());
+          const finalBucket = new Date(last.getFullYear(), last.getMonth(), monthly ? 1 : last.getDate());
+          while (cursor <= finalBucket) {
+            const key = monthly
+              ? `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
+              : `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+            const label = monthly
+              ? cursor.toLocaleDateString('en', { month: 'short', year: '2-digit' })
+              : cursor.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+            timeline.set(key, { label, revenue: 0, orderCount: 0 });
+            if (monthly) cursor.setMonth(cursor.getMonth() + 1);
+            else cursor.setDate(cursor.getDate() + 1);
+          }
+          paidOrders.forEach((order) => {
+            const date = new Date(order.createdAt);
+            const key = monthly
+              ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+              : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            const point = timeline.get(key);
+            if (point) {
+              point.revenue += order.total || 0;
+              point.orderCount += 1;
+            }
+          });
+        }
+        revenueTimeline = Array.from(timeline.values());
       }
-      revenueTimeline = Array.from(timeline.values());
     }
     revenueTimeline = revenueTimeline.map(r => ({ ...r, revenue: parseFloat(r.revenue.toFixed(2)) }));
 
@@ -1396,7 +1427,34 @@ const resetStaffPassword = async (req, res) => {
 };
 
 /**
- * Customer Roster & Analytics List
+const UIT_STUDENT_EMAIL_REGEX = /^[0-9]{2}[a-zA-Z]{2,3}-[0-9]{1,4}-[a-zA-Z]{2,5}@students\.uitu\.edu\.pk$/i;
+
+const extractStudentRollNumber = (email) => {
+  if (!email || typeof email !== 'string') return null;
+  const match = email.trim().match(/^([0-9]{2}[a-zA-Z]{2,3}-[0-9]{1,4}-[a-zA-Z]{2,5})@students\.uitu\.edu\.pk$/i);
+  return match ? match[1].toUpperCase() : null;
+};
+
+const ALLOWED_BLOCK_REASONS = [
+  'Suspected fraudulent activity',
+  'Payment dispute or chargeback',
+  'Repeated false or abusive complaints',
+  'Order abuse or repeated policy violations',
+  'Account misuse or identity verification concerns',
+  'Security or suspicious activity investigation',
+  'Other',
+];
+
+const ALLOWED_UNBLOCK_REASONS = [
+  'Dispute resolved',
+  'Payment issue resolved',
+  'Identity verified',
+  'Incorrect block reversed',
+  'Other',
+];
+
+/**
+ * Customer Roster & Analytics List with Student ID & Block Status
  */
 const getCustomerList = async (req, res) => {
   try {
@@ -1434,21 +1492,88 @@ const getCustomerList = async (req, res) => {
       orderBy: { createdAt: 'desc' },
     });
 
+    const customerIds = customers.map((c) => String(c.id));
+    const blockAuditLogs = await prisma.auditLog.findMany({
+      where: {
+        entity: 'User',
+        entityId: { in: customerIds },
+        action: { in: ['STUDENT_BLOCKED', 'STUDENT_UNBLOCKED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    const blockLogMap = new Map();
+    const blockHistoryMap = new Map();
+    blockAuditLogs.forEach((log) => {
+      if (!blockHistoryMap.has(log.entityId)) {
+        blockHistoryMap.set(log.entityId, []);
+      }
+      blockHistoryMap.get(log.entityId).push(log);
+
+      if (!blockLogMap.has(log.entityId) && log.action === 'STUDENT_BLOCKED') {
+        blockLogMap.set(log.entityId, log);
+      }
+    });
+
     const formattedCustomers = customers.map((c) => {
       const paidOrders = c.orders.filter(o => ['PAID', 'PREPARING', 'READY', 'COMPLETED'].includes(o.status));
       const totalSpent = paidOrders.reduce((sum, o) => sum + o.total, 0.0);
       const lastOrder = c.orders.length > 0 ? c.orders[0].createdAt : null;
+      const rollNumber = extractStudentRollNumber(c.email);
+      const isBlocked = c.isActive === false;
+
+      let blockInfo = null;
+      if (isBlocked) {
+        const latestBlock = blockLogMap.get(String(c.id));
+        if (latestBlock) {
+          let parsedNew = {};
+          try { parsedNew = JSON.parse(latestBlock.newValue || '{}'); } catch {}
+          blockInfo = {
+            reason: parsedNew.reason || 'Account restricted by administration',
+            notes: parsedNew.notes || null,
+            blockedAt: latestBlock.createdAt,
+            blockedBy: parsedNew.actingAdminName || latestBlock.user?.name || 'Administrator',
+          };
+        } else {
+          blockInfo = {
+            reason: 'Account restricted by administration',
+            notes: null,
+            blockedAt: c.createdAt,
+            blockedBy: 'Administrator',
+          };
+        }
+      }
+
+      const history = (blockHistoryMap.get(String(c.id)) || []).map((h) => {
+        let details = {};
+        try { details = JSON.parse(h.newValue || '{}'); } catch {}
+        return {
+          id: h.id,
+          action: h.action,
+          reason: details.reason || 'N/A',
+          notes: details.notes || null,
+          actingAdmin: details.actingAdminName || h.user?.name || 'Administrator',
+          timestamp: h.createdAt,
+        };
+      });
 
       return {
         id: c.id,
         name: c.name || 'Guest Customer',
         email: c.email || 'N/A',
+        rollNumber,
         totalOrders: c.orders.length,
         paidOrdersCount: paidOrders.length,
         totalSpent: parseFloat(totalSpent.toFixed(2)),
         lastOrderDate: lastOrder,
         createdAt: c.createdAt,
         isActive: c.isActive !== false,
+        isBlocked,
+        blockInfo,
+        blockHistory: history,
         recentOrders: c.orders.slice(0, 5),
         recentSessions: c.sessions,
       };
@@ -1458,6 +1583,221 @@ const getCustomerList = async (req, res) => {
   } catch (error) {
     console.error('Get customer list error:', error);
     return res.status(500).json({ error: 'Failed to retrieve customer roster.' });
+  }
+};
+
+/**
+ * Block a Student / Customer Account with required reason and audit log
+ */
+const blockCustomerAccount = async (req, res) => {
+  const { id } = req.params;
+  const targetId = parseInt(id, 10);
+  const currentUserId = req.user?.id;
+  const currentUserName = req.user?.name || 'Administrator';
+  const { reason, customExplanation, notes } = req.body;
+
+  if (Number.isNaN(targetId)) {
+    return res.status(400).json({ error: 'Invalid customer ID.' });
+  }
+
+  if (!reason || !ALLOWED_BLOCK_REASONS.includes(reason)) {
+    return res.status(400).json({
+      error: `Please select a valid block reason from: ${ALLOWED_BLOCK_REASONS.join(', ')}`,
+    });
+  }
+
+  if (reason === 'Other' && (!customExplanation || !customExplanation.trim())) {
+    return res.status(400).json({ error: 'Please provide a written explanation when "Other" is selected.' });
+  }
+
+  const effectiveReason = reason === 'Other' ? customExplanation.trim() : reason;
+  const cleanNotes = typeof notes === 'string' && notes.trim() ? notes.trim() : null;
+
+  try {
+    const target = await prisma.user.findUnique({
+      where: { id: targetId },
+    });
+
+    if (!target) {
+      return res.status(404).json({ error: 'Customer account not found.' });
+    }
+
+    if (target.role !== 'CUSTOMER') {
+      return res.status(400).json({ error: 'Only student / customer accounts can be restricted using this action.' });
+    }
+
+    if (target.isActive === false) {
+      return res.status(400).json({ error: 'This customer account is already blocked.' });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: targetId },
+      data: { isActive: false },
+    });
+
+    clearUserCache(targetId);
+
+    if (supabaseAdmin) {
+      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
+      const authUser = authUsers?.users?.find(u => u.email === target.email);
+      if (authUser) {
+        await syncToSupabaseAuth('ban', { supabaseId: authUser.id, banned: true });
+      }
+    }
+
+    const rollNumber = extractStudentRollNumber(target.email);
+
+    await logAudit({
+      userId: currentUserId,
+      action: 'STUDENT_BLOCKED',
+      entity: 'User',
+      entityId: String(targetId),
+      oldValue: JSON.stringify({ isActive: true }),
+      newValue: JSON.stringify({
+        isActive: false,
+        reason: effectiveReason,
+        notes: cleanNotes,
+        studentEmail: target.email,
+        studentRollNumber: rollNumber,
+        actingAdminId: currentUserId,
+        actingAdminName: currentUserName,
+        timestamp: new Date().toISOString(),
+      }),
+      req,
+    });
+
+    emitToAccount(targetId, 'customer:account-blocked', {
+      userId: targetId,
+      email: target.email,
+      action: 'ACCOUNT_BLOCKED',
+      reason: effectiveReason,
+      message: 'Your student ordering account has been restricted by administration.',
+    });
+
+    return res.json({
+      message: `Student account ${target.email} (${rollNumber || 'N/A'}) has been successfully blocked.`,
+      customer: {
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        isActive: false,
+        isBlocked: true,
+        rollNumber,
+        blockInfo: {
+          reason: effectiveReason,
+          notes: cleanNotes,
+          blockedAt: new Date(),
+          blockedBy: currentUserName,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Block customer error:', error);
+    return res.status(500).json({ error: 'Failed to block customer account.' });
+  }
+};
+
+/**
+ * Unblock a Student / Customer Account with required reason and audit log
+ */
+const unblockCustomerAccount = async (req, res) => {
+  const { id } = req.params;
+  const targetId = parseInt(id, 10);
+  const currentUserId = req.user?.id;
+  const currentUserName = req.user?.name || 'Administrator';
+  const { reason, customExplanation, notes } = req.body;
+
+  if (Number.isNaN(targetId)) {
+    return res.status(400).json({ error: 'Invalid customer ID.' });
+  }
+
+  if (!reason || !ALLOWED_UNBLOCK_REASONS.includes(reason)) {
+    return res.status(400).json({
+      error: `Please select a valid unblock reason from: ${ALLOWED_UNBLOCK_REASONS.join(', ')}`,
+    });
+  }
+
+  if (reason === 'Other' && (!customExplanation || !customExplanation.trim())) {
+    return res.status(400).json({ error: 'Please provide a written explanation when "Other" is selected.' });
+  }
+
+  const effectiveReason = reason === 'Other' ? customExplanation.trim() : reason;
+  const cleanNotes = typeof notes === 'string' && notes.trim() ? notes.trim() : null;
+
+  try {
+    const target = await prisma.user.findUnique({
+      where: { id: targetId },
+    });
+
+    if (!target) {
+      return res.status(404).json({ error: 'Customer account not found.' });
+    }
+
+    if (target.role !== 'CUSTOMER') {
+      return res.status(400).json({ error: 'Only student / customer accounts can be unblocked using this action.' });
+    }
+
+    if (target.isActive === true) {
+      return res.status(400).json({ error: 'This customer account is already active.' });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: targetId },
+      data: { isActive: true },
+    });
+
+    clearUserCache(targetId);
+
+    if (supabaseAdmin) {
+      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
+      const authUser = authUsers?.users?.find(u => u.email === target.email);
+      if (authUser) {
+        await syncToSupabaseAuth('ban', { supabaseId: authUser.id, banned: false });
+      }
+    }
+
+    const rollNumber = extractStudentRollNumber(target.email);
+
+    await logAudit({
+      userId: currentUserId,
+      action: 'STUDENT_UNBLOCKED',
+      entity: 'User',
+      entityId: String(targetId),
+      oldValue: JSON.stringify({ isActive: false }),
+      newValue: JSON.stringify({
+        isActive: true,
+        reason: effectiveReason,
+        notes: cleanNotes,
+        studentEmail: target.email,
+        studentRollNumber: rollNumber,
+        actingAdminId: currentUserId,
+        actingAdminName: currentUserName,
+        timestamp: new Date().toISOString(),
+      }),
+      req,
+    });
+
+    emitToAccount(targetId, 'customer:account-unblocked', {
+      userId: targetId,
+      email: target.email,
+      action: 'ACCOUNT_UNBLOCKED',
+      message: 'Your account restriction has been lifted by administration.',
+    });
+
+    return res.json({
+      message: `Student account ${target.email} (${rollNumber || 'N/A'}) has been successfully unblocked.`,
+      customer: {
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        isActive: true,
+        isBlocked: false,
+        rollNumber,
+      },
+    });
+  } catch (error) {
+    console.error('Unblock customer error:', error);
+    return res.status(500).json({ error: 'Failed to unblock customer account.' });
   }
 };
 
@@ -1575,6 +1915,8 @@ module.exports = {
   bulkDeleteStaff,
   resetStaffPassword,
   getCustomerList,
+  blockCustomerAccount,
+  unblockCustomerAccount,
   deleteCustomerAccount,
   bulkDeleteCustomers,
   getOrderStatusHistoryList,
@@ -1585,4 +1927,5 @@ module.exports = {
   updateBranch,
   deleteBranch,
   bulkDeleteBranches,
+  clearDashboardStatsCache,
 };

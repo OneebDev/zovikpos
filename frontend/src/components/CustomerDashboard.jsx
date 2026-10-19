@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import api, { setActiveAuthTokens } from '../services/api';
+import { connectSocket, getSocket } from '../services/socket';
 
 import { useCustomerMenu } from '../hooks/useCustomerMenu';
 import { useCustomerActiveOrders } from '../hooks/useCustomerActiveOrders';
@@ -731,11 +732,18 @@ const CustomerDashboard = ({ tableIdFromRoute }) => {
   };
 
   // ─── OTP Handlers ────────────────────────────────────────────────────────
+  const STUDENT_EMAIL_REGEX = /^[0-9]{2}[a-zA-Z]{2,3}-[0-9]{1,4}-[a-zA-Z]{2,5}@students\.uitu\.edu\.pk$/i;
+
   const handleSendOtp = async (e) => {
     if (e) e.preventDefault();
     if (otpLoading || cooldown > 0) return;
-    if (!authEmail) {
-      setOtpError('Please enter your email address.');
+    const cleanEmail = (authEmail || '').trim();
+    if (!cleanEmail) {
+      setOtpError('Please enter your UIT student email address.');
+      return;
+    }
+    if (!STUDENT_EMAIL_REGEX.test(cleanEmail)) {
+      setOtpError('Please enter a valid UIT student email address (e.g. 23SP-051-SE@students.uitu.edu.pk).');
       return;
     }
     setOtpError('');
@@ -745,14 +753,14 @@ const CustomerDashboard = ({ tableIdFromRoute }) => {
     try {
       const curSessionId = sessionId || localStorage.getItem('customer_sessionId');
       const res = await api.post('/auth/send-otp', {
-        email: authEmail.trim(),
-        name: authName.trim() || 'Guest Customer',
+        email: cleanEmail,
+        name: authName.trim() || 'Student',
         sessionId: curSessionId || undefined,
       });
 
       if (res.data.success) {
         setOtpSent(true);
-        setOtpSuccess('Verification code sent to your email. Check inbox.');
+        setOtpSuccess('Verification code sent to your student email. Check inbox.');
         setCooldown(30);
       }
     } catch (err) {
@@ -780,9 +788,10 @@ const CustomerDashboard = ({ tableIdFromRoute }) => {
 
     try {
       const curSessionId = sessionId || localStorage.getItem('customer_sessionId');
+      const cleanEmail = (authEmail || '').trim();
       const res = await api.post('/auth/verify-otp', {
-        email: authEmail.trim(),
-        name: authName.trim() || 'Guest Customer',
+        email: cleanEmail,
+        name: authName.trim() || 'Student',
         otp: otpCode.trim(),
         sessionId: curSessionId || undefined,
       });
@@ -797,6 +806,13 @@ const CustomerDashboard = ({ tableIdFromRoute }) => {
         localStorage.setItem('user', JSON.stringify(verifiedUser));
         if (curSessionId) {
           localStorage.setItem('customer_verifiedSessionId', curSessionId);
+        }
+
+        // Immediately authenticate real-time socket and join session room
+        connectSocket(verifiedUser);
+        const sock = getSocket();
+        if (curSessionId && sock) {
+          sock.emit('join:session', curSessionId);
         }
 
         setIsSessionVerified(true);
@@ -1346,14 +1362,14 @@ const CustomerDashboard = ({ tableIdFromRoute }) => {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-[#332E2A] dark:text-[#E7E0DB] block mb-1.5">Email Address <span className="font-normal text-[#8A817B] dark:text-[#B8B0AA]">(for receipt &amp; code)</span></label>
+                  <label className="text-xs font-semibold text-[#332E2A] dark:text-[#E7E0DB] block mb-1.5">UIT Student Email <span className="font-normal text-[#8A817B] dark:text-[#B8B0AA]">(e.g. 23SP-051-SE@students.uitu.edu.pk)</span></label>
                   <div className="relative">
                     <input
                       type="email"
                       required
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
-                      placeholder="name@university.edu"
+                      placeholder="23SP-051-SE@students.uitu.edu.pk"
                       className="w-full h-12 bg-[#FAF9F7] dark:bg-[#292725] border border-[#E7E5E4] dark:border-[#45403D] rounded-[14px] px-4 pr-11 text-[13px] text-[#171717] dark:text-[#F5F5F5] placeholder:text-[#A8A29E] focus:outline-none focus:border-[#E85D2A] focus:bg-white dark:focus:bg-[#302A27] focus:ring-4 focus:ring-[#E85D2A]/[0.08] transition-all"
                     />
                     <Mail className="w-[17px] h-[17px] text-[#8A817B] dark:text-[#B8B0AA] absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />

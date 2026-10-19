@@ -9,6 +9,10 @@ const startSession = async (req, res) => {
   const { qrToken, tableNumber } = req.body;
   const customerId = req.user?.id || null;
 
+  if (req.user && req.user.role === 'CUSTOMER' && req.user.isActive === false) {
+    return res.status(403).json({ error: 'This student account has been restricted by administration. Ordering is blocked.' });
+  }
+
   try {
     let table = null;
 

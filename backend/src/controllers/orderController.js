@@ -14,6 +14,8 @@ const { generateOrderTrackingToken, verifyTableToken } = require('../services/qr
 const { logAudit } = require('../middleware/auditMiddleware');
 
 const { deductInventoryForConfirmedOrder, restoreInventoryForOrder } = require('../services/inventoryDeductionService');
+const { clearDashboardStatsCache } = require('./adminController');
+const { validateStudentEmail } = require('./authController');
 
 /**
  * Generate human-friendly unique order number (e.g. ORD-2026-8941)
@@ -39,6 +41,22 @@ const createOrder = async (req, res) => {
   } = req.body;
 
   const userId = req.user.id;
+  const userRole = (req.user.role || '').toUpperCase();
+
+  if (userRole === 'CUSTOMER') {
+    const customerUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, isActive: true },
+    });
+    if (!customerUser || customerUser.isActive === false) {
+      return res.status(403).json({ error: 'Your student account has been blocked or deactivated. Please contact campus admin.' });
+    }
+    const emailToValidate = customerEmail || customerUser.email;
+    if (!validateStudentEmail(emailToValidate)) {
+      return res.status(400).json({ error: 'Please use a valid UIT student email address (<roll_number>@students.uitu.edu.pk).' });
+    }
+  }
+
   const requestedMethod = String(paymentMethod || 'COD').trim().toUpperCase();
   const canonicalPaymentMethod = {
     COD: 'COD',
@@ -304,6 +322,9 @@ const createOrder = async (req, res) => {
     // Send confirmation email asynchronously with dynamic tracking QR
     sendOrderPlacementEmail(order).catch(err => console.error('[Email] Placement email error:', err.message));
 
+    // Invalidate cached admin dashboard stats
+    clearDashboardStatsCache();
+
     return res.status(201).json({
       message: 'Order placed successfully.',
       order,
@@ -476,6 +497,8 @@ const updateOrderStatus = async (req, res) => {
       newValue: { status },
       req,
     }).catch(err => console.error('[Audit Log Error]', err));
+
+    clearDashboardStatsCache();
 
     return res.json({
       message: `Order status updated to ${status}.`,
@@ -765,6 +788,8 @@ const deleteOrder = async (req, res) => {
     emitToVendor('order:update', { orderDeletedId: orderId });
     emitToKitchen('order:update', { orderDeletedId: orderId });
 
+    clearDashboardStatsCache();
+
     return res.json({ message: `Order #${order.orderNumber} deleted successfully.` });
   } catch (error) {
     console.error('Delete order error:', error);
@@ -832,6 +857,8 @@ const bulkDeleteOrders = async (req, res) => {
 
     emitToAdmin('order:update', { bulkDeletedOrderIds: orderIds });
     emitToVendor('order:update', { bulkDeletedOrderIds: orderIds });
+
+    clearDashboardStatsCache();
 
     return res.json({
       message: `Successfully deleted ${orderIds.length} orders within "${scope}" scope.`,
