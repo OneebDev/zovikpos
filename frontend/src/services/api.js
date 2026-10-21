@@ -12,6 +12,18 @@ export const resolveBackendUrl = () => {
       (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL)) ||
     '';
 
+  // If running on a local LAN IP (e.g. 192.168.x.x) or localhost, dynamic hostname matching ensures
+  // mobile devices accessing Vite dev server over LAN automatically hit the backend on the same machine IP.
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
+    const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(host);
+    const isLocalIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || host.endsWith('.local');
+
+    if (isLocalHost || isLocalIp) {
+      return `http://${host}:5001`;
+    }
+  }
+
   if (envVal && typeof envVal === 'string' && envVal.trim() !== '') {
     const trimmed = envVal.trim().replace(/\/+$/, '');
     return trimmed.replace(/\/api$/, '');

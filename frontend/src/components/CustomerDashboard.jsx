@@ -31,8 +31,13 @@ import {
   Utensils,
   Sun,
   Moon,
+  Download,
+  X,
+  QrCode,
+  LogOut,
 } from 'lucide-react';
 import FAQModal from './FAQModal';
+import InAppQRScanner from './InAppQRScanner';
 
 const DeliveryTableDropdown = ({ value, tables, onChange, onOpen, loading = false, compact = false }) => {
   const [open, setOpen] = useState(false);
@@ -261,9 +266,36 @@ export const OtpInputBoxes = ({ value, onChange, disabled }) => {
   );
 };
 
-const CustomerDashboard = ({ tableIdFromRoute }) => {
+const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   const navigate = useNavigate();
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+
+  const handleCustomerLogout = () => {
+    // Clear all customer tokens, state and session caches
+    localStorage.removeItem('customer_token');
+    localStorage.removeItem('customer_user');
+    localStorage.removeItem('customer_verifiedSessionId');
+    localStorage.removeItem('customer_sessionId');
+    localStorage.removeItem('customer_tableToken');
+    localStorage.removeItem('customer_tableId');
+    localStorage.removeItem('customer_cart');
+    localStorage.removeItem('customer_checkoutStep');
+    localStorage.removeItem('customer_category');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    sessionStorage.clear();
+
+    setIsSessionVerified(false);
+    setSessionId('');
+    setCart({});
+    if (onLogout) {
+      onLogout();
+    }
+    navigate('/customer', { replace: true });
+    window.location.reload();
+  };
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -397,7 +429,88 @@ const CustomerDashboard = ({ tableIdFromRoute }) => {
     }
   }, [cooldown]);
 
-  // ─── Initialize Dining Session from QR Token or Table ID ─────────────────
+  // ─── PWA Installation Prompt State ─────────────────────────────────────────
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
+  const [isIosDevice, setIsIosDevice] = useState(false);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
+
+  useEffect(() => {
+    // Check if running in standalone mode (already installed)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (isStandalone) {
+      setIsAppInstalled(true);
+      return;
+    }
+
+    // Detect iOS
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const isIos = /iphone|ipad|ipod/.test(userAgent);
+    setIsIosDevice(isIos);
+
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setIsAppInstalled(true);
+      setDeferredInstallPrompt(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredInstallPrompt) {
+      try {
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        if (outcome === 'accepted') {
+          setIsAppInstalled(true);
+        }
+        setDeferredInstallPrompt(null);
+      } catch (err) {
+        console.warn('Install prompt error:', err);
+        setShowInstallGuide(true);
+      }
+    } else {
+      setShowInstallGuide(true);
+    }
+  };
+
+  // ─── In-App QR Scanner State ──────────────────────────────────────────────
+  const [showInAppScanner, setShowInAppScanner] = useState(false);
+
+  const handleQrScanned = (scannedText) => {
+    if (!scannedText) return;
+    try {
+      let token = scannedText.trim();
+      // If full URL scanned (e.g. http://.../customer/tbl%3A7%3A5...)
+      if (token.includes('/customer/')) {
+        const parts = token.split('/customer/');
+        token = parts[1]?.split('?')[0]?.split('#')[0] || token;
+      }
+      if (token.includes('%')) {
+        try { token = decodeURIComponent(token); } catch { /* Keep scanning token as-is if it is not valid URI encoding. */ }
+      }
+
+      // If user is scanning to recover expired session or switch table
+      if (sessionExpired) {
+        setSessionExpired(false);
+      }
+
+      navigate(`/customer/${encodeURIComponent(token)}`);
+    } catch (err) {
+      console.error('Scan process error:', err);
+      setTableError('Could not read table QR code. Please try again.');
+    }
+  };
   useEffect(() => {
     const initSession = async () => {
       const storedSession = localStorage.getItem('customer_sessionId');
@@ -1110,77 +1223,133 @@ const CustomerDashboard = ({ tableIdFromRoute }) => {
                 Your dining session has expired due to inactivity. Please scan the QR code at your table to start a new session.
               </p>
             </div>
-            <button
-              onClick={() => {
-                // Clear all session data
-                localStorage.removeItem('customer_sessionId');
-                localStorage.removeItem('customer_verifiedSessionId');
-                localStorage.removeItem('customer_tableToken');
-                localStorage.removeItem('customer_tableId');
-                localStorage.removeItem('customer_cart');
-                localStorage.removeItem('customer_checkoutStep');
-                localStorage.removeItem('customer_category');
-                setSessionExpired(false);
-                setSessionId('');
-                setIsSessionVerified(false);
-                setCart({});
-                navigate('/customer', { replace: true });
-              }}
-              className="w-full py-3.5 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-500 hover:to-orange-600 text-white font-extrabold text-sm rounded-xl transition-all shadow-lg cursor-pointer"
-            >
-              Start New Session
-            </button>
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowInAppScanner(true);
+                }}
+                className="w-full py-3.5 bg-[#E85D2A] hover:bg-[#D94E1B] text-white font-black text-sm rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <QrCode className="w-5 h-5" />
+                Scan Table QR to Reconnect
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  // Clear all session data
+                  localStorage.removeItem('customer_sessionId');
+                  localStorage.removeItem('customer_verifiedSessionId');
+                  localStorage.removeItem('customer_tableToken');
+                  localStorage.removeItem('customer_tableId');
+                  localStorage.removeItem('customer_cart');
+                  localStorage.removeItem('customer_checkoutStep');
+                  localStorage.removeItem('customer_category');
+                  setSessionExpired(false);
+                  setSessionId('');
+                  setIsSessionVerified(false);
+                  setCart({});
+                  navigate('/customer', { replace: true });
+                }}
+                className="w-full py-2.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+              >
+                Start Default Table Session
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ── Top Application Header — Premium Redesign ───────────────────────── */}
-      <header className="bg-white/80 dark:bg-[#1A1A1A]/80 backdrop-blur-xl border-b border-[#E7E5E4] dark:border-[#333] sticky top-0 z-30 shadow-sm transition-all">
-        {/* Row 1: Branding + Actions */}
-        <div className="px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#E85D2A] to-[#FB923C] flex items-center justify-center text-white text-lg font-black shadow-lg shadow-[#E85D2A]/25 shrink-0">
-              <Utensils className="w-5 h-5" />
+      {/* ── Top Application Header — Ultra Clean & Professional ──────────────── */}
+      <header className="bg-white/95 dark:bg-[#18181B]/95 backdrop-blur-xl border-b border-gray-200/80 dark:border-zinc-800 sticky top-0 z-30 shadow-xs transition-colors">
+        {/* Row 1: Brand & Actions */}
+        <div className="max-w-7xl mx-auto px-3.5 sm:px-6 py-2.5 flex items-center justify-between gap-3">
+          {/* Brand */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-[#E85D2A] to-[#FB923C] flex items-center justify-center text-white shadow-md shadow-[#E85D2A]/20 shrink-0">
+              <Utensils className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black tracking-tight text-[#171717] dark:text-white leading-none">
+              <h2 className="text-sm sm:text-base font-black tracking-tight text-[#171717] dark:text-white leading-none">
                 ZOVIKPOS
               </h2>
-              <span className="text-[10px] font-bold text-[#78716C] dark:text-[#A8A29E] tracking-wide">
-                Smart Dining Experience
+              <span className="text-[9px] sm:text-[10px] font-bold text-[#78716C] dark:text-zinc-400 tracking-wide block mt-0.5">
+                Smart Dining
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          {/* Action Toolbar */}
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5">
+            {/* Install PWA App Button */}
+            {!isAppInstalled && (
+              <button
+                type="button"
+                onClick={handleInstallClick}
+                className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer font-bold text-[11px] shrink-0"
+                title="Install app on mobile/desktop"
+              >
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden xs:inline">Install</span>
+              </button>
+            )}
+
+            {/* In-App Table QR Scanner Button */}
             <button
               type="button"
-              onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
-              className="w-10 h-10 rounded-xl border border-[#E7E5E4] dark:border-[#333] bg-white/70 dark:bg-[#242424] text-[#78716C] dark:text-[#E5E5E5] hover:border-[#E85D2A]/40 hover:text-[#E85D2A] transition-all flex items-center justify-center cursor-pointer"
-              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              onClick={() => setShowInAppScanner(true)}
+              className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg bg-[#E85D2A]/10 border border-[#E85D2A]/25 text-[#E85D2A] hover:bg-[#E85D2A] hover:text-white transition-all flex items-center gap-1.5 cursor-pointer font-bold text-[11px] shrink-0"
+              title="Scan Table QR Code"
             >
-              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-            <button
-              onClick={() => setShowFAQ(true)}
-              className="w-10 h-10 sm:w-auto sm:h-auto sm:px-4 sm:py-2.5 text-xs font-bold text-[#78716C] dark:text-[#A8A29E] hover:text-[#E85D2A] hover:bg-[#E85D2A]/5 dark:hover:bg-[#E85D2A]/10 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-transparent hover:border-[#E85D2A]/20"
-              title="Help & FAQ"
-            >
-              <HelpCircle className="w-5 h-5 sm:w-4 sm:h-4 text-[#E85D2A]" />
-              <span className="hidden sm:inline">Help</span>
+              <QrCode className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden xs:inline">Scan QR</span>
             </button>
 
-            {/* Cart Header Button (Only visible after login / OTP verification) */}
+            {/* Dark/Light mode toggle */}
+            <button
+              type="button"
+              onClick={() => setTheme((curr) => (curr === 'dark' ? 'light' : 'dark'))}
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 hover:text-[#E85D2A] transition-all flex items-center justify-center cursor-pointer shrink-0"
+              title="Toggle theme"
+            >
+              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            </button>
+
+            {/* Help FAQ button */}
+            <button
+              type="button"
+              onClick={() => setShowFAQ(true)}
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 hover:text-[#E85D2A] transition-all flex items-center justify-center cursor-pointer shrink-0"
+              title="Help & FAQ"
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Sign Out Button (Visible when customer is logged in / session verified) */}
             {isSessionVerified && (
               <button
-                onClick={() => navigate('/customer/cart')}
-                className="relative h-10 px-4 sm:px-5 sm:py-2.5 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-95 text-white rounded-2xl text-xs font-bold transition-all shadow-lg shadow-[#E85D2A]/25 flex items-center gap-2 cursor-pointer"
+                type="button"
+                onClick={handleCustomerLogout}
+                className="h-8 sm:h-9 px-2 sm:px-2.5 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white transition-all flex items-center gap-1 cursor-pointer font-bold text-[11px] shrink-0"
+                title="Sign Out"
               >
-                <ShoppingBag className="w-4 h-4" />
+                <LogOut className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden md:inline">Sign Out</span>
+              </button>
+            )}
+
+            {/* Cart Button */}
+            {isSessionVerified && (
+              <button
+                type="button"
+                onClick={() => navigate('/customer/cart')}
+                className="relative h-8 sm:h-9 px-3 sm:px-4 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-[#E85D2A]/20 flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Cart</span>
                 {totalCartQuantity > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 bg-white text-[#E85D2A] w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] shadow-md ring-2 ring-[#E85D2A] animate-scale-up">
+                  <span className="bg-white text-[#E85D2A] px-1.5 py-0.2 rounded-full font-black text-[10px] shadow-xs">
                     {totalCartQuantity}
                   </span>
                 )}
@@ -1189,20 +1358,25 @@ const CustomerDashboard = ({ tableIdFromRoute }) => {
           </div>
         </div>
 
-        {/* Row 2: Session Info Bar */}
-        <div className="px-4 sm:px-6 lg:px-8 pb-3 flex items-center gap-2 sm:gap-3 flex-wrap text-[11px]">
-          <span className="inline-flex items-center gap-1.5 bg-[#E85D2A]/10 dark:bg-[#E85D2A]/15 text-[#E85D2A] border border-[#E85D2A]/20 px-3 py-1.5 rounded-full font-extrabold uppercase tracking-wide">
-            <MapPin className="w-3 h-3" />
-            {tableId}
-          </span>
-          <span className="inline-flex items-center gap-1.5 bg-[#FAF9F7] dark:bg-[#2A2A2A] text-[#78716C] dark:text-[#A8A29E] border border-[#E7E5E4] dark:border-[#333] px-3 py-1.5 rounded-full font-bold">
-            <Clock className="w-3 h-3" />
-            {scanTime}
-          </span>
-          <span className="inline-flex items-center gap-1.5 text-[#78716C] dark:text-[#A8A29E] font-medium">
-            <User className="w-3 h-3" />
-            Welcome, <strong className="text-[#171717] dark:text-white font-bold">{authName || guestName || 'Customer'}</strong>
-          </span>
+        {/* Row 2: Status Bar */}
+        <div className="max-w-7xl mx-auto px-3.5 sm:px-6 pb-2 pt-0.5 flex items-center justify-between text-[11px] border-t border-gray-100 dark:border-zinc-800/60 gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 bg-[#E85D2A]/10 text-[#E85D2A] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider text-[10px]">
+              <MapPin className="w-3 h-3" />
+              {tableId}
+            </span>
+            <span className="inline-flex items-center gap-1 text-gray-500 dark:text-zinc-400 font-medium">
+              <Clock className="w-3 h-3" />
+              {scanTime}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-gray-600 dark:text-zinc-400">
+            <User className="w-3 h-3 text-[#E85D2A]" />
+            <span className="truncate max-w-[140px] sm:max-w-none">
+              Welcome, <strong className="text-gray-900 dark:text-white font-bold">{authName || guestName || 'Customer'}</strong>
+            </span>
+          </div>
         </div>
       </header>
 
@@ -2010,6 +2184,68 @@ const CustomerDashboard = ({ tableIdFromRoute }) => {
               <span className="sm:hidden">Checkout</span>
               <span className="hidden sm:inline">View Cart &amp; Checkout</span>
               <ArrowRight className="w-4 h-4 shrink-0" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* In-App QR Scanner Modal (Direct camera scan to switch tables or reconnect expired sessions) */}
+      <InAppQRScanner
+        isOpen={showInAppScanner}
+        onClose={() => setShowInAppScanner(false)}
+        onScanSuccess={handleQrScanned}
+      />
+
+      {/* PWA Install Guide Modal (When browser holds deferred prompt or on iOS / Chrome menu) */}
+      {showInstallGuide && (
+        <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-[#1E1C1B] border border-gray-100 dark:border-zinc-800 rounded-3xl max-w-sm w-full p-6 space-y-5 text-center shadow-2xl relative">
+            <button
+              onClick={() => setShowInstallGuide(false)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto ring-8 ring-emerald-500/10">
+              <Download className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-black text-gray-900 dark:text-white">Install ZovikPOS App</h3>
+              <p className="text-xs text-gray-500 dark:text-zinc-400 leading-relaxed">
+                Install ZovikPOS on your phone for fullscreen dining and quick access.
+              </p>
+            </div>
+
+            {!window.isSecureContext && (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-left text-xs leading-relaxed text-amber-700 dark:text-amber-200">
+                Direct install and camera scanning need the secure HTTPS customer website. This local HTTP address cannot install the app or access the live camera.
+              </div>
+            )}
+
+            {window.isSecureContext && (
+              <div className="bg-gray-50 dark:bg-zinc-900/60 rounded-2xl p-4 text-left space-y-3 text-xs text-gray-700 dark:text-zinc-300">
+                {isIosDevice ? (
+                  <>
+                    <div className="flex items-start gap-2.5"><span className="w-5 h-5 rounded-full bg-[#E85D2A] text-white flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">1</span><span>Tap <strong>Share</strong> in Safari.</span></div>
+                    <div className="flex items-start gap-2.5"><span className="w-5 h-5 rounded-full bg-[#E85D2A] text-white flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">2</span><span>Choose <strong>Add to Home Screen</strong>.</span></div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-start gap-2.5"><span className="w-5 h-5 rounded-full bg-[#E85D2A] text-white flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">1</span><span>Open the browser menu <strong>(⋮)</strong>.</span></div>
+                    <div className="flex items-start gap-2.5"><span className="w-5 h-5 rounded-full bg-[#E85D2A] text-white flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">2</span><span>Choose <strong>Install app</strong> or <strong>Add to Home Screen</strong>.</span></div>
+                  </>
+                )}
+                <p className="text-gray-500 dark:text-zinc-400">If the browser supports direct install, the Install button opens it immediately.</p>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowInstallGuide(false)}
+              className="w-full py-3 bg-[#E85D2A] hover:bg-[#D94E1B] text-white font-black text-xs rounded-xl shadow-lg transition-all cursor-pointer"
+            >
+              Got It, Thanks!
             </button>
           </div>
         </div>

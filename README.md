@@ -123,29 +123,29 @@ Add the following environment variables:
 
 ```env
 PORT=5001
-DATABASE_URL="postgresql://postgres.ufcphvkxlzjcksmahvwh:Deathline742454@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres?connection_limit=5&pool_timeout=15"
-JWT_SECRET="pos_system_jwt_access_secret_key_2026"
-JWT_REFRESH_SECRET="pos_system_jwt_refresh_secret_key_2026"
+DATABASE_URL="postgresql://postgres.[PROJECT_REF]:[DATABASE_PASSWORD]@[POOLER_HOST]:5432/postgres?connection_limit=5&pool_timeout=15"
+JWT_SECRET="[GENERATE_A_UNIQUE_SECRET]"
+JWT_REFRESH_SECRET="[GENERATE_A_DIFFERENT_UNIQUE_SECRET]"
 FRONTEND_URL="http://localhost:5173"
 AI_SERVICE_URL="http://localhost:8000"
-QR_SECRET="swipebite_pos_qr_cryptographic_secret_2026"
+QR_SECRET="[GENERATE_A_UNIQUE_SECRET]"
 
 # Supabase Cloud Database Config
 SUPABASE_URL="https://ufcphvkxlzjcksmahvwh.supabase.co"
-SUPABASE_ANON_KEY="sb_publishable_enOjo3lP_64PNWALq9k0Tw_hX6guCJb"
-SUPABASE_SERVICE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+SUPABASE_ANON_KEY="[YOUR_SUPABASE_ANON_KEY]"
+SUPABASE_SERVICE_KEY="[YOUR_SUPABASE_SERVICE_ROLE_KEY]"
 
 # SMTP Email OTP Settings
 SMTP_HOST="smtp.gmail.com"
 SMTP_PORT=465
-SMTP_USER="oacreatives951@gmail.com"
-SMTP_PASS="rubkcopuyiaqderm"
+SMTP_USER="[YOUR_SMTP_EMAIL]"
+SMTP_PASS="[YOUR_SMTP_APP_PASSWORD]"
 
 # Groq Multimodal AI Keys (Multi-Key Failover Engine)
-GROQ_API_KEY="gsk_your_groq_api_key_1_here"
-GROQ_API_KEY_2="gsk_your_groq_api_key_2_here"
-GROQ_API_KEY_3="gsk_your_groq_api_key_3_here"
-GROQ_API_KEY_4="gsk_your_groq_api_key_4_here"
+GROQ_API_KEY="[YOUR_GROQ_API_KEY]"
+GROQ_API_KEY="[YOUR_GROQ_API_KEY]"
+GROQ_API_KEY="[YOUR_GROQ_API_KEY]"
+GROQ_API_KEY="[YOUR_GROQ_API_KEY]"
 GROQ_MODEL="qwen/qwen3.8-27b"
 ```
 

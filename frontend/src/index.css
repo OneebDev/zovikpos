@@ -663,3 +663,27 @@ select option:hover {
   color: var(--text-main);
   background-color: var(--card-bg);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   PWA & NATIVE MOBILE APP FEEL ENHANCEMENTS
+   ═══════════════════════════════════════════════════════════════ */
+html, body {
+  /* Prevent pull-to-refresh rubber banding in mobile browsers */
+  overscroll-behavior-y: contain;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Safe area padding for iPhones with dynamic island/notches */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* App-like touch feel */
+button, a, input, select {
+  touch-action: manipulation;
+}
+

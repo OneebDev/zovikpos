@@ -1,0 +1,18 @@
+{
+  "name": "ZovikPOS Customer Portal",
+  "short_name": "ZovikPOS",
+  "description": "Smart Canteen & Self-Ordering Point of Sale",
+  "start_url": "/customer",
+  "display": "standalone",
+  "background_color": "#0B0F19",
+  "theme_color": "#F97316",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
