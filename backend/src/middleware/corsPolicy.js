@@ -11,8 +11,25 @@ const addConfiguredOrigins = (value) => {
   });
 };
 
+// Production default origins
+addConfiguredOrigins('https://zovik-pos.vercel.app');
+
+// Environment-configured origins
 addConfiguredOrigins(process.env.FRONTEND_URL);
 addConfiguredOrigins(process.env.CORS_ORIGINS);
+
+const isAllowedVercelOrigin = (origin) => {
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol !== 'https:') return false;
+    if (parsed.hostname === 'zovik-pos.vercel.app') return true;
+    // Allow project preview deployments (e.g. zovik-pos-git-main.vercel.app, zovik-pos-xyz.vercel.app)
+    if (/^zovik-pos(-[a-z0-9-]+)?\.vercel\.app$/.test(parsed.hostname)) return true;
+  } catch {
+    return false;
+  }
+  return false;
+};
 
 const isPrivateIpv4 = (hostname) => {
   const octets = hostname.split('.').map(Number);
@@ -25,17 +42,17 @@ const isPrivateIpv4 = (hostname) => {
 const corsOrigin = (origin, callback) => {
   if (!origin) return callback(null, true);
   if (configuredOrigins.has(origin)) return callback(null, true);
+  if (isAllowedVercelOrigin(origin)) return callback(null, true);
 
-  if (process.env.NODE_ENV !== 'production') {
-    try {
-      const parsed = new URL(origin);
-      const isHttpOrigin = parsed.protocol === 'http:' || parsed.protocol === 'https:';
-      const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
-      const isLocalNetwork = isPrivateIpv4(parsed.hostname) || parsed.hostname.endsWith('.local');
-      if (isHttpOrigin && (isLocalHost || isLocalNetwork)) return callback(null, true);
-    } catch {
-      // Invalid Origin values are denied below.
-    }
+  // Allow local development and local LAN origins
+  try {
+    const parsed = new URL(origin);
+    const isHttpOrigin = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+    const isLocalNetwork = isPrivateIpv4(parsed.hostname) || parsed.hostname.endsWith('.local');
+    if (isHttpOrigin && (isLocalHost || isLocalNetwork)) return callback(null, true);
+  } catch {
+    // Invalid Origin values are denied below.
   }
 
   return callback(null, false);

@@ -317,6 +317,7 @@ const getDynamicBaseUrl = (req) => {
   if (req.query.baseUrl) {
     return req.query.baseUrl.replace(/\/$/, '');
   }
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, '');
   let host = req.headers['x-forwarded-host'] || req.headers.host || req.hostname || 'localhost';
   host = host.split(':')[0];
   return `http://${host}:5173`;

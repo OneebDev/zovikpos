@@ -235,7 +235,7 @@ const sendOrderPlacementEmail = async (order) => {
     ? `COD Order Confirmed: ${orderNum} (Pay at Counter) - ZovikPOS`
     : `Order Confirmed: ${orderNum} - ZovikPOS`;
 
-  let baseUrl = 'http://localhost:5173';
+  let baseUrl = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://zovik-pos.vercel.app' : 'http://localhost:5173');
   try {
     const configuredUrl = new URL(process.env.FRONTEND_URL || baseUrl);
     if (configuredUrl.protocol === 'http:' || configuredUrl.protocol === 'https:') {

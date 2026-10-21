@@ -4,6 +4,7 @@
   "description": "Backend API service for AI-Powered POS System",
   "main": "src/server.js",
   "scripts": {
+    "build": "npx prisma generate",
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "db:migrate": "npx prisma migrate dev",

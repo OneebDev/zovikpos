@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import api, { setActiveAuthTokens } from '../services/api';
+import api, { setActiveAuthTokens, resolveBackendUrl } from '../services/api';
 import { connectSocket, getSocket } from '../services/socket';
 
 import { useCustomerMenu } from '../hooks/useCustomerMenu';
@@ -833,8 +833,8 @@ const CustomerDashboard = ({ tableIdFromRoute }) => {
     if (item?.imageUrl && typeof item.imageUrl === 'string' && item.imageUrl.trim() !== '') {
       const url = item.imageUrl.trim();
       if (url.startsWith('/uploads/')) {
-        const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-        return `http://${host}:5001${url}`;
+
+        return `${resolveBackendUrl()}${url}`;
       }
       return url;
     }

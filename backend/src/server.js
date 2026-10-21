@@ -50,6 +50,7 @@
 // });
 // app.use(cors({
 //   origin: corsOrigin,
+
 //   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 // }));
 // app.use(express.json({ limit: '50mb' }));
@@ -183,6 +184,7 @@ app.use((req, res, next) => {
 // CORS configuration
 app.use(cors({
   origin: corsOrigin,
+  credentials: true,
   methods: [
     'GET',
     'POST',

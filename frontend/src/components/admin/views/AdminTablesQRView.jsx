@@ -32,10 +32,10 @@ const AdminTablesQRView = ({ showToast }) => {
   // Dynamically compute active host from browser location
   const getActiveBaseUrl = () => {
     // If Admin is opened on PC (localhost), use network IP so printed/displayed QR scan works on Mobile
-    const host = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-      ? '192.168.2.109'
-      : window.location.hostname;
-    return `http://${host}:5173`;
+
+
+
+    return (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://192.168.2.109:5173' : window.location.origin;
   };
 
   const fetchTables = useCallback(async () => {

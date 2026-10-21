@@ -1,14 +1,49 @@
 import axios from 'axios';
 
-const getApiBase = () => {
-  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+const PRODUCTION_BACKEND_URL = 'https://sparkling-miracle-production-d21c.up.railway.app';
+
+/**
+ * Resolves the root backend server URL (without /api suffix).
+ * e.g. "https://sparkling-miracle-production-d21c.up.railway.app" or "http://localhost:5001"
+ */
+export const resolveBackendUrl = () => {
+  const envVal =
+    (typeof import.meta !== 'undefined' &&
+      (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL)) ||
+    '';
+
+  if (envVal && typeof envVal === 'string' && envVal.trim() !== '') {
+    const trimmed = envVal.trim().replace(/\/+$/, '');
+    return trimmed.replace(/\/api$/, '');
   }
-  if (typeof window !== 'undefined' && window.location) {
+
+  // If in production or running on a remote host (such as Vercel), do NOT fall back to localhost
+  const isLocalHost =
+    typeof window !== 'undefined' &&
+    window.location &&
+    ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+
+  const isProd = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.PROD);
+
+  if (!isLocalHost && (isProd || (typeof window !== 'undefined' && window.location?.hostname?.endsWith('.vercel.app')))) {
+    return PRODUCTION_BACKEND_URL;
+  }
+
+  if (typeof window !== 'undefined' && window.location?.hostname) {
     const host = window.location.hostname;
-    return `http://${host}:5001/api`;
+    return `http://${host}:5001`;
   }
-  return 'http://localhost:5001/api';
+
+  return 'http://localhost:5001';
+};
+
+/**
+ * Resolves the API base URL with the /api prefix guaranteed.
+ * e.g. "https://sparkling-miracle-production-d21c.up.railway.app/api"
+ */
+export const getApiBase = () => {
+  const base = resolveBackendUrl();
+  return `${base.replace(/\/+$/, '')}/api`;
 };
 
 const api = axios.create({

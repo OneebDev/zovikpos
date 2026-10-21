@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import { resolveBackendUrl } from './api';
 
 let currentUser = null;
 
@@ -25,12 +26,7 @@ const getTokenForUser = (user) => {
     localStorage.getItem('token');
 };
 
-const getSocketUrl = () => {
-  if (typeof window !== 'undefined' && window.location) {
-    return `http://${window.location.hostname}:5001`;
-  }
-  return 'http://localhost:5001';
-};
+const getSocketUrl = () => resolveBackendUrl();
 
 // Create a single persistent socket instance so event listeners are preserved
 export const socket = io(getSocketUrl(), {

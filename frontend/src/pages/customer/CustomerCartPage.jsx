@@ -1,6 +1,6 @@
 import  { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../../services/api';
+import api, { resolveBackendUrl } from '../../services/api';
 import { connectSocket, getSocket } from '../../services/socket';
 import { getETAPrediction } from '../../services/etaService';
 import { OtpInputBoxes } from '../../components/CustomerDashboard';
@@ -269,8 +269,8 @@ const CustomerCartPage = ({ user }) => {
     if (item?.imageUrl && typeof item.imageUrl === 'string' && item.imageUrl.trim() !== '') {
       const url = item.imageUrl.trim();
       if (url.startsWith('/uploads/')) {
-        const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-        return `http://${host}:5001${url}`;
+
+        return `${resolveBackendUrl()}${url}`;
       }
       return url;
     }

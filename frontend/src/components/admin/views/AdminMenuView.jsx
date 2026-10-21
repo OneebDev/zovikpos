@@ -15,7 +15,7 @@ import {
   RefreshCw,
   Layers,
 } from 'lucide-react';
-import api from '../../../services/api';
+import api, { resolveBackendUrl } from '../../../services/api';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
 import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 
@@ -60,8 +60,8 @@ const resolveImageUrl = (url) => {
   if (!url || typeof url !== 'string' || url.trim() === '') return null;
   const trimmed = url.trim();
   if (trimmed.startsWith('/uploads/')) {
-    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-    return `http://${host}:5001${trimmed}`;
+
+    return `${resolveBackendUrl()}${trimmed}`;
   }
   return trimmed;
 };

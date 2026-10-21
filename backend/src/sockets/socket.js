@@ -12,6 +12,7 @@ const initSocket = (server) => {
     cors: {
       origin: corsOrigin,
       methods: ['GET', 'POST'],
+      credentials: true,
     },
   });
 
