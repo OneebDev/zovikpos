@@ -11,6 +11,7 @@ const requestBuckets = new Map();
  */
 const createRateLimiter = ({ windowMs = 60000, max = 100, message = 'Too many requests, please try again later.', keyGenerator }) => {
   return (req, res, next) => {
+    if (req.method === 'OPTIONS') return next();
     const isLoopback = req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1';
     if (process.env.NODE_ENV === 'test' || (process.env.NODE_ENV !== 'production' && isLoopback)) {
       return next();

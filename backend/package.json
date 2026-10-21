@@ -25,6 +25,7 @@
     "qrcode": "^1.5.3",
     "socket.io": "^4.7.4",
     "tesseract.js": "^7.0.0",
+    "prisma": "^5.10.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

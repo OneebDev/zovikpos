@@ -182,6 +182,12 @@ app.use((req, res, next) => {
 });
 
 // CORS configuration
+app.options('*', cors({
+  origin: corsOrigin,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  optionsSuccessStatus: 204,
+}));
 app.use(cors({
   origin: corsOrigin,
   credentials: true,

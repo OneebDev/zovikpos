@@ -2,9 +2,15 @@ const configuredOrigins = new Set();
 
 const addConfiguredOrigins = (value) => {
   if (!value) return;
-  value.split(',').forEach((candidate) => {
+  value.split(',').forEach((raw) => {
+    if (!raw) return;
+    let candidate = raw.trim().replace(/^["']|["']$/g, '').trim();
+    if (!candidate) return;
     try {
-      configuredOrigins.add(new URL(candidate.trim()).origin);
+      if (!candidate.startsWith('http://') && !candidate.startsWith('https://')) {
+        candidate = `https://${candidate}`;
+      }
+      configuredOrigins.add(new URL(candidate).origin);
     } catch {
       // Ignore malformed optional origins; valid configured entries still apply.
     }
@@ -12,6 +18,7 @@ const addConfiguredOrigins = (value) => {
 };
 
 // Production default origins
+configuredOrigins.add('https://zovik-pos.vercel.app');
 addConfiguredOrigins('https://zovik-pos.vercel.app');
 
 // Environment-configured origins
@@ -39,14 +46,31 @@ const isPrivateIpv4 = (hostname) => {
     (octets[0] === 192 && octets[1] === 168);
 };
 
+const normalizeOrigin = (origin) => {
+  if (!origin) return '';
+  try {
+    return new URL(origin).origin;
+  } catch {
+    return origin.trim().replace(/\/+$/, '');
+  }
+};
+
 const corsOrigin = (origin, callback) => {
   if (!origin) return callback(null, true);
-  if (configuredOrigins.has(origin)) return callback(null, true);
-  if (isAllowedVercelOrigin(origin)) return callback(null, true);
+
+  const cleanOrigin = normalizeOrigin(origin);
+
+  if (configuredOrigins.has(cleanOrigin) || configuredOrigins.has(origin)) {
+    return callback(null, true);
+  }
+
+  if (isAllowedVercelOrigin(origin) || isAllowedVercelOrigin(cleanOrigin)) {
+    return callback(null, true);
+  }
 
   // Allow local development and local LAN origins
   try {
-    const parsed = new URL(origin);
+    const parsed = new URL(cleanOrigin);
     const isHttpOrigin = parsed.protocol === 'http:' || parsed.protocol === 'https:';
     const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
     const isLocalNetwork = isPrivateIpv4(parsed.hostname) || parsed.hostname.endsWith('.local');
