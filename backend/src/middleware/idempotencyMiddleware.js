@@ -52,6 +52,7 @@ const runIdempotency = async (req, res, next) => {
       return true;
     }
     const body = decryptResponse(cached.responseBody);
+    res.setHeader('Idempotent-Replayed', 'true');
     res.status(cached.responseStatus).json(body);
     return true;
   };
@@ -74,7 +75,8 @@ const runIdempotency = async (req, res, next) => {
   }
 
   if (row && row.requestHash !== requestHash) {
-    return errorResponse(res, 422, 'This idempotency key was already used with a different request body.');
+      res.setHeader('Idempotency-Error', 'IDEMPOTENCY_KEY_REUSED');
+      return errorResponse(res, 422, 'This idempotency key was already used with a different request body.');
   }
   if (row?.state === 'COMPLETED') {
     try {
@@ -83,6 +85,7 @@ const runIdempotency = async (req, res, next) => {
         const ttl = Math.max(1, Math.floor((row.expiresAt.getTime() - Date.now()) / 1000));
         redis.setIdempotencyCache(scopeKey, JSON.stringify({ requestHash, responseStatus: row.responseStatus, responseBody: row.responseBody }), ttl).catch(() => {});
       }
+      res.setHeader('Idempotent-Replayed', 'true');
       return res.status(row.responseStatus).json(body);
     } catch (error) {
       exceptionLogger.exception('idempotency.replay_decrypt', error, { level: 'error', context: { route: req.baseUrl + req.path } });
@@ -91,6 +94,7 @@ const runIdempotency = async (req, res, next) => {
   }
   if (row && row.lockedUntil > now) {
     res.setHeader('Retry-After', '1');
+    res.setHeader('Idempotency-Error', 'REQUEST_IN_PROGRESS');
     return errorResponse(res, 409, 'A request with this idempotency key is already in progress.');
   }
 

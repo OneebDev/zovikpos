@@ -4,6 +4,7 @@
   "description": "Backend API service for AI-Powered POS System",
   "main": "src/server.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "build": "npx prisma generate",
     "email:preview": "node scripts/renderEmailPreviews.js",
     "email:check": "node scripts/checkEmailPreviews.js",
