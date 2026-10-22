@@ -1,18 +1,22 @@
-import  { useState, useEffect } from 'react';
+import  { useState, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation, Link } from 'react-router-dom';
 import RoleLogin from './components/RoleLogin';
-import CustomerPortalPage from './pages/customer/CustomerPortalPage';
-import CustomerCartPage from './pages/customer/CustomerCartPage';
-import OrderTrackingPage from './pages/customer/OrderTrackingPage';
-import CashierPOSPage from './pages/cashier/CashierPOSPage';
-import KitchenBoardPage from './pages/kitchen/KitchenBoardPage';
-import AdminDashboardPage from './pages/admin/AdminDashboardPage';
-import  { setActiveAuthTokens } from './services/api';
+const CustomerPortalPage = lazy(() => import('./pages/customer/CustomerPortalPage'));
+const CustomerCartPage = lazy(() => import('./pages/customer/CustomerCartPage'));
+const OrderTrackingPage = lazy(() => import('./pages/customer/OrderTrackingPage'));
+const CashierPOSPage = lazy(() => import('./pages/cashier/CashierPOSPage'));
+const KitchenBoardPage = lazy(() => import('./pages/kitchen/KitchenBoardPage'));
+const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'));
+import api, { setActiveAuthTokens } from './services/api';
 import { connectSocket, disconnectSocket } from './services/socket';
 import { Sun, Moon, Flame, CreditCard, ShieldCheck } from 'lucide-react';
 import DemoRestrictionModal from './components/DemoRestrictionModal';
 import RoleChangeModal from './components/RoleChangeModal';
 import BrandLogo from './components/common/BrandLogo';
+
+const RouteLoadingFallback = () => (
+  <div className="min-h-[220px] rounded-2xl bg-[var(--surface-2)] animate-pulse" role="status" aria-label="Loading screen" />
+);
 
 function App() {
   const navigate = useNavigate();
@@ -63,6 +67,8 @@ function App() {
       root.classList.remove('dark');
     }
     localStorage.setItem('theme', theme);
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    themeColor?.setAttribute('content', theme === 'dark' ? '#111111' : '#FAF9F7');
   }, [theme]);
 
   useEffect(() => {
@@ -90,6 +96,22 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
+  // Keep eligible customer sessions renewed across menu, cart, checkout and tracking routes.
+  useEffect(() => {
+    if (!location.pathname.startsWith('/customer')) return undefined;
+    // CustomerDashboard already performs the same session health check.
+    if (location.pathname === '/customer' || location.pathname.startsWith('/customer/table/')) return undefined;
+    const renew = () => {
+      const sessionId = localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId');
+      if (!sessionId) return;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 8000);
+      api.get(`/sessions/${sessionId}`, { signal: controller.signal }).catch(() => {}).finally(() => window.clearTimeout(timeout));
+    };
+    const timer = window.setInterval(renew, 2 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [location.pathname]);
+
   const handleLoginSuccess = (loggedInUser, tokens) => {
     const rolePrefix = loggedInUser.role?.toLowerCase() || 'user';
     if (tokens?.accessToken) {
@@ -115,6 +137,7 @@ function App() {
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.clear();
     }
+    localStorage.removeItem('zovik_pending_login');
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
@@ -177,10 +200,12 @@ function App() {
 
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className="shrink-0 p-1.5 rounded-lg bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+              className="icon-btn icon-btn--44 shrink-0 rounded-lg bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              aria-pressed={theme === 'dark'}
               title="Toggle Theme"
             >
-              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
 
             {user.role === 'CUSTOMER' ? (
@@ -223,10 +248,10 @@ function App() {
       <div className="flex-1">
         <Routes>
           <Route path="/" element={<Navigate to="/customer" replace />} />
-          <Route path="/customer" element={<CustomerPortalPage user={user} onLogout={handleLogout} />} />
-          <Route path="/customer/table/:tableId" element={<CustomerPortalPage user={user} onLogout={handleLogout} />} />
-          <Route path="/customer/cart" element={<CustomerCartPage user={user} onLogout={handleLogout} />} />
-          <Route path="/customer/track/:trackingToken" element={<OrderTrackingPage user={user} onLogout={handleLogout} />} />
+          <Route path="/customer" element={<Suspense fallback={<RouteLoadingFallback />}><CustomerPortalPage user={user} onLogout={handleLogout} /></Suspense>} />
+          <Route path="/customer/table/:tableId" element={<Suspense fallback={<RouteLoadingFallback />}><CustomerPortalPage user={user} onLogout={handleLogout} /></Suspense>} />
+          <Route path="/customer/cart" element={<Suspense fallback={<RouteLoadingFallback />}><CustomerCartPage user={user} onLogout={handleLogout} /></Suspense>} />
+          <Route path="/customer/track/:trackingToken" element={<Suspense fallback={<RouteLoadingFallback />}><OrderTrackingPage user={user} onLogout={handleLogout} /></Suspense>} />
 
           {/* The 4 Clean Portal Login Routes */}
           <Route path="/kitchen/login" element={<RoleLogin roleType="KITCHEN" onLoginSuccess={handleLoginSuccess} />} />
@@ -247,7 +272,9 @@ function App() {
                   Authenticating Admin Workspace...
                 </div>
               ) : user.role === 'ADMIN' ? (
-                <AdminDashboardPage user={user} onLogout={handleLogout} />
+                <Suspense fallback={<RouteLoadingFallback />}>
+                  <AdminDashboardPage user={user} onLogout={handleLogout} />
+                </Suspense>
               ) : (
                 <Navigate to="/admin/login" replace />
               )
@@ -261,7 +288,7 @@ function App() {
                   Authenticating Cashier Workspace...
                 </div>
               ) : user.role === 'VENDOR' ? (
-                <CashierPOSPage user={user} onLogout={handleLogout} />
+                <Suspense fallback={<RouteLoadingFallback />}><CashierPOSPage user={user} onLogout={handleLogout} /></Suspense>
               ) : (
                 <Navigate to="/cashier/login" replace />
               )
@@ -275,7 +302,7 @@ function App() {
                   Authenticating Cashier Workspace...
                 </div>
               ) : user.role === 'VENDOR' ? (
-                <CashierPOSPage user={user} onLogout={handleLogout} />
+                <Suspense fallback={<RouteLoadingFallback />}><CashierPOSPage user={user} onLogout={handleLogout} /></Suspense>
               ) : (
                 <Navigate to="/cashier/login" replace />
               )
@@ -289,7 +316,7 @@ function App() {
                   Authenticating Kitchen Workspace...
                 </div>
               ) : user.role === 'KITCHEN' ? (
-                <KitchenBoardPage user={user} onLogout={handleLogout} />
+                <Suspense fallback={<RouteLoadingFallback />}><KitchenBoardPage user={user} onLogout={handleLogout} /></Suspense>
               ) : (
                 <Navigate to="/kitchen/login" replace />
               )

@@ -58,8 +58,9 @@ model User {
 
 model Session {
   id          String     @id // UUID
-  tableId     Int
-  table       Table      @relation(fields: [tableId], references: [id])
+  tableId     Int?
+  table       Table?     @relation(fields: [tableId], references: [id])
+  tableLabel  String?
   customerId  Int?
   customer    User?      @relation(fields: [customerId], references: [id])
   status      String     @default("ACTIVE") // ACTIVE, CHECKOUT, COMPLETED, EXPIRED, CANCELLED
@@ -136,6 +137,7 @@ model Order {
   branchId      Int?
   branch        Branch?              @relation(fields: [branchId], references: [id])
   tableNumber   String? // Snapshot display (e.g. "Table 4")
+  tableLabel    String? // Stable staff-facing table/counter label snapshot
   customerEmail String?
   emailVerified Boolean              @default(false)
   trackingToken String?              @unique // Unique order tracking token for direct QR scan
@@ -328,6 +330,13 @@ model InventoryReceivingItem {
   notes             String?
   createdAt         DateTime           @default(now())
   deductionLogs     InventoryLog[]
+}
+
+model InventoryReceivingConfirmAttempt {
+  idempotencyKey String   @id
+  requestHash    String
+  response       Json
+  createdAt      DateTime @default(now())
 }
 
 model EmailOTP {

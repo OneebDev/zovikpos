@@ -1,6 +1,7 @@
 import  { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import api from '../services/api';
 import { getSocket } from '../services/socket';
+import { resolveTableLabel } from '../utils/customerTableLabel';
 import AdminMenuView from './admin/views/AdminMenuView';
 import {
   Check,
@@ -21,14 +22,22 @@ import {
 } from 'lucide-react';
 import DemoStatusBadge from './DemoStatusBadge';
 import { paymentMethodLabel } from '../utils/paymentMethods';
+import { isOrderDeletedEvent, mergeOrderList, mergeOrderRecord, orderStoreFromList, removeDeletedOrders, stableOrderSort } from '../utils/liveOrderStore';
 
 const VendorDashboard = ({ user }) => {
-  const [orders, setOrders] = useState([]);
+  const [orderStore, setOrderStore] = useState({});
+  const orders = useMemo(() => stableOrderSort(Object.values(orderStore)), [orderStore]);
   const [menu, setMenu] = useState([]);
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('vendor_activeTab') || 'verification'); // 'verification', 'active', 'menu'
   const [, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const latestSequenceRef = useRef(0);
+  const latestSequenceByIdRef = useRef({});
+  const fetchRequestRef = useRef(0);
+  const fetchControllerRef = useRef(null);
+  const mountedRef = useRef(false);
+  const optimisticOrdersRef = useRef({});
 
   // Menu Search & Filter States
 
@@ -89,6 +98,22 @@ const VendorDashboard = ({ user }) => {
       console.warn('Audio chime warning:', e);
     }
   }, [soundEnabled]);
+  const playOrderChimeRef = useRef(playOrderChime);
+  playOrderChimeRef.current = playOrderChime;
+  const writeOrders = useCallback((updater, source = 'optimistic') => {
+    setOrderStore((previousStore) => {
+      const previous = stableOrderSort(Object.values(previousStore));
+      const nextOrders = typeof updater === 'function' ? updater(previous) : updater;
+      const nextStore = orderStoreFromList(nextOrders);
+      if (import.meta.env.DEV) {
+        const ids = new Set([...Object.keys(previousStore), ...Object.keys(nextStore)]);
+        ids.forEach((id) => {
+          if (previousStore[id] !== nextStore[id]) console.debug(`[orders:${source}]`, id);
+        });
+      }
+      return nextStore;
+    });
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('vendor_activeTab', activeTab);
@@ -124,75 +149,124 @@ const VendorDashboard = ({ user }) => {
   }, []);
 
   useEffect(() => {
-    fetchOrders();
+    mountedRef.current = true;
     fetchMenu();
     fetchPaymentSettings();
 
     const socket = getSocket();
     if (socket) {
-      socket.on('order:new', (newOrder) => {
-        playOrderChime();
-        setOrders((prev) => {
-          const exists = prev.some((o) => o.id === newOrder.id);
-          if (exists) return prev.map((o) => (o.id === newOrder.id ? newOrder : o));
-          return [newOrder, ...prev];
-        });
+      let debounceTimer;
+      let pollTimer;
+      const scheduleResync = () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => fetchOrders(), 300);
+      };
+      const recordSocketOrder = (order) => {
+        if (!order || order.id == null) return;
+        const id = String(order.id);
+        latestSequenceByIdRef.current[id] = ++latestSequenceRef.current;
+        const optimistic = optimisticOrdersRef.current[id];
+        if (optimistic && (order.status === optimistic.status || order.paymentStatus === optimistic.paymentStatus)) {
+          delete optimisticOrdersRef.current[id];
+        }
+        setOrderStore((previous) => mergeOrderRecord(previous, order, {
+          optimisticStatus: optimistic?.status,
+          preserveStatus: Boolean(optimistic && Date.now() < optimistic.expiresAt && order.status !== optimistic.status),
+        }));
+        if (import.meta.env.DEV) console.debug('[orders:socket]', order.id);
+      };
+      const handleOrderNew = (newOrder) => {
+        playOrderChimeRef.current();
+        recordSocketOrder(newOrder);
         showToast(`New Order #${newOrder.orderNumber || newOrder.id} received!`);
-      });
+      };
 
-      socket.on('order:update', (updatedOrder) => {
-        setOrders((prev) => {
-          const exists = prev.some((o) => o.id === updatedOrder.id);
-          if (exists) return prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o));
-          return [updatedOrder, ...prev];
-        });
-      });
+      const handleOrderUpdate = (updatedOrder) => {
+        if (isOrderDeletedEvent(updatedOrder)) {
+          setOrderStore((previous) => removeDeletedOrders(previous, updatedOrder));
+          return;
+        }
+        recordSocketOrder(updatedOrder);
+      };
 
-      socket.on('payment:verify', (updatedOrder) => {
-        playOrderChime();
-        setOrders((prev) => {
-          const exists = prev.some((o) => o.id === updatedOrder.id);
-          if (exists) return prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o));
-          return [updatedOrder, ...prev];
-        });
+      const handlePaymentVerify = (updatedOrder) => {
+        playOrderChimeRef.current();
+        recordSocketOrder(updatedOrder);
         showToast(`Payment submitted for order #${updatedOrder.orderNumber || updatedOrder.id}`);
-      });
+      };
 
-      socket.on('paymentSettings:update', (updatedSettings) => {
+      const handlePaymentSettings = (updatedSettings) => {
         setPaymentSettings(updatedSettings);
-      });
+      };
 
-      socket.on('menu:update', () => {
+      const handleMenuUpdate = () => {
         fetchMenu();
-      });
+      };
 
-      socket.on('inventory:update', () => {
+      const handleInventoryUpdate = () => {
         fetchMenu();
-      });
+      };
+      const handleConnect = () => {
+        scheduleResync();
+        clearInterval(pollTimer);
+        pollTimer = null;
+      };
+      const handleDisconnect = () => {
+        if (!pollTimer) pollTimer = setInterval(fetchOrders, 30000);
+      };
+
+      socket.on('order:new', handleOrderNew);
+      socket.on('order:update', handleOrderUpdate);
+      socket.on('payment:verify', handlePaymentVerify);
+      socket.on('paymentSettings:update', handlePaymentSettings);
+      socket.on('menu:update', handleMenuUpdate);
+      socket.on('inventory:update', handleInventoryUpdate);
+      socket.on('connect', handleConnect);
+      socket.on('disconnect', handleDisconnect);
+      if (!socket.connected) handleDisconnect();
+      scheduleResync();
+
+      return () => {
+        mountedRef.current = false;
+        clearTimeout(debounceTimer);
+        clearInterval(pollTimer);
+        fetchControllerRef.current?.abort();
+        socket.off('order:new', handleOrderNew);
+        socket.off('order:update', handleOrderUpdate);
+        socket.off('payment:verify', handlePaymentVerify);
+        socket.off('paymentSettings:update', handlePaymentSettings);
+        socket.off('menu:update', handleMenuUpdate);
+        socket.off('inventory:update', handleInventoryUpdate);
+        socket.off('connect', handleConnect);
+        socket.off('disconnect', handleDisconnect);
+      };
     }
-
-    return () => {
-      if (socket) {
-        socket.off('order:new');
-        socket.off('order:update');
-        socket.off('payment:verify');
-        socket.off('paymentSettings:update');
-        socket.off('menu:update');
-        socket.off('inventory:update');
-      }
-    };
-  }, [user, playOrderChime]);
+    return () => { mountedRef.current = false; fetchControllerRef.current?.abort(); };
+  }, []);
 
   const fetchOrders = async () => {
+    const requestId = ++fetchRequestRef.current;
+    const startedAtSequence = latestSequenceRef.current;
+    fetchControllerRef.current?.abort();
+    const controller = new AbortController();
+    fetchControllerRef.current = controller;
     setLoading(true);
     try {
-      const response = await api.get('/orders');
-      setOrders(response.data.orders);
+      const response = await api.get('/orders', { signal: controller.signal });
+      if (requestId !== fetchRequestRef.current || !mountedRef.current) return;
+      setOrderStore((previous) => mergeOrderList(previous, response.data.orders, {
+        startedAtSequence,
+        latestSequenceById: latestSequenceByIdRef.current,
+        latestRequest: requestId === fetchRequestRef.current,
+        optimisticStatuses: optimisticOrdersRef.current,
+      }));
+      if (import.meta.env.DEV) response.data.orders.forEach((order) => console.debug('[orders:fetch]', order.id));
     } catch (err) {
+      if (controller.signal.aborted || err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
       console.error(err);
       setError('Failed to fetch orders.');
     } finally {
-      setLoading(false);
+      if (requestId === fetchRequestRef.current && mountedRef.current) setLoading(false);
     }
   };
 
@@ -228,6 +302,32 @@ const VendorDashboard = ({ user }) => {
 
   const [pendingVerifyingIds, setPendingVerifyingIds] = useState(new Set());
 
+  const applyOptimisticOrder = (nextOrder, previousOrder) => {
+    const id = String(nextOrder.id);
+    optimisticOrdersRef.current[id] = {
+      status: nextOrder.status,
+      paymentStatus: nextOrder.paymentStatus,
+      expiresAt: Date.now() + 5000,
+      previousOrder,
+    };
+    latestSequenceByIdRef.current[id] = ++latestSequenceRef.current;
+    writeOrders((prev) => prev.map((order) => order.id === nextOrder.id ? nextOrder : order), 'optimistic');
+  };
+  const acceptServerOrder = (order) => {
+    if (!order?.id) return;
+    delete optimisticOrdersRef.current[String(order.id)];
+    latestSequenceByIdRef.current[String(order.id)] = ++latestSequenceRef.current;
+    setOrderStore((previous) => mergeOrderRecord(previous, order));
+    if (import.meta.env.DEV) console.debug('[orders:fetch]', order.id);
+  };
+  const rollbackOptimisticOrder = (orderId, previousOrder) => {
+    const id = String(orderId);
+    if (!optimisticOrdersRef.current[id]) return;
+    delete optimisticOrdersRef.current[id];
+    latestSequenceByIdRef.current[id] = ++latestSequenceRef.current;
+    writeOrders((prev) => prev.map((order) => order.id === orderId ? previousOrder : order), 'optimistic');
+  };
+
   const handleVerifyPayment = async (orderId) => {
     if (pendingVerifyingIds.has(orderId)) return;
     setPendingVerifyingIds((prev) => new Set(prev).add(orderId));
@@ -240,7 +340,7 @@ const VendorDashboard = ({ user }) => {
       : null;
 
     if (optimisticUpdatedOrder) {
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? optimisticUpdatedOrder : o)));
+      applyOptimisticOrder(optimisticUpdatedOrder, prevOrder);
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder(optimisticUpdatedOrder);
       }
@@ -249,7 +349,7 @@ const VendorDashboard = ({ user }) => {
     try {
       const response = await api.put(`/payments/${orderId}/verify`, { approve: true });
       const finalOrder = response.data.order;
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? finalOrder : o)));
+      acceptServerOrder(finalOrder);
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder(finalOrder);
       }
@@ -259,7 +359,7 @@ const VendorDashboard = ({ user }) => {
       setError(err.response?.data?.error || 'Failed to verify payment.');
       // Rollback optimistic change
       if (prevOrder) {
-        setOrders((prev) => prev.map((o) => (o.id === orderId ? prevOrder : o)));
+        rollbackOptimisticOrder(orderId, prevOrder);
         if (selectedOrder && selectedOrder.id === orderId) {
           setSelectedOrder(prevOrder);
         }
@@ -284,7 +384,7 @@ const VendorDashboard = ({ user }) => {
       : null;
 
     if (optimisticUpdatedOrder) {
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? optimisticUpdatedOrder : o)));
+      applyOptimisticOrder(optimisticUpdatedOrder, prevOrder);
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder(optimisticUpdatedOrder);
       }
@@ -296,7 +396,7 @@ const VendorDashboard = ({ user }) => {
         reason: 'Payment verification rejected by staff.',
       });
       const finalOrder = response.data.order;
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? finalOrder : o)));
+      acceptServerOrder(finalOrder);
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder(finalOrder);
       }
@@ -305,7 +405,7 @@ const VendorDashboard = ({ user }) => {
       console.error(err);
       setError(err.response?.data?.error || 'Failed to reject payment.');
       if (prevOrder) {
-        setOrders((prev) => prev.map((o) => (o.id === orderId ? prevOrder : o)));
+        rollbackOptimisticOrder(orderId, prevOrder);
         if (selectedOrder && selectedOrder.id === orderId) {
           setSelectedOrder(prevOrder);
         }
@@ -325,7 +425,7 @@ const VendorDashboard = ({ user }) => {
     const optimisticUpdatedOrder = prevOrder ? { ...prevOrder, status: nextStatus } : null;
 
     if (optimisticUpdatedOrder) {
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? optimisticUpdatedOrder : o)));
+      applyOptimisticOrder(optimisticUpdatedOrder, prevOrder);
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder(optimisticUpdatedOrder);
       }
@@ -334,7 +434,7 @@ const VendorDashboard = ({ user }) => {
     try {
       const response = await api.put(`/orders/${orderId}/status`, { status: nextStatus });
       const finalOrder = response.data.order;
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? finalOrder : o)));
+      acceptServerOrder(finalOrder);
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder(finalOrder);
       }
@@ -343,7 +443,7 @@ const VendorDashboard = ({ user }) => {
       console.error(err);
       setError(err.response?.data?.error || 'Failed to update order status.');
       if (prevOrder) {
-        setOrders((prev) => prev.map((o) => (o.id === orderId ? prevOrder : o)));
+        rollbackOptimisticOrder(orderId, prevOrder);
         if (selectedOrder && selectedOrder.id === orderId) {
           setSelectedOrder(prevOrder);
         }
@@ -457,13 +557,13 @@ const VendorDashboard = ({ user }) => {
   };
 
   // Filter orders for Payment Verification Tab (both COD & Online)
-  const verificationOrders = orders.filter(
+  const verificationOrders = useMemo(() => orders.filter(
     (o) =>
       ['PENDING', 'PAYMENT_PENDING'].includes(o.status) ||
       ['UNPAID', 'PENDING_VERIFICATION'].includes(o.paymentStatus)
-  ).filter((o) => !['CANCELLED', 'COMPLETED', 'PAID', 'REFUNDED'].includes(o.status));
+  ).filter((o) => !['CANCELLED', 'COMPLETED', 'PAID', 'REFUNDED'].includes(o.status)), [orders]);
 
-  const activeOrders = orders.filter((o) => ['PAID', 'PREPARING', 'READY'].includes(o.status));
+  const activeOrders = useMemo(() => orders.filter((o) => ['PAID', 'PREPARING', 'READY'].includes(o.status)), [orders]);
 
   // Compute Live Metrics
   const metrics = useMemo(() => {
@@ -746,7 +846,7 @@ const VendorDashboard = ({ user }) => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-[var(--text-muted)]">Location / Table:</span>
-                        <strong className="text-[var(--text-main)]">{order.tableNumber || order.tableId || 'Takeaway'}</strong>
+                        <strong className="text-[var(--text-main)]">{resolveTableLabel(order)}</strong>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-[var(--text-muted)]">Payment Status:</span>
@@ -831,7 +931,7 @@ const VendorDashboard = ({ user }) => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-[var(--text-muted)]">Location / Table:</span>
-                        <strong className="text-[var(--text-main)]">{order.tableNumber || order.tableId || 'Takeaway'}</strong>
+                        <strong className="text-[var(--text-main)]">{resolveTableLabel(order)}</strong>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-[var(--text-muted)]">Items Count:</span>
@@ -897,7 +997,7 @@ const VendorDashboard = ({ user }) => {
               </div>
               <button
                 onClick={() => setSelectedOrder(null)}
-                className="p-1.5 rounded-xl bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -911,7 +1011,7 @@ const VendorDashboard = ({ user }) => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--text-muted)]">Table Placement:</span>
-                  <strong className="text-[var(--text-main)]">{selectedOrder.tableNumber || selectedOrder.tableId || 'Takeaway'}</strong>
+                  <strong className="text-[var(--text-main)]">{resolveTableLabel(selectedOrder)}</strong>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--text-muted)]">Payment Method:</span>
@@ -976,7 +1076,7 @@ const VendorDashboard = ({ user }) => {
               </h3>
               <button
                 onClick={() => setShowModal(false)}
-                className="p-1.5 rounded-xl bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>

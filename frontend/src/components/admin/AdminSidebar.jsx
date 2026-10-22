@@ -77,20 +77,20 @@ const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isM
       {isMobileOpen && (
         <div
           onClick={onCloseMobile}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 glass-overlay z-40 lg:hidden"
         />
       )}
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 left-0 bottom-0 z-50 bg-[var(--card-bg)] border-r border-[var(--border-color)] flex flex-col transition-all duration-300 shadow-2xl ${
+        className={`admin-sidebar fixed top-0 left-0 bottom-0 z-50 flex flex-col transition-all duration-300 shadow-2xl ${
           collapsed ? 'w-20' : 'w-64'
         } ${
           isMobileOpen ? 'translate-x-0 w-64' : '-translate-x-full lg:translate-x-0'
         }`}
       >
         {/* Sidebar Header Brand */}
-        <div className="h-16 px-4 flex items-center justify-between border-b border-[var(--border-color)] shrink-0">
+        <div className="h-16 px-4 flex items-center justify-between border-b border-[var(--glass-border-subtle)] shrink-0">
           <div className="flex items-center space-x-3 overflow-hidden">
             <img src="/favicon.svg" alt="ZovikPOS logo" className="w-10 h-10 rounded-xl shrink-0 shadow-lg shadow-orange-600/30" />
             {!collapsed && (
@@ -132,10 +132,10 @@ const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isM
                       onSelectTab(item.id);
                       if (isMobileOpen) onCloseMobile();
                     }}
-                    className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer relative group ${
+                    className={`admin-sidebar__nav-item ${collapsed ? 'admin-sidebar__nav-item--collapsed' : ''} text-sm font-semibold transition-all duration-200 cursor-pointer relative group ${
                       isActive
-                        ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20 border border-orange-400/20'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-color)]/60'
+                        ? 'bg-gradient-to-r from-[#ff5a1f] to-[#ff7a3d] text-white shadow-md border border-orange-400/20'
+                        : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
                     }`}
                     title={collapsed ? item.label : undefined}
                   >
@@ -144,7 +144,7 @@ const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isM
 
                     {/* Tooltip for Collapsed Sidebar */}
                     {collapsed && (
-                      <div className="fixed left-20 ml-2 hidden group-hover:block bg-slate-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none border border-slate-700">
+                      <div className="admin-sidebar__tooltip fixed left-20 ml-2 hidden bg-slate-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none border border-slate-700">
                         {item.label}
                       </div>
                     )}
@@ -156,10 +156,10 @@ const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isM
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-[var(--border-color)] shrink-0">
+        <div className="p-3 border-t border-[var(--glass-border-subtle)] shrink-0">
           <button
             onClick={onLogout}
-            className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-all cursor-pointer"
+            className={`admin-sidebar__nav-item ${collapsed ? 'admin-sidebar__nav-item--collapsed' : ''} text-sm font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-all cursor-pointer`}
             title={collapsed ? 'Log Out' : undefined}
           >
             <LogOut className="w-4 h-4 shrink-0" />

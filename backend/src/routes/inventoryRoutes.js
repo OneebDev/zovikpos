@@ -49,6 +49,7 @@ const {
 } = require('../controllers/inventoryController');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
+const { saveReceivingBatch, confirmReceivingBatch } = require('../controllers/inventoryReceivingBatchController');
 
 const router = express.Router();
 
@@ -74,6 +75,8 @@ router.get('/receivings', getReceivings);
 router.get('/receivings/next-ref', generateReceivingRef);
 router.get('/receivings/:id', getReceivingById);
 router.post('/receivings', roleMiddleware(['ADMIN', 'VENDOR']), createReceiving);
+router.post('/receivings/batch', roleMiddleware(['ADMIN', 'VENDOR']), saveReceivingBatch);
+router.post('/receivings/confirm-batch', roleMiddleware(['ADMIN', 'VENDOR']), confirmReceivingBatch);
 router.put('/receivings/:id', roleMiddleware(['ADMIN', 'VENDOR']), updateReceiving);
 router.post('/receivings/:id/receive', roleMiddleware(['ADMIN', 'VENDOR']), confirmReceiving);
 router.post('/receivings/:id/cancel', roleMiddleware(['ADMIN', 'VENDOR']), cancelReceiving);

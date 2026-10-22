@@ -1,0 +1,162 @@
+/* Shared alignment reset for icon-only controls across every app surface. */
+.icon-btn {
+  display: inline-flex;
+  --icon-btn-size: 44px;
+  width: var(--icon-btn-size);
+  height: var(--icon-btn-size);
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  aspect-ratio: 1 / 1;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.icon-btn > svg,
+button svg {
+  display: block;
+  flex-shrink: 0;
+  margin: 0;
+  vertical-align: middle;
+}
+
+.icon-btn--32 { --icon-btn-size: 32px; min-width: 32px; min-height: 32px; }
+.icon-btn--36 { --icon-btn-size: 36px; min-width: 36px; min-height: 36px; }
+.icon-btn--40 { --icon-btn-size: 40px; min-width: 40px; min-height: 40px; }
+.icon-btn--44 { --icon-btn-size: 44px; min-width: 44px; min-height: 44px; }
+
+/* Labeled controls use gap instead of SVG margin utilities. */
+:is(button, a, [role="tab"], [role="menuitem"]):not(.icon-btn):has(> svg):has(> span) {
+  column-gap: 8px;
+  align-items: center;
+}
+
+:is(button, a, [role="tab"], [role="menuitem"]):not(.icon-btn):has(> svg):has(> span) > :not(:first-child) {
+  margin-left: 0;
+}
+
+.icon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.icon-label > svg,
+.icon-label__icon {
+  flex: 0 0 auto;
+}
+
+.icon-label__text {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.icon-label--sidebar { gap: 12px; }
+.icon-label--badge { gap: 6px; }
+.icon-label--checkbox { gap: 10px; }
+
+.admin-sidebar__nav-item {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: 12px;
+  text-align: left;
+}
+
+.admin-sidebar__nav-item > svg { width: 20px; height: 20px; flex: 0 0 auto; }
+.admin-sidebar__nav-item > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-sidebar__nav-item > :not(:first-child) { margin-left: 0; }
+.admin-sidebar__nav-item--collapsed { justify-content: center; padding-inline: 0; }
+.admin-sidebar__tooltip { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .admin-sidebar__nav-item--collapsed:hover .admin-sidebar__tooltip { display: block; }
+}
+
+.qr-card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.qr-card-actions__button {
+  display: inline-flex;
+  min-width: 0;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.qr-card-actions__button > svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.qr-card-actions__button > :not(:first-child) { margin-left: 0; }
+.qr-card-actions__row { display: flex; align-items: center; gap: 8px; }
+.qr-card-actions__regenerate { flex: 1 1 auto; min-width: 0; }
+.qr-card-actions__delete { width: 40px; height: 40px; min-width: 40px; min-height: 40px; }
+
+.table-status-badge {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.table-status-badge > svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.table-status-badge > :not(:first-child) { margin-left: 0; }
+
+.field-action-control { position: relative; display: block; min-width: 0; }
+.field-action-control__input {
+  width: 100%;
+  height: 44px;
+  box-sizing: border-box;
+  padding-right: 42px !important;
+}
+.field-action-control > .field-action-control__button {
+  position: absolute;
+  top: 50%;
+  right: 6px !important;
+  left: auto !important;
+  bottom: auto !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
+  max-width: 28px;
+  max-height: 28px;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box;
+  aspect-ratio: 1 / 1;
+  transform: translateY(-50%);
+  border-radius: 9px;
+}
+.field-action-control__button > svg { display: block; width: 15px; height: 15px; margin: 0; flex: 0 0 auto; }
+
+.form-label-row {
+  display: flex;
+  min-height: 32px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: 8px;
+  row-gap: 4px;
+}
+.form-label-row__hint { color: var(--text-muted); font-size: 11px; font-weight: 400; line-height: 1.3; white-space: normal; }
+
+button:focus-visible,
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn,
+  .icon-btn > svg {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+﻿import { useMemo } from 'react';
 import {
   TrendingUp,
   ShoppingCart,
@@ -48,6 +48,9 @@ const statusColor = (status) => {
 
 const AdminHomeView = ({
   stats,
+  statsLoading = false,
+  statsError = '',
+  onRetry,
   setPeriod,
   datePreset,
   setDatePreset,
@@ -99,11 +102,25 @@ const AdminHomeView = ({
     })).sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name));
   }, [stats?.paymentBreakdown]);
 
+  if (!stats && statsError) {
+    return (
+      <section role="alert" className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] px-6 py-12 text-center">
+        <AlertTriangle className="h-6 w-6 text-amber-500" aria-hidden="true" />
+        <h2 className="text-base font-bold text-[var(--text-main)]">Could not load dashboard analytics</h2>
+        <p className="max-w-xl text-sm text-[var(--text-muted)]">{statsError}</p>
+        <button type="button" onClick={onRetry} disabled={statsLoading} className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-sm font-bold text-orange-500 disabled:opacity-60">
+          {statsLoading ? 'Retryingâ€¦' : 'Retry'}
+        </button>
+      </section>
+    );
+  }
+
   if (!stats) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs font-bold text-[var(--text-muted)]">
-        <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
-        <span>Loading Executive Dashboard Analytics...</span>
+      <div role="status" className="flex flex-col items-center justify-center gap-3 py-16 text-xs font-bold text-[var(--text-muted)]">
+        {statsLoading ? <Loader2 className="h-5 w-5 animate-spin text-orange-500" /> : <AlertTriangle className="h-5 w-5 text-amber-500" />}
+        <span>{statsLoading ? 'Loading Executive Dashboard Analyticsâ€¦' : 'Dashboard analytics are unavailable.'}</span>
+        {!statsLoading && <button type="button" onClick={onRetry} className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-orange-500">Retry</button>}
       </div>
     );
   }
@@ -112,8 +129,14 @@ const AdminHomeView = ({
 
   return (
     <div className="space-y-8">
+      {statsError && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-[var(--text-main)]">
+          <span>Could not refresh dashboard analytics: {statsError}. Showing the last loaded data.</span>
+          <button type="button" onClick={onRetry} disabled={statsLoading} className="font-bold text-orange-500 disabled:opacity-60">{statsLoading ? 'Retryingâ€¦' : 'Retry'}</button>
+        </div>
+      )}
       {/* Top Header Controls & Date Filter */}
-      <div className="flex flex-col gap-5 bg-[var(--card-bg)]/60 backdrop-blur-xl border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl relative z-30">
+      <div className="flex flex-col gap-5 glass-card p-4 sm:p-6 relative z-30">
         <div>
           <span className="px-2.5 py-0.5 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-md text-[10px] font-extrabold tracking-wider uppercase">
             Overview Summary
@@ -139,7 +162,7 @@ const AdminHomeView = ({
       {/* Top Summary Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {/* Today's Revenue */}
-        <div className="bg-[var(--card-bg)]/50 backdrop-blur-xl border border-[var(--border-color)] p-5 rounded-2xl shadow-lg space-y-3">
+        <div className="glass-card p-5 space-y-3">
           <div className="flex justify-between items-center">
             <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">Total Revenue</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
@@ -157,7 +180,7 @@ const AdminHomeView = ({
         </div>
 
         {/* Active Orders Queue */}
-        <div className="bg-[var(--card-bg)]/50 backdrop-blur-xl border border-[var(--border-color)] p-5 rounded-2xl shadow-lg space-y-3">
+        <div className="glass-card p-5 space-y-3">
           <div className="flex justify-between items-center">
             <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">Active Orders</span>
             <div className="w-8 h-8 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center">
@@ -171,7 +194,7 @@ const AdminHomeView = ({
         </div>
 
         {/* AI ETA Accuracy */}
-        <div className="bg-[var(--card-bg)]/50 backdrop-blur-xl border border-[var(--border-color)] p-5 rounded-2xl shadow-lg space-y-3">
+        <div className="glass-card p-5 space-y-3">
           <div className="flex justify-between items-center">
             <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">AI ETA Accuracy</span>
             <div className="w-8 h-8 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center">
@@ -179,13 +202,13 @@ const AdminHomeView = ({
             </div>
           </div>
           <div>
-            <h3 className="text-2xl font-extrabold text-orange-400 font-mono">{metrics.etaAccuracy || 94.2}%</h3>
-            <span className="text-[10px] text-[var(--text-muted)] block mt-1">Avg Prep Time: {metrics.avgPrepTime || 8.5} mins</span>
+            <h3 className="text-2xl font-extrabold text-orange-400 font-mono">{metrics.predictionAccuracy == null ? 'Not enough data' : `${metrics.predictionAccuracy}%`}</h3>
+            <span className="text-[10px] text-[var(--text-muted)] block mt-1">Avg Prep Time: {metrics.avgPrepTime == null ? 'Not enough data' : `${metrics.avgPrepTime} mins`}</span>
           </div>
         </div>
 
         {/* Stock Alerts */}
-        <div className="bg-[var(--card-bg)]/50 backdrop-blur-xl border border-[var(--border-color)] p-5 rounded-2xl shadow-lg space-y-3">
+        <div className="glass-card p-5 space-y-3">
           <div className="flex justify-between items-center">
             <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">Stock Health Alerts</span>
             <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
@@ -198,16 +221,16 @@ const AdminHomeView = ({
               onClick={() => onNavigate('inventory')}
               className="text-[10px] text-amber-400 hover:underline font-bold block mt-1 cursor-pointer"
             >
-              View Low Stock Alerts →
+              View Low Stock Alerts â†’
             </button>
           </div>
         </div>
       </div>
 
       {/* Main Charts & Summaries Grid */}
-      <div className="grid lg:grid-cols-12 gap-6">
+      <div className="grid min-w-0 lg:grid-cols-12 gap-6">
         {/* Left: Revenue Trend Chart */}
-        <div className="lg:col-span-8 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-4">
+        <div className="min-w-0 lg:col-span-8 glass-card p-6 space-y-4">
           <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between sm:items-start">
             <div className="min-w-0">
               <h3 className="font-extrabold text-base text-[var(--text-main)] font-display">Revenue Overview</h3>
@@ -221,11 +244,11 @@ const AdminHomeView = ({
               onClick={() => onNavigate('reports')}
               className="shrink-0 px-3 py-1.5 bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-xl text-xs font-bold hover:bg-orange-500/20 transition-all cursor-pointer whitespace-nowrap"
             >
-              Full Financial Reports →
+              Full Financial Reports â†’
             </button>
           </div>
 
-          <div className="h-64 w-full pt-4">
+          <div className="relative h-64 w-full min-w-0 pt-4">
             {revenueChartData.length === 1 ? (
               <div className="h-full rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)]/45 p-5 flex flex-col justify-between">
                 <div className="flex items-center justify-between gap-3">
@@ -246,7 +269,7 @@ const AdminHomeView = ({
               </div>
             ) : revenueChartData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-[var(--text-muted)]">No revenue activity in this date range.</div>
-            ) : <ResponsiveContainer width="100%" height="100%">
+            ) : <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
               <ComposedChart data={revenueChartData}>
                 <defs>
                   <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
@@ -285,7 +308,7 @@ const AdminHomeView = ({
         </div>
 
         {/* Right: Quick Action Alerts Panel */}
-        <div className="lg:col-span-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-4 flex flex-col justify-between">
+        <div className="min-w-0 lg:col-span-4 glass-card p-6 space-y-4 flex flex-col justify-between">
           <div>
             <div className="flex justify-between items-center">
               <h3 className="font-extrabold text-base text-[var(--text-main)] font-display flex items-center space-x-2">
@@ -339,15 +362,15 @@ const AdminHomeView = ({
             onClick={() => onNavigate('notifications')}
             className="w-full py-2.5 bg-[var(--bg-color)] hover:bg-[var(--border-color)] text-[var(--text-main)] font-bold text-xs rounded-xl border border-[var(--border-color)] transition-all cursor-pointer text-center"
           >
-            View All System Alerts →
+            View All System Alerts â†’
           </button>
         </div>
       </div>
 
       {/* Additional Charts Row: Payment Method Breakdown & Order Status Pipeline */}
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid min-w-0 lg:grid-cols-2 gap-6">
         {/* Payment Methods Bar Chart */}
-        <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-4">
+        <div className="min-w-0 glass-card p-6 space-y-4">
           <div className="flex justify-between items-center">
             <div>
               <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
@@ -360,12 +383,12 @@ const AdminHomeView = ({
               onClick={() => onNavigate('payments')}
               className="text-xs text-orange-400 hover:underline font-bold cursor-pointer"
             >
-              Audit Payments →
+              Audit Payments â†’
             </button>
           </div>
 
-          <div className="w-full pt-2" style={{ height: Math.max(200, orderStatusChartData.length * 42) }}>
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="relative w-full min-w-0 pt-2" style={{ height: Math.max(200, paymentMethodChartData.length * 58) }}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
                 <BarChart data={paymentMethodChartData} layout="vertical" margin={{ left: 12, right: 42 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.35} horizontal={false} />
                   <XAxis type="number" domain={[0, Math.max(1, ...paymentMethodChartData.map((item) => item.revenue))]} allowDecimals={false} stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `Rs ${Number(value).toLocaleString()}`} />
@@ -381,9 +404,9 @@ const AdminHomeView = ({
                     }}
                     labelStyle={{ color: 'var(--text-main)' }}
                     itemStyle={{ color: 'var(--text-main)' }}
-                    formatter={(value, name, props) => [formatCurrency(value), `Revenue · ${props.payload.count} orders`]}
+                    formatter={(value, name, props) => [formatCurrency(value), `Revenue Â· ${props.payload.count} orders`]}
                   />
-                  <Bar dataKey="revenue" name="Revenue" fill="#f97316" radius={[0, 6, 6, 0]} barSize={22}>
+                  <Bar dataKey="revenue" name="Revenue" fill="#f97316" radius={[0, 6, 6, 0]} barSize={18}>
                     <LabelList dataKey="revenue" position="right" formatter={(value) => formatCurrency(value)} style={{ fill: 'var(--text-muted)', fontSize: 9, fontWeight: 700 }} />
                   </Bar>
                 </BarChart>
@@ -392,7 +415,7 @@ const AdminHomeView = ({
         </div>
 
         {/* Order Status Distribution Chart */}
-        <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-4">
+        <div className="min-w-0 glass-card p-6 space-y-4">
           <div className="flex justify-between items-center">
             <div>
               <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
@@ -405,17 +428,17 @@ const AdminHomeView = ({
               onClick={() => onNavigate('orders')}
               className="text-xs text-orange-400 hover:underline font-bold cursor-pointer"
             >
-              Inspect Orders →
+              Inspect Orders â†’
             </button>
           </div>
 
-          <div className="w-full pt-2" style={{ height: Math.max(200, orderStatusChartData.length * 42) }}>
+          <div className="relative w-full min-w-0 pt-2" style={{ height: Math.max(200, orderStatusChartData.length * 58) }}>
             {orderStatusChartData.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-[var(--text-muted)]">
                 No orders in the selected period.
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
                 <BarChart data={orderStatusChartData} layout="vertical" margin={{ left: 8, right: 36, top: 4, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.35} horizontal={false} />
                   <XAxis type="number" domain={[0, 'dataMax']} allowDecimals={false} stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} />
@@ -441,14 +464,14 @@ const AdminHomeView = ({
       {/* AI Recommendations & Top Selling Products */}
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Top Selling Products */}
-        <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-4">
+        <div className="glass-card p-6 space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
               <Flame className="w-4 h-4 text-amber-400" />
               <span>Top Selling Menu Items</span>
             </h3>
             <button onClick={() => onNavigate('menu')} className="text-xs text-orange-400 hover:underline font-bold cursor-pointer">
-              Manage Catalog →
+              Manage Catalog â†’
             </button>
           </div>
 
@@ -472,7 +495,7 @@ const AdminHomeView = ({
         </div>
 
         {/* Stock Reorder Advice */}
-        <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-4">
+        <div className="glass-card p-6 space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
               <BrainCircuit className="w-4 h-4 text-orange-400" />
@@ -516,3 +539,5 @@ const AdminHomeView = ({
 };
 
 export default AdminHomeView;
+
+

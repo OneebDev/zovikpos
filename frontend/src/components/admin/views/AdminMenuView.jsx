@@ -1,8 +1,10 @@
-import ThemedSelect from '../../common/ThemedSelect';
-import  { useState, useMemo, useRef } from 'react';
+﻿import ThemedSelect from '../../common/ThemedSelect';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus,
+  ChevronLeft,
+  ChevronRight,
   Search,
   Edit2,
   Trash2,
@@ -18,24 +20,70 @@ import {
 import api, { resolveBackendUrl } from '../../../services/api';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
 import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
+import './AdminMenuView.css';
 
-const PRESET_UNITS = [
-  '250 gm',
-  '500 gm',
-  '1 kg',
-  '1 No.',
-  '1 Pc',
+const SIZE_PRESETS = [
   'Half',
   'Full',
-  '200 ml',
-  '500 ml',
-  '1 Ltr',
   'Regular',
   'Large',
   'Plate',
   'Cup',
   'Glass',
 ];
+const NUMERIC_UNITS = ['gm', 'kg', 'ml', 'Ltr', 'Pc', 'No.'];
+const NUMERIC_UNIT_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*(gm|kg|ml|ltr|pc|no\.?)\s*$/i;
+const NUMERIC_UNIT_SPELLING = {
+  gm: 'gm',
+  kg: 'kg',
+  ml: 'ml',
+  ltr: 'Ltr',
+  pc: 'Pc',
+  no: 'No.',
+};
+
+const parseVariantLabel = (label) => {
+  const original = typeof label === 'string' ? label : String(label ?? '');
+  const numericMatch = original.match(NUMERIC_UNIT_PATTERN);
+  if (numericMatch) {
+    const unitKey = numericMatch[2].toLowerCase().replace(/\.$/, '');
+    return {
+      unit: NUMERIC_UNIT_SPELLING[unitKey],
+      quantity: numericMatch[1],
+      customUnit: '',
+    };
+  }
+  if (SIZE_PRESETS.includes(original)) {
+    return { unit: original, quantity: '', customUnit: '' };
+  }
+  return { unit: 'CUSTOM', quantity: '', customUnit: original };
+};
+
+const formatVariantQuantity = (quantity) => {
+  const parsed = Number(quantity);
+  return Number.isFinite(parsed) ? String(parsed) : '';
+};
+
+const buildVariantLabel = (variant) => {
+  if (NUMERIC_UNITS.includes(variant.unit)) {
+    const quantity = formatVariantQuantity(variant.quantity);
+    return quantity ? `${quantity} ${variant.unit}` : '';
+  }
+  return variant.unit === 'CUSTOM' ? String(variant.customUnit ?? '').trim() : variant.unit;
+};
+
+const getVariantLabelError = (variants, index) => {
+  const variant = variants[index];
+  if (NUMERIC_UNITS.includes(variant.unit)) {
+    const validQuantity = /^\d+(?:\.\d+)?$/.test(variant.quantity || '') && Number(variant.quantity) > 0;
+    if (!validQuantity) return 'Enter a valid quantity';
+  }
+  const label = buildVariantLabel(variant).trim().toLocaleLowerCase();
+  if (label && variants.some((other, otherIndex) => otherIndex !== index && buildVariantLabel(other).trim().toLocaleLowerCase() === label)) {
+    return 'This portion already exists';
+  }
+  return '';
+};
 
 const MASTER_CATEGORIES = [
   'Lunch',
@@ -80,6 +128,64 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
   const [saving, setSaving] = useState(false);
 
   const fileInputRef = useRef(null);
+  const categoryScrollRef = useRef(null);
+  const categoryDragRef = useRef(null);
+  const suppressCategoryClickRef = useRef(false);
+  const [categoryScrollState, setCategoryScrollState] = useState({ overflow: false, left: false, right: false });
+
+  const updateCategoryScrollState = useCallback(() => {
+    const element = categoryScrollRef.current;
+    if (!element) return;
+    const nextState = {
+      overflow: element.scrollWidth > element.clientWidth + 2,
+      left: element.scrollLeft > 2,
+      right: element.scrollLeft + element.clientWidth < element.scrollWidth - 2,
+    };
+    setCategoryScrollState((current) => (
+      current.overflow === nextState.overflow && current.left === nextState.left && current.right === nextState.right
+        ? current
+        : nextState
+    ));
+  }, []);
+
+  const scrollCategories = (direction) => {
+    categoryScrollRef.current?.scrollBy({ left: direction * 200, behavior: 'smooth' });
+  };
+
+  const handleCategoryWheel = (event) => {
+    if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+      event.preventDefault();
+      categoryScrollRef.current.scrollLeft += event.deltaY;
+    }
+  };
+
+  const handleCategoryMouseDown = (event) => {
+    if (event.button !== 0 || !categoryScrollRef.current) return;
+    categoryDragRef.current = {
+      startX: event.clientX,
+      startScrollLeft: categoryScrollRef.current.scrollLeft,
+      moved: false,
+    };
+  };
+
+  const handleCategoryMouseMove = (event) => {
+    if (!categoryDragRef.current || !categoryScrollRef.current) return;
+    const delta = event.clientX - categoryDragRef.current.startX;
+    if (Math.abs(delta) > 4) categoryDragRef.current.moved = true;
+    if (categoryDragRef.current.moved) categoryScrollRef.current.scrollLeft = categoryDragRef.current.startScrollLeft - delta;
+  };
+
+  const handleCategoryMouseUp = () => {
+    if (categoryDragRef.current?.moved) suppressCategoryClickRef.current = true;
+    categoryDragRef.current = null;
+  };
+
+  const handleCategoryClickCapture = (event) => {
+    if (!suppressCategoryClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressCategoryClickRef.current = false;
+  };
 
   // Status Metrics
   const metrics = useMemo(() => {
@@ -142,6 +248,19 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
     return ['ALL', ...Array.from(presentCats)];
   }, [inventory]);
 
+  useEffect(() => {
+    const element = categoryScrollRef.current;
+    if (!element) return undefined;
+    updateCategoryScrollState();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateCategoryScrollState) : null;
+    observer?.observe(element);
+    window.addEventListener('resize', updateCategoryScrollState);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateCategoryScrollState);
+    };
+  }, [categories, updateCategoryScrollState]);
+
   const existingGroups = useMemo(() => {
     const groups = new Set();
     inventory.forEach((item) => {
@@ -173,7 +292,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
     isAvailable: true,
     imageUrl: '',
     variants: [
-      { id: null, unit: '250 gm', customUnit: '', price: '' }
+      { id: null, ...parseVariantLabel('250 gm'), price: '' }
     ]
   });
 
@@ -213,7 +332,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
       isAvailable: true,
       imageUrl,
       variants: [
-        { id: null, unit: '250 gm', customUnit: '', price: '' }
+        { id: null, ...parseVariantLabel('250 gm'), price: '' }
       ]
     });
 
@@ -241,12 +360,11 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
       stock: String(primary.stock ?? '50'),
       isAvailable: primary.isAvailable !== false && primary.isActive !== false,
       imageUrl: primary.imageUrl || '',
-      variants: variantsList.map(v => ({
+      variants: variantsList.map((v) => ({
         id: v.id,
-        unit: PRESET_UNITS.includes(v.unit) ? v.unit : 'CUSTOM',
-        customUnit: PRESET_UNITS.includes(v.unit) ? '' : v.unit,
+        ...parseVariantLabel(v.unit),
         price: String(v.price ?? ''),
-      }))
+      })),
     });
 
     setImageMode(primary.imageUrl && !primary.imageUrl.startsWith('data:') ? 'url' : 'file');
@@ -276,8 +394,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
       variants: [
         {
           id: variantItem.id,
-          unit: PRESET_UNITS.includes(variantItem.unit) ? variantItem.unit : 'CUSTOM',
-          customUnit: PRESET_UNITS.includes(variantItem.unit) ? '' : (variantItem.unit || ''),
+          ...parseVariantLabel(variantItem.unit),
           price: String(variantItem.price ?? ''),
         }
       ]
@@ -297,7 +414,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
       ...prev,
       variants: [
         ...prev.variants,
-        { id: null, unit: '500 gm', customUnit: '', price: '' }
+        { id: null, ...parseVariantLabel('500 gm'), price: '' }
       ]
     }));
   };
@@ -314,6 +431,19 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
     setFormData(prev => {
       const updated = [...prev.variants];
       updated[index] = { ...updated[index], [field]: value };
+      return { ...prev, variants: updated };
+    });
+  };
+
+  const handleVariantUnitChange = (index, value) => {
+    setFormData((prev) => {
+      const updated = [...prev.variants];
+      const current = updated[index];
+      updated[index] = {
+        ...current,
+        unit: value,
+        quantity: NUMERIC_UNITS.includes(value) ? (current.quantity || '1') : '',
+      };
       return { ...prev, variants: updated };
     });
   };
@@ -362,6 +492,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (formData.variants.some((_, index) => getVariantLabelError(formData.variants, index))) return;
     setSaving(true);
     try {
       let finalImageUrl = formData.imageUrl;
@@ -381,7 +512,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
 
       // Process all variant entries in parallel or sequence
       const promises = formData.variants.map(async (v) => {
-        const effectiveUnit = v.unit === 'CUSTOM' ? v.customUnit.trim() : v.unit;
+        const effectiveUnit = buildVariantLabel(v);
         const payload = {
           name: effectiveName,
           category: effectiveCategory,
@@ -500,7 +631,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 glass-card p-4 sm:p-6">
         <div className="min-w-0 flex-1">
           <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">Menu Catalog Management</h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">Control pricing, dish images, preparation times, categories, and customer availability.</p>
@@ -561,7 +692,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
           </div>
 
           {/* Stock / Status Quick Filters */}
-          <div className="flex items-center space-x-1.5 bg-[var(--bg-color)] p-1 rounded-xl border border-[var(--border-color)] overflow-x-auto custom-scrollbar">
+          <div role="tablist" aria-label="Menu availability filters" className="admin-menu-filter-pills flex min-w-0 items-center gap-1.5 bg-[var(--bg-color)] p-1 rounded-xl border border-[var(--border-color)] overflow-x-auto">
             {[
               { id: 'ALL', label: `All Items (${metrics.total})` },
               { id: 'AVAILABLE', label: `Available (${metrics.available})` },
@@ -570,8 +701,11 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
             ].map((flt) => (
               <button
                 key={flt.id}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === flt.id}
                 onClick={() => setStatusFilter(flt.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
+                className={`flex-none px-3 py-1.5 rounded-lg text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
                   statusFilter === flt.id
                     ? 'bg-orange-600 text-white shadow-sm'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
@@ -584,27 +718,66 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
         </div>
 
         {/* Category Pills */}
-        <div className="flex items-center space-x-1.5 overflow-x-auto pt-1 custom-scrollbar">
-          <span className="text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mr-1 shrink-0">
+        <div className="flex min-w-0 flex-col gap-1.5 pt-1 sm:flex-row sm:items-center sm:gap-3">
+          <span className="shrink-0 text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
             Categories:
           </span>
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1 rounded-full text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer border ${
-                selectedCategory === cat
-                  ? 'bg-orange-500/20 text-orange-500 border-orange-500/40 shadow-sm'
-                  : 'bg-[var(--bg-color)] text-[var(--text-muted)] border-[var(--border-color)] hover:text-[var(--text-main)]'
-              }`}
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {categoryScrollState.overflow && (
+              <button
+                type="button"
+                onClick={() => scrollCategories(-1)}
+                disabled={!categoryScrollState.left}
+                aria-label="Scroll categories left"
+                className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-color)] hover:text-[var(--text-main)] disabled:opacity-35 lg:inline-flex"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+            <div
+              ref={categoryScrollRef}
+              role="tablist"
+              aria-label="Menu categories"
+              onScroll={updateCategoryScrollState}
+              onWheel={handleCategoryWheel}
+              onMouseDown={handleCategoryMouseDown}
+              onMouseMove={handleCategoryMouseMove}
+              onMouseUp={handleCategoryMouseUp}
+              onMouseLeave={handleCategoryMouseUp}
+              onClickCapture={handleCategoryClickCapture}
+              className="admin-menu-category-scroll flex min-w-0 flex-1 items-center gap-2 overflow-x-auto overflow-y-hidden py-1 select-none"
             >
-              {cat}
-            </button>
-          ))}
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  role="tab"
+                  aria-selected={selectedCategory === cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`admin-menu-category-pill flex-none min-w-0 h-9 px-3.5 rounded-full text-[13px] font-semibold leading-none whitespace-nowrap transition-colors cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 ${
+                    selectedCategory === cat ? 'admin-menu-category-pill--active' : ''
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+            {categoryScrollState.overflow && (
+              <button
+                type="button"
+                onClick={() => scrollCategories(1)}
+                disabled={!categoryScrollState.right}
+                aria-label="Scroll categories right"
+                className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-color)] hover:text-[var(--text-main)] disabled:opacity-35 lg:inline-flex"
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Menu Catalog Grid — Grouped by variant */}
+      {/* Menu Catalog Grid â€” Grouped by variant */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 items-start">
         {filteredGrouped.map(({ groupKey, variants }) => {
           const primaryItem = variants[0];
@@ -646,7 +819,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                   </span>
                   <button
                     onClick={() => handleOpenEditGroup(groupKey, variants)}
-                    className="p-1 bg-black/60 hover:bg-black/80 backdrop-blur-md text-white rounded transition-all cursor-pointer"
+                    className="p-1 bg-black/60 hover:bg-black/80 backdrop-blur-md text-white rounded transition-all cursor-pointer icon-btn"
                     title="Edit Group & All Variants"
                   >
                     <Edit2 className="w-3 h-3" />
@@ -697,7 +870,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                   </span>
                 </div>
 
-                {/* ── Variants / Portions List ── */}
+                {/* â”€â”€ Variants / Portions List â”€â”€ */}
                 <div className="space-y-1.5 pt-1">
                   <div className="flex justify-between items-center">
                     <p className="text-[9px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider">
@@ -717,30 +890,33 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                     return (
                       <div
                         key={v.id}
-                        className={`flex items-center justify-between gap-2 p-2 sm:p-2.5 rounded-xl border transition-all ${
+                        className={`admin-menu-variant-row flex min-w-0 items-center justify-between gap-2 p-2 sm:p-2.5 rounded-xl border transition-all ${
                           isVActive
                             ? 'bg-[var(--bg-color)] border-[var(--border-color)]'
                             : 'bg-rose-500/5 border-rose-500/20 opacity-70'
                         }`}
                       >
                         {/* Left: Checkbox + Unit + Price */}
-                        <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+                        <div className="admin-menu-variant-details flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
                           {selectionMode && <input
                             type="checkbox"
                             checked={selectedMenuItemIds.has(v.id)}
                             onChange={() => toggleSelectMenuItem(v.id)}
                             className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500 cursor-pointer"
                           />}
-                          <span className="px-2 py-0.5 bg-orange-500/20 text-orange-500 dark:text-orange-400 border border-orange-500/30 rounded-md text-[10px] font-bold shrink-0">
+                          <span className="max-w-[72px] truncate px-2 py-0.5 bg-orange-500/20 text-orange-500 dark:text-orange-400 border border-orange-500/30 rounded-md text-[10px] font-bold shrink-0" title={v.unit || '1 No.'}>
                             {v.unit || '1 No.'}
                           </span>
-                          <span className="text-xs sm:text-sm font-mono font-black text-[var(--text-main)] whitespace-nowrap">
-                            Rs. {v.price?.toFixed(0)}
+                          <span
+                            className="admin-menu-variant-price min-w-0 overflow-hidden text-ellipsis text-xs sm:text-sm font-mono font-black tabular-nums text-[var(--text-main)] whitespace-nowrap"
+                            title={`Rs. ${Number(v.price || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`}
+                          >
+                            Rs. {Number(v.price || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })}
                           </span>
                         </div>
 
                         {/* Right: Actions */}
-                        <div className="flex items-center space-x-1 shrink-0 ml-auto">
+                        <div className="admin-menu-variant-actions flex items-center gap-1 shrink-0 ml-auto">
                           <button
                             type="button"
                             onClick={() => handleToggleAvailability(v)}
@@ -757,14 +933,14 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                           </button>
                           <button
                             onClick={() => handleOpenEditSingleVariant(v)}
-                            className="p-1 text-orange-400 hover:bg-orange-500/10 rounded-lg transition-all cursor-pointer"
+                            className="p-1 text-orange-400 hover:bg-orange-500/10 rounded-lg transition-all cursor-pointer icon-btn"
                             title="Edit Variant"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => setDeleteConfirmItem(v)}
-                            className="p-1 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer"
+                            className="p-1 text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer icon-btn"
                             title="Delete Variant"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -780,11 +956,11 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
         })}
       </div>
 
-      {/* Add / Edit Item Modal — Portal to document.body for true screen centering */}
+      {/* Add / Edit Item Modal â€” Portal to document.body for true screen centering */}
       {showItemModal && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-hidden">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-3 sm:p-6 overflow-hidden">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-2xl w-full shadow-2xl animate-scale-up max-h-[90vh] flex flex-col overflow-hidden">
-            {/* Modal Header — Fixed Top */}
+            {/* Modal Header â€” Fixed Top */}
             <div className="flex flex-nowrap items-start justify-between gap-3 p-4 sm:p-5 border-b border-[var(--border-color)] shrink-0 bg-[var(--card-bg)] z-10">
               <div className="flex min-w-0 flex-1 items-center gap-2.5">
                 <div className="shrink-0 p-2 bg-orange-500/10 text-orange-400 rounded-xl border border-orange-500/20">
@@ -799,7 +975,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
               </div>
               <button
                 onClick={() => setShowItemModal(false)}
-                className="ml-1 shrink-0 p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                className="ml-1 shrink-0 p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -971,7 +1147,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                 )}
               </div>
 
-              {/* ── MULTI-VARIANT / PORTION SECTION ── */}
+              {/* â”€â”€ MULTI-VARIANT / PORTION SECTION â”€â”€ */}
               <div className="p-3 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl space-y-2">
                 <div className="flex justify-between items-center">
                   <div>
@@ -989,59 +1165,106 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                 </div>
 
                 <div className="space-y-2">
-                  {formData.variants.map((v, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg">
-                      {/* Portion/Unit Selection */}
-                      <div className="flex-1 space-y-0.5">
-                        <ThemedSelect
-                          value={v.unit}
-                          onChange={(e) => handleVariantChange(idx, 'unit', e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
-                        >
-                          {PRESET_UNITS.map((u) => (
-                            <option key={u} value={u}>{u}</option>
-                          ))}
-                          <option value="CUSTOM">+ Custom Portion...</option>
-                        </ThemedSelect>
-                        {v.unit === 'CUSTOM' && (
+                  {formData.variants.map((v, idx) => {
+                    const labelError = getVariantLabelError(formData.variants, idx);
+                    const labelErrorId = `variant-label-error-${idx}`;
+                    const quantityUnit = NUMERIC_UNITS.includes(v.unit);
+                    return (
+                      <div key={idx} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 p-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg sm:grid-cols-[minmax(0,1fr)_8rem_auto]">
+                        <div className="col-span-2 min-w-0 sm:col-span-1">
+                          <div className="flex min-w-0 items-start gap-2">
+                            {quantityUnit && (
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                pattern="[0-9]*(\.[0-9]*)?"
+                                maxLength={6}
+                                aria-label="Quantity"
+                                aria-describedby={labelErrorId}
+                                value={v.quantity ?? ''}
+                                onFocus={(event) => event.target.select()}
+                                onChange={(event) => {
+                                  const raw = event.target.value.replace(/[^\d.]/g, '');
+                                  const [whole, ...fraction] = raw.split('.');
+                                  const cleaned = `${whole}${fraction.length ? `.${fraction.join('')}` : ''}`.slice(0, 6);
+                                  handleVariantChange(idx, 'quantity', cleaned);
+                                }}
+                                placeholder="Qty"
+                                className={`h-11 w-20 shrink-0 rounded-lg border bg-[var(--bg-color)] px-2 text-sm font-semibold text-[var(--text-main)] outline-none focus-visible:ring-2 focus-visible:ring-orange-500/35 ${labelError === 'Enter a valid quantity' ? 'border-rose-500' : 'border-[var(--border-color)] focus-visible:border-orange-500'}`}
+                              />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <ThemedSelect
+                                value={v.unit}
+                                onChange={(event) => handleVariantUnitChange(idx, event.target.value)}
+                                aria-label="Unit"
+                                aria-describedby={labelErrorId}
+                                className={`h-11 w-full rounded-lg border bg-[var(--bg-color)] px-2.5 text-sm font-semibold text-[var(--text-main)] outline-none focus-visible:ring-2 focus-visible:ring-orange-500/35 ${labelError && !quantityUnit ? 'border-rose-500' : 'border-[var(--border-color)] focus-visible:border-orange-500'}`}
+                              >
+                                <optgroup label="Weight">
+                                  <option value="gm">gm</option>
+                                  <option value="kg">kg</option>
+                                </optgroup>
+                                <optgroup label="Volume">
+                                  <option value="ml">ml</option>
+                                  <option value="Ltr">Ltr</option>
+                                </optgroup>
+                                <optgroup label="Count">
+                                  <option value="Pc">Pc</option>
+                                  <option value="No.">No.</option>
+                                </optgroup>
+                                <optgroup label="Size">
+                                  {SIZE_PRESETS.map((size) => <option key={size} value={size}>{size}</option>)}
+                                </optgroup>
+                                <option value="CUSTOM">+ Custom Portion...</option>
+                              </ThemedSelect>
+                              {v.unit === 'CUSTOM' && (
+                                <input
+                                  type="text"
+                                  required
+                                  value={v.customUnit}
+                                  onChange={(event) => handleVariantChange(idx, 'customUnit', event.target.value)}
+                                  aria-label="Custom portion label"
+                                  aria-describedby={labelErrorId}
+                                  placeholder="e.g. 300 gm or Quarter"
+                                  className={`mt-1 h-11 w-full rounded-lg border bg-[var(--bg-color)] px-2.5 text-sm text-[var(--text-main)] outline-none focus-visible:ring-2 focus-visible:ring-orange-500/35 ${labelError ? 'border-rose-500' : 'border-[var(--border-color)] focus-visible:border-orange-500'}`}
+                                />
+                              )}
+                            </div>
+                          </div>
+                          <p id={labelErrorId} className={`mt-1 text-xs ${labelError ? 'text-rose-500' : 'sr-only'}`} aria-live="polite">
+                            {labelError}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 space-y-0.5">
                           <input
-                            type="text"
+                            type="number"
+                            step="1"
+                            min="0"
                             required
-                            value={v.customUnit}
-                            onChange={(e) => handleVariantChange(idx, 'customUnit', e.target.value)}
-                            placeholder="e.g. 300 gm or Quarter"
-                            className="w-full mt-1 px-2.5 py-1 bg-[var(--bg-color)] border border-[var(--border-color)] rounded text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                            value={v.price}
+                            onChange={(event) => handleVariantChange(idx, 'price', event.target.value ? Math.floor(Math.abs(Number(event.target.value))) : '')}
+                            placeholder="Price (Rs.)"
+                            aria-label="Price (Rs.)"
+                            className="h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-color)] px-2.5 text-xs font-mono font-bold text-[var(--text-main)] outline-none focus-visible:border-orange-500 focus-visible:ring-2 focus-visible:ring-orange-500/35"
                           />
+                        </div>
+
+                        {formData.variants.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveVariantRow(idx)}
+                            aria-label="Remove portion"
+                            className="h-11 w-11 shrink-0 rounded-lg text-rose-400 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50"
+                            title="Remove Portion"
+                          >
+                            <Trash2 className="mx-auto h-4 w-4" aria-hidden="true" />
+                          </button>
                         )}
                       </div>
-
-                      {/* Price */}
-                      <div className="w-28 sm:w-32 space-y-0.5">
-                        <input
-                          type="number"
-                          step="1"
-                          min="0"
-                          required
-                          value={v.price}
-                          onChange={(e) => handleVariantChange(idx, 'price', e.target.value ? Math.floor(Math.abs(Number(e.target.value))) : '')}
-                          placeholder="Price (Rs.)"
-                          className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
-                        />
-                      </div>
-
-                      {/* Remove Button */}
-                      {formData.variants.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveVariantRow(idx)}
-                          className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-md transition-all cursor-pointer shrink-0"
-                          title="Remove Portion"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1152,5 +1375,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
 };
 
 export default AdminMenuView;
+
+
 
 

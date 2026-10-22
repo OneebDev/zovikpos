@@ -1,0 +1,150 @@
+/* Customer UI controls: prevent accidental text selection and touch highlights. */
+.responsive-shell,
+.customer-cart-page,
+.customer-tracking-page,
+.zovik-modal-panel {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.responsive-shell button,
+.responsive-shell [role="button"],
+.responsive-shell [role="tab"],
+.responsive-shell [role="radio"],
+.responsive-shell [role="switch"],
+.responsive-shell [role="option"],
+.responsive-shell [role="checkbox"],
+.responsive-shell [role="menuitem"],
+.customer-cart-page button,
+.customer-cart-page [role="button"],
+.customer-cart-page [role="tab"],
+.customer-cart-page [role="radio"],
+.customer-cart-page [role="switch"],
+.customer-cart-page [role="checkbox"],
+.customer-tracking-page button,
+.customer-tracking-page [role="button"],
+.zovik-modal-panel button,
+.zovik-modal-panel [role="button"],
+.zovik-modal-panel [role="tab"],
+.zovik-modal-panel [role="radio"],
+.zovik-modal-panel [role="switch"],
+.zovik-modal-panel [role="checkbox"] {
+  min-width: 44px;
+  min-height: 44px;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition-property: transform, opacity !important;
+}
+
+.responsive-shell input,
+.responsive-shell textarea,
+.responsive-shell select,
+.responsive-shell [contenteditable="true"],
+.customer-cart-page input,
+.customer-cart-page textarea,
+.customer-cart-page select,
+.customer-cart-page [contenteditable="true"],
+.customer-tracking-page input,
+.customer-tracking-page textarea,
+.customer-tracking-page select,
+.customer-tracking-page [contenteditable="true"],
+.zovik-modal-panel input,
+.zovik-modal-panel textarea,
+.zovik-modal-panel select,
+.zovik-modal-panel [contenteditable="true"],
+.tracking-receipt__heading h3 {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.responsive-shell :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]):focus:not(:focus-visible),
+.customer-cart-page :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]):focus:not(:focus-visible),
+.customer-tracking-page :is(button, [role="button"]):focus:not(:focus-visible),
+.zovik-modal-panel :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]):focus:not(:focus-visible) {
+  outline: none !important;
+  box-shadow: none;
+}
+
+.responsive-shell :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]):focus-visible,
+.customer-cart-page :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]):focus-visible,
+.customer-tracking-page :is(button, [role="button"]):focus-visible,
+.zovik-modal-panel :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]):focus-visible {
+  outline: 2px solid var(--accent-hover) !important;
+  outline-offset: 2px;
+}
+
+.responsive-shell :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]):active:not(:disabled),
+.customer-cart-page :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]):active:not(:disabled),
+.customer-tracking-page :is(button, [role="button"]):active:not(:disabled),
+.zovik-modal-panel :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]):active:not(:disabled) {
+  transform: scale(.97);
+}
+
+.customer-header__theme[aria-pressed="true"] { color: var(--accent); }
+.customer-header__theme[aria-pressed="true"]::before {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: var(--accent-soft);
+  opacity: 1;
+}
+.customer-header__more[aria-expanded="true"] { color: var(--accent); }
+.customer-cart-payment-card[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.customer-cart-wallet-provider[aria-pressed="true"] {
+  border-color: var(--accent) !important;
+  color: var(--text) !important;
+  background: var(--accent-soft) !important;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.customer-header__action,
+.customer-cart-dock__button,
+.customer-food-card__add,
+.customer-search__clear,
+.customer-category-tab,
+.customer-modal__close { min-width: 44px; min-height: 44px; }
+.customer-quantity-stepper { min-height: 48px; height: auto; }
+.customer-quantity-stepper button { width: 44px; min-width: 44px; min-height: 44px; height: 44px; }
+.tracking-receipt__heading h3,
+.tracking-order-meta h1 { -webkit-user-select: text; user-select: text; }
+
+@media (hover: none), (pointer: coarse) {
+  .customer-header__action:hover:not(.has-items) { color: var(--text-secondary); }
+  .customer-header__action.has-items:hover { color: var(--surface); }
+  .customer-header__action:hover::before { background: transparent; }
+  .customer-header__theme:hover:not([aria-pressed="true"]) { color: var(--text-secondary); }
+  .customer-header__theme:hover:not([aria-pressed="true"])::before { background: transparent; }
+  .customer-header__signout:hover { color: var(--text-secondary); }
+  .customer-header__signout:hover::before,
+  .customer-header__menu-row--signout:hover { background: transparent; }
+  .customer-header__menu-row:hover { background: transparent; }
+  .responsive-shell [role="option"]:hover:not([aria-selected="true"]) { color: var(--text); background: var(--surface); }
+  .responsive-shell [role="option"][aria-selected="true"] { color: var(--accent); background: var(--accent-soft); }
+  .customer-food-card:hover:not(.is-sold-out) { border-color: var(--border); box-shadow: var(--shadow-sm); }
+  .customer-food-card.is-sold-out:hover { border-color: var(--border); box-shadow: var(--shadow-sm); }
+  .customer-food-card:hover:not(.is-sold-out) .customer-food-card__title { color: var(--text); }
+  .customer-food-card__add:hover { box-shadow: var(--accent-glow); transform: none; }
+  .customer-quantity-stepper button:hover:not(:disabled) { background: var(--surface); }
+  .customer-category-tab:hover:not(.is-active) { border-color: var(--border); color: var(--text-secondary); }
+  .customer-search__clear:hover { color: var(--text-secondary); background: transparent; }
+  .customer-promo__cta:hover { background: color-mix(in srgb, var(--surface) 14%, transparent); }
+  .customer-promo__arrow:hover { color: inherit; }
+  .customer-empty-results__clear:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+  .customer-cart-dock__button:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+  .customer-cart-dock__button:hover .customer-cart-dock__arrow { transform: none; }
+  .customer-cart-payment-card:hover:not([aria-checked="true"]):not(:disabled) { border-color: var(--border); }
+  .customer-tracking-header__back:hover { color: var(--text-secondary); border-color: var(--border); }
+  .customer-modal__close:hover { color: var(--text-secondary); background: var(--surface-2); }
+  .customer-modal__button--secondary:hover { border-color: var(--border); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .responsive-shell :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]),
+  .customer-cart-page :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]),
+  .customer-tracking-page :is(button, [role="button"]),
+  .zovik-modal-panel :is(button, [role="button"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"]) {
+    transition: none !important;
+  }
+}

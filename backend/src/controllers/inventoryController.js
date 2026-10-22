@@ -1,5 +1,6 @@
 const { generateRealAIInsightsWithGroq, callGroqAPI, getGroqModel } = require('../services/groqService');
 const { prisma } = require('../config/db');
+const { Prisma } = require('@prisma/client');
 const { getInventoryForecast } = require('../services/aiService');
 const { emitToAdmin, emitToVendor } = require('../sockets/socket');
 const { convertUnit } = require('../utils/unitConverter');
@@ -501,16 +502,21 @@ const stockIn = async (req, res) => {
  */
 const adjustStock = async (req, res) => {
   const { inventoryItemId, type = 'WASTE', changeQty, reason, notes } = req.body;
+  const numericChange = Number(changeQty);
+  const adjustmentReason = String(reason || notes || '').trim();
 
-  if (!inventoryItemId || changeQty === undefined || parseFloat(changeQty) === 0) {
+  if (!Number.isInteger(Number(inventoryItemId)) || Number(inventoryItemId) <= 0 || !Number.isFinite(numericChange) || numericChange === 0) {
     return res.status(400).json({ error: 'Valid item and non-zero adjustment quantity are required.' });
   }
+  if (!adjustmentReason) return res.status(400).json({ error: 'A reason is required for every stock adjustment.' });
 
   const validTypes = ['WASTE', 'CORRECTION', 'RESTOCK', 'EXPIRATION', 'DAMAGE'];
-  const logType = validTypes.includes(type.toUpperCase()) ? type.toUpperCase() : 'CORRECTION';
+  const normalizedType = typeof type === 'string' ? type.toUpperCase() : '';
+  const logType = validTypes.includes(normalizedType) ? normalizedType : 'CORRECTION';
 
   try {
     const updatedItem = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "InventoryItem" WHERE "id" = ${Number(inventoryItemId)} FOR UPDATE`);
       const item = await tx.inventoryItem.findUnique({
         where: { id: parseInt(inventoryItemId, 10) }
       });
@@ -519,13 +525,16 @@ const adjustStock = async (req, res) => {
         throw new Error('Inventory item not found.');
       }
 
-      const delta = parseFloat(changeQty);
-      const qtyBefore = item.stockLevel;
-      const qtyAfter = Math.max(0, qtyBefore + delta);
+      const delta = numericChange;
+      const qtyBefore = Number(item.stockLevel);
+      const qtyAfter = qtyBefore + delta;
+      if (!Number.isFinite(qtyBefore) || !Number.isFinite(qtyAfter) || qtyAfter < 0) {
+        throw new Error(`Adjustment would make ${item.name} stock negative. Current stock is ${qtyBefore} ${item.unit}.`);
+      }
 
       const updated = await tx.inventoryItem.update({
         where: { id: item.id },
-        data: { stockLevel: qtyAfter },
+        data: { stockLevel: { increment: delta } },
         include: { supplier: true }
       });
 
@@ -536,7 +545,7 @@ const adjustStock = async (req, res) => {
           quantityAfter: qtyAfter,
           changeQty: delta,
           type: logType,
-          reason: reason || notes || `Manual adjustment (${logType})`,
+          reason: adjustmentReason,
           cost: Math.abs(delta) * item.costPrice,
           userId: req.user.id
         }

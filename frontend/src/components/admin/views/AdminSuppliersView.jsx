@@ -1,4 +1,4 @@
-import  { useState, useMemo } from 'react';
+﻿import  { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../services/api';
 import {
@@ -202,10 +202,10 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
     <div className="space-y-6">
 
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 glass-card p-5 sm:p-6">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
-            <span className="p-2 rounded-2xl bg-sky-500/10 text-sky-400">🏢</span>
+            <span className="p-2 rounded-2xl bg-sky-500/10 text-sky-400">ðŸ¢</span>
             Suppliers Management
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -271,7 +271,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
       </div>
 
       {/* Supplier List */}
-      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-3xl overflow-hidden shadow-xl">
+      <div className="glass-table overflow-hidden">
         {filteredSuppliers.length === 0 ? (
           <div className="p-12 text-center text-[var(--text-muted)] text-xs space-y-3">
             <Building2 className="w-8 h-8 mx-auto text-[var(--text-muted)] opacity-50" />
@@ -324,7 +324,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center font-bold text-sky-400 shrink-0">
-                            🏢
+                            ðŸ¢
                           </div>
                           <div>
                             <strong className="text-[var(--text-main)] block">{s.name}</strong>
@@ -334,7 +334,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                       </td>
 
                       <td className="py-3.5 px-4 text-[var(--text-main)] font-semibold">
-                        {s.contactPerson || '—'}
+                        {s.contactPerson || 'â€”'}
                       </td>
 
                       <td className="py-3.5 px-4 font-mono text-[11px] text-[var(--text-muted)]">
@@ -352,7 +352,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                             </a>
                           </div>
                         ) : (
-                          <div>—</div>
+                          <div>â€”</div>
                         )}
                         {s.email && <div className="text-[10px] text-sky-400">{s.email}</div>}
                       </td>
@@ -379,14 +379,14 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                           </button>
                           <button
                             onClick={() => openEditModal(s)}
-                            className="p-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/20 font-bold transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/20 font-bold transition-colors cursor-pointer icon-btn"
                             title="Edit Supplier"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleDelete(s)}
-                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold transition-colors cursor-pointer icon-btn"
                             title="Delete / Archive Supplier"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -404,14 +404,14 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
 
       {/* Add / Edit Supplier Modal via Portal */}
       {showAddModal && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <h3 className="text-base font-black text-[var(--text-main)] flex items-center gap-2">
-                <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">🏢</span>
+                <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">ðŸ¢</span>
                 {editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}
               </h3>
-              <button onClick={() => setShowAddModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)]">
+              <button onClick={() => setShowAddModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] icon-btn">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -507,23 +507,23 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
 
       {/* Supplier Details Modal via Portal */}
       {selectedSupplierDetails && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <div>
                 <h3 className="text-base font-black text-[var(--text-main)]">{selectedSupplierDetails.name}</h3>
                 <span className="text-[10px] text-sky-400 font-bold uppercase">Contact: {selectedSupplierDetails.contactPerson || 'Not Provided'}</span>
               </div>
-              <button onClick={() => setSelectedSupplierDetails(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)]">
+              <button onClick={() => setSelectedSupplierDetails(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] icon-btn">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Contact Details */}
             <div className="grid grid-cols-2 gap-3 bg-[var(--bg-color)] p-4 rounded-2xl text-xs font-mono">
-              <div>Phone: <strong className="text-[var(--text-main)]">{selectedSupplierDetails.phone || '—'}</strong></div>
-              <div>Email: <strong className="text-[var(--text-main)]">{selectedSupplierDetails.email || '—'}</strong></div>
-              <div className="col-span-2">Address: <strong className="text-[var(--text-muted)]">{selectedSupplierDetails.address || '—'}</strong></div>
+              <div>Phone: <strong className="text-[var(--text-main)]">{selectedSupplierDetails.phone || 'â€”'}</strong></div>
+              <div>Email: <strong className="text-[var(--text-main)]">{selectedSupplierDetails.email || 'â€”'}</strong></div>
+              <div className="col-span-2">Address: <strong className="text-[var(--text-muted)]">{selectedSupplierDetails.address || 'â€”'}</strong></div>
             </div>
 
             {/* Supplied Items */}
@@ -616,3 +616,5 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
 };
 
 export default AdminSuppliersView;
+
+

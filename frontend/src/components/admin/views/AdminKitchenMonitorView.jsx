@@ -1,4 +1,5 @@
-import  { useMemo } from 'react';
+﻿import  { useMemo } from 'react';
+import { resolveTableLabel } from '../../../utils/customerTableLabel';
 import {
   ChefHat,
   Clock,
@@ -17,7 +18,7 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-5 sm:p-6 rounded-2xl shadow-xl flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="glass-card p-5 sm:p-6 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
           <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display flex items-center gap-2">
             <ChefHat className="h-5 w-5 shrink-0 text-orange-400" />
@@ -50,7 +51,7 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
                 <div className="flex justify-between items-start">
                   <div>
                     <strong className="font-mono font-extrabold text-orange-400 block">{order.orderNumber}</strong>
-                    <span className="text-xs font-bold text-[var(--text-main)]">{order.tableNumber || (order.tableId ? `Table ${order.tableId}` : 'Takeaway')}</span>
+                    <span className="text-xs font-bold text-[var(--text-main)]">{resolveTableLabel(order)}</span>
                   </div>
                   <span className="text-[10px] text-[var(--text-muted)] font-mono">
                     {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -60,7 +61,7 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
                 <div className="divide-y divide-[var(--border-color)] text-xs">
                   {order.orderItems?.map((item) => (
                     <div key={item.id} className="py-1 flex justify-between text-[var(--text-main)]">
-                      <span>{item.quantity}× {item.nameSnapshot || item.menuItem?.name}</span>
+                      <span>{item.quantity}Ã— {item.nameSnapshot || item.menuItem?.name}</span>
                     </div>
                   ))}
                 </div>
@@ -96,7 +97,7 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
                 <div className="flex justify-between items-start">
                   <div>
                     <strong className="font-mono font-extrabold text-amber-400 block">{order.orderNumber}</strong>
-                    <span className="text-xs font-bold text-[var(--text-main)]">{order.tableNumber || (order.tableId ? `Table ${order.tableId}` : 'Takeaway')}</span>
+                    <span className="text-xs font-bold text-[var(--text-main)]">{resolveTableLabel(order)}</span>
                   </div>
                   <span className="text-[10px] text-[var(--text-muted)] font-mono">
                     {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -106,7 +107,7 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
                 <div className="divide-y divide-[var(--border-color)] text-xs">
                   {order.orderItems?.map((item) => (
                     <div key={item.id} className="py-1 flex justify-between text-[var(--text-main)]">
-                      <span>{item.quantity}× {item.nameSnapshot || item.menuItem?.name}</span>
+                      <span>{item.quantity}Ã— {item.nameSnapshot || item.menuItem?.name}</span>
                     </div>
                   ))}
                 </div>
@@ -142,7 +143,7 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
                 <div className="flex justify-between items-start">
                   <div>
                     <strong className="font-mono font-extrabold text-orange-400 block">{order.orderNumber}</strong>
-                    <span className="text-xs font-bold text-[var(--text-main)]">{order.tableNumber || (order.tableId ? `Table ${order.tableId}` : 'Takeaway')}</span>
+                    <span className="text-xs font-bold text-[var(--text-main)]">{resolveTableLabel(order)}</span>
                   </div>
                   <span className="text-[10px] text-[var(--text-muted)] font-mono">
                     {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -152,13 +153,13 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
                 <div className="divide-y divide-[var(--border-color)] text-xs">
                   {order.orderItems?.map((item) => (
                     <div key={item.id} className="py-1 flex justify-between text-[var(--text-main)]">
-                      <span>{item.quantity}× {item.nameSnapshot || item.menuItem?.name}</span>
+                      <span>{item.quantity}Ã— {item.nameSnapshot || item.menuItem?.name}</span>
                     </div>
                   ))}
                 </div>
 
                 <div className="pt-2 border-t border-[var(--border-color)] text-[10px] text-orange-400 font-bold">
-                  ✓ Ready at counter
+                  âœ“ Ready at counter
                 </div>
               </div>
             ))}
@@ -174,3 +175,4 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
 };
 
 export default AdminKitchenMonitorView;
+

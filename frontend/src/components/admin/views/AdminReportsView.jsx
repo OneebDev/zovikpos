@@ -1,4 +1,4 @@
-import ThemedSelect from '../../common/ThemedSelect';
+﻿import ThemedSelect from '../../common/ThemedSelect';
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
+import { resolveTableLabel } from '../../../utils/customerTableLabel';
 import DateRangeFilterBar from '../../common/DateRangeFilterBar';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
 import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
@@ -247,7 +248,7 @@ const AdminReportsView = ({
       const exportRows = orders.map((o) => ({
         OrderNumber: o.orderNumber,
         Customer: o.user?.name || o.user?.email || 'Guest',
-        Table: o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway'),
+        Table: resolveTableLabel(o),
         Amount: o.total,
         PaymentMethod: paymentMethodLabel(o.paymentMethod),
         Status: o.status,
@@ -334,7 +335,7 @@ const AdminReportsView = ({
               <tr>
                 <td><strong>${o.orderNumber}</strong></td>
                 <td>${o.user?.name || o.user?.email || 'Guest'}</td>
-                <td>${o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway')}</td>
+                <td>${resolveTableLabel(o)}</td>
                 <td>Rs. ${Number(o.total || 0).toFixed(2)}</td>
                 <td>${paymentMethodLabel(o.paymentMethod)}</td>
                 <td>${o.status}</td>
@@ -421,7 +422,7 @@ const AdminReportsView = ({
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 glass-card p-6">
         <div>
           <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">
             Executive Reports & Analytics
@@ -545,7 +546,7 @@ const AdminReportsView = ({
       {reportType === 'SALES' && (
         <div className="space-y-6">
           {/* Payment Method Breakdown Grid */}
-          <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-5 rounded-2xl shadow-xl space-y-3">
+          <div className="glass-card p-5 space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-[var(--text-muted)] flex items-center space-x-2">
               <CreditCard className="w-4 h-4 text-orange-400" />
               <span>Real-Time Payment Method Breakdown</span>
@@ -632,7 +633,7 @@ const AdminReportsView = ({
                             {o.user?.name || o.user?.email || 'Guest Customer'}
                           </td>
                           <td className="p-4 text-[var(--text-muted)] font-medium">
-                            {o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway')}
+                            {resolveTableLabel(o)}
                           </td>
                           <td className="p-4 font-mono font-extrabold text-emerald-400">
                             Rs. {Number(o.total || 0).toFixed(2)}
@@ -663,7 +664,7 @@ const AdminReportsView = ({
                               <button
                                 onClick={() => setSelectedOrderModal(o)}
                                 title="View Order Details"
-                                className="p-1.5 rounded-lg bg-[var(--card-bg)] hover:bg-orange-600 hover:text-white border border-[var(--border-color)] transition-colors cursor-pointer"
+                                className="p-1.5 rounded-lg bg-[var(--card-bg)] hover:bg-orange-600 hover:text-white border border-[var(--border-color)] transition-colors cursor-pointer icon-btn"
                               >
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
@@ -674,7 +675,7 @@ const AdminReportsView = ({
                                   setDeleteModalOpen(true);
                                 }}
                                 title="Delete Order Record"
-                                className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg border border-transparent hover:border-rose-500/20 transition-all cursor-pointer"
+                                className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg border border-transparent hover:border-rose-500/20 transition-all cursor-pointer icon-btn"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -782,7 +783,7 @@ const AdminReportsView = ({
       {reportType === 'INVENTORY' && (
         <div className="space-y-6">
           {/* Inventory Valuation Header */}
-          <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-5 rounded-2xl shadow-xl flex justify-between items-center">
+          <div className="glass-card p-5 flex justify-between items-center">
             <div>
               <span className="text-[10px] font-black uppercase text-[var(--text-muted)]">
                 Total Inventory Asset Valuation
@@ -884,7 +885,7 @@ const AdminReportsView = ({
                 </div>
                 <button
                   onClick={() => setSelectedOrderModal(null)}
-                  className="p-1.5 rounded-lg hover:bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg hover:bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -922,7 +923,7 @@ const AdminReportsView = ({
                           {item.nameSnapshot || item.menuItem?.name}
                         </strong>
                         <span className="text-[10px] text-[var(--text-muted)]">
-                          Rs. {item.priceSnapshot || item.menuItem?.price} × {item.quantity}
+                          Rs. {item.priceSnapshot || item.menuItem?.price} Ã— {item.quantity}
                         </span>
                       </div>
                       <span className="font-mono font-extrabold text-emerald-400">
@@ -975,3 +976,4 @@ const AdminReportsView = ({
 };
 
 export default AdminReportsView;
+

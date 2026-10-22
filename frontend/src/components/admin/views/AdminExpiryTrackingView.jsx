@@ -1,4 +1,4 @@
-import ThemedSelect from '../../common/ThemedSelect';
+﻿import ThemedSelect from '../../common/ThemedSelect';
 import  { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../services/api';
@@ -341,10 +341,10 @@ const AdminExpiryTrackingView = ({
     <div className="space-y-6">
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-card p-5 sm:p-6">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
-            <span className="p-2 rounded-2xl bg-rose-500/10 text-rose-400">⏳</span>
+            <span className="p-2 rounded-2xl bg-rose-500/10 text-rose-400">â³</span>
             Expiry Tracking
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -507,7 +507,7 @@ const AdminExpiryTrackingView = ({
       </div>
 
       {/* Main Table */}
-      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-3xl overflow-hidden shadow-xl">
+      <div className="glass-table overflow-hidden">
         {filteredRecords.length === 0 ? (
           <div className="p-12 text-center text-[var(--text-muted)] text-xs space-y-2">
             <Clock className="w-8 h-8 mx-auto text-[var(--text-muted)] opacity-50" />
@@ -516,18 +516,18 @@ const AdminExpiryTrackingView = ({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="inventory-single-row-table w-full min-w-[1080px] text-left text-xs divide-y divide-[var(--border-color)]">
-              <thead className="bg-[var(--bg-color)]/80 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]">
+            <table className="inventory-single-row-table w-full min-w-[1140px] text-left text-xs divide-y divide-[var(--border-color)]">
+              <thead className="bg-[var(--bg-color)] text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border-color)]">
                 <tr>
-                  <th className="py-3.5 px-4">Item</th>
-                  <th className="py-3.5 px-4">Internal Ref #</th>
-                  <th className="py-3.5 px-4">Batch #</th>
-                  <th className="py-3.5 px-4">Supplier Invoice #</th>
-                  <th className="py-3.5 px-4">Quantity</th>
-                  <th className="py-3.5 px-4">Expiry Date</th>
-                  <th className="py-3.5 px-4">Days Left</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-right">Action</th>
+                  <th className="py-3.5 px-4 min-w-[200px]">Item</th>
+                  <th className="py-3.5 px-4 min-w-[160px]">Internal Ref #</th>
+                  <th className="py-3.5 px-4 min-w-[140px]">Batch #</th>
+                  <th className="py-3.5 px-4 min-w-[160px]">Supplier Invoice #</th>
+                  <th className="py-3.5 px-4 text-center min-w-[100px]">Quantity</th>
+                  <th className="py-3.5 px-4 text-center min-w-[120px]">Expiry Date</th>
+                  <th className="py-3.5 px-4 text-center min-w-[120px]">Days Left</th>
+                  <th className="py-3.5 px-4 text-center min-w-[130px]">Status</th>
+                  <th className="py-3.5 px-4 text-right min-w-[140px]">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-color)] font-medium text-[var(--text-main)]">
@@ -601,45 +601,45 @@ const AdminExpiryTrackingView = ({
 
                       {/* Internal Reference # (Optional) */}
                       <td className="py-3 px-4 font-mono text-[11px] text-amber-400 font-bold">
-                        {r.receivingRef || <span className="text-[var(--text-muted)] italic font-normal">—</span>}
+                        {r.receivingRef || <span className="text-[var(--text-muted)] italic font-normal">â€”</span>}
                       </td>
 
                       {/* Batch # (Optional) */}
                       <td className="py-3 px-4 font-mono text-[11px] text-[var(--text-main)] font-semibold">
-                        {r.batchNumber || <span className="text-[var(--text-muted)] italic font-normal">—</span>}
+                        {r.batchNumber || <span className="text-[var(--text-muted)] italic font-normal">â€”</span>}
                       </td>
 
                       {/* Supplier Invoice # (Optional) */}
                       <td className="py-3 px-4 font-mono text-[11px] text-purple-400 font-bold">
-                        {r.invoiceNumber || <span className="text-[var(--text-muted)] italic font-normal">—</span>}
+                        {r.invoiceNumber || <span className="text-[var(--text-muted)] italic font-normal">â€”</span>}
                       </td>
 
-                      <td className="py-3 px-4 font-mono font-bold text-orange-400">
+                      <td className="py-3 px-4 font-mono font-bold text-orange-500 text-center">
                         {r.quantity} {r.unit}
                       </td>
 
                       {/* Expiry Date (Optional) */}
-                      <td className="py-3 px-4 font-mono text-[11px] text-[var(--text-main)]">
+                      <td className="py-3 px-4 font-mono text-[11px] text-[var(--text-main)] text-center">
                         {r.hasExpiry ? (
                           new Date(r.expiryDate).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })
                         ) : (
-                          <span className="text-[var(--text-muted)] italic">—</span>
+                          <span className="text-[var(--text-muted)] italic">â€”</span>
                         )}
                       </td>
 
-                      <td className="py-3 px-4 font-mono font-bold">
+                      <td className="py-3 px-4 font-mono font-bold text-center">
                         {!r.hasExpiry ? (
-                          <span className="text-[var(--text-muted)] text-[11px]">—</span>
+                          <span className="text-[var(--text-muted)] text-[11px]">â€”</span>
                         ) : r.daysLeft < 0 ? (
-                          <span className="text-rose-400">{Math.abs(r.daysLeft)} days ago</span>
+                          <span className="text-rose-500">{Math.abs(r.daysLeft)} days ago</span>
                         ) : r.daysLeft === 0 ? (
-                          <span className="text-amber-400">0 Days (Today)</span>
+                          <span className="text-amber-500">0 Days (Today)</span>
                         ) : (
                           <span>{r.daysLeft} Days</span>
                         )}
                       </td>
 
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-4 text-center">
                         {statusBadge}
                       </td>
 
@@ -651,7 +651,7 @@ const AdminExpiryTrackingView = ({
                             onClick={() => { setDeleteTarget(r); setDeleteModalOpen(true); }}
                             title="Remove expiry date"
                             aria-label={`Remove expiry date for ${r.name}`}
-                            className="inline-flex items-center justify-center p-2 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors cursor-pointer"
+                            className="inline-flex items-center justify-center p-2 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors cursor-pointer icon-btn"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -675,7 +675,7 @@ const AdminExpiryTrackingView = ({
 
       {/* Batch / Expiry View + Edit Modal via React Portal */}
       {selectedBatchDetails && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
 
             {/* Modal Header */}
@@ -695,7 +695,7 @@ const AdminExpiryTrackingView = ({
               </div>
               <button
                 onClick={() => setSelectedBatchDetails(null)}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors border border-[var(--border-color)] cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors border border-[var(--border-color)] cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -713,28 +713,28 @@ const AdminExpiryTrackingView = ({
               <div>
                 <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Cost per Unit</span>
                 <strong className="text-emerald-400 font-mono text-sm">
-                  {selectedBatchDetails.costPerUnit > 0 ? `Rs. ${selectedBatchDetails.costPerUnit}` : '—'}
+                  {selectedBatchDetails.costPerUnit > 0 ? `Rs. ${selectedBatchDetails.costPerUnit}` : 'â€”'}
                 </strong>
               </div>
 
               <div>
                 <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Internal Reference #</span>
                 <strong className="text-amber-400 font-mono">
-                  {selectedBatchDetails.receivingRef || '—'}
+                  {selectedBatchDetails.receivingRef || 'â€”'}
                 </strong>
               </div>
 
               <div>
                 <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Supplier Invoice #</span>
                 <strong className="text-purple-400 font-mono">
-                  {selectedBatchDetails.invoiceNumber || '—'}
+                  {selectedBatchDetails.invoiceNumber || 'â€”'}
                 </strong>
               </div>
 
               <div>
                 <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Supplier</span>
                 <strong className="text-[var(--text-main)]">
-                  {selectedBatchDetails.supplierName || '—'}
+                  {selectedBatchDetails.supplierName || 'â€”'}
                 </strong>
               </div>
 
@@ -743,7 +743,7 @@ const AdminExpiryTrackingView = ({
                 <span className="text-[var(--text-main)] font-medium">
                   {selectedBatchDetails.receivingDate
                     ? new Date(selectedBatchDetails.receivingDate).toLocaleDateString([], { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })
-                    : '—'}
+                    : 'â€”'}
                 </span>
               </div>
             </div>
@@ -757,19 +757,19 @@ const AdminExpiryTrackingView = ({
                   <span>Batch Number</span>
                   <span className="text-[10px] text-orange-400 font-normal lowercase">(Optional)</span>
                 </label>
-                <div className="relative flex items-center">
+                <div className="field-action-control">
                   <input
                     type="text"
                     value={editBatchNumber}
                     onChange={(e) => setEditBatchNumber(e.target.value)}
-                    placeholder="Click 🔄 to generate..."
-                    className="w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                    placeholder="Click ðŸ”„ to generate..."
+                    className="field-action-control__input w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
                   />
                   <button
                     type="button"
                     onClick={generateAutoBatch}
                     title="Click to generate a unique Batch Number"
-                    className="absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
+                    className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10 icon-btn icon-btn--32"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
@@ -782,19 +782,19 @@ const AdminExpiryTrackingView = ({
                   <label className="block text-[11px] font-extrabold uppercase text-[var(--text-main)] mb-1 flex justify-between items-center">
                     <span>Internal Reference #</span>
                   </label>
-                  <div className="relative flex items-center">
+                  <div className="field-action-control">
                     <input
                       type="text"
                       value={editReceivingRef}
                       onChange={(e) => setEditReceivingRef(e.target.value)}
-                      placeholder="Click 🔄 to generate..."
-                      className="w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-amber-400 focus:outline-none focus:border-amber-500"
+                      placeholder="Click ðŸ”„ to generate..."
+                      className="field-action-control__input w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-amber-400 focus:outline-none focus:border-amber-500"
                     />
                     <button
                       type="button"
                       onClick={generateAutoRef}
                       title="Click to generate a unique Internal Reference"
-                      className="absolute right-2 p-1.5 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
+                      className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10 icon-btn icon-btn--32"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                     </button>
@@ -805,19 +805,19 @@ const AdminExpiryTrackingView = ({
                   <label className="block text-[11px] font-extrabold uppercase text-[var(--text-main)] mb-1 flex justify-between items-center">
                     <span>Supplier Invoice #</span>
                   </label>
-                  <div className="relative flex items-center">
+                  <div className="field-action-control">
                     <input
                       type="text"
                       value={editInvoiceNumber}
                       onChange={(e) => setEditInvoiceNumber(e.target.value)}
-                      placeholder="Click 🔄 to generate..."
-                      className="w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-purple-400 focus:outline-none focus:border-purple-500"
+                      placeholder="Click ðŸ”„ to generate..."
+                      className="field-action-control__input w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-purple-400 focus:outline-none focus:border-purple-500"
                     />
                     <button
                       type="button"
                       onClick={generateAutoInvoiceNum}
                       title="Click to generate a unique Supplier Invoice #"
-                      className="absolute right-2 p-1.5 rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
+                      className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10 icon-btn icon-btn--32"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                     </button>
@@ -956,3 +956,5 @@ const AdminExpiryTrackingView = ({
 };
 
 export default AdminExpiryTrackingView;
+
+

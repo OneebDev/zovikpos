@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import api, { setActiveAuthTokens, resolveBackendUrl } from '../services/api';
@@ -6,6 +6,10 @@ import { connectSocket, getSocket } from '../services/socket';
 
 import { useCustomerMenu } from '../hooks/useCustomerMenu';
 import { useCustomerActiveOrders } from '../hooks/useCustomerActiveOrders';
+import { parseTableDisplay, resolveTableLabel } from '../utils/customerTableLabel';
+import { parseTableToken } from '../utils/parseTableToken';
+import { formatCompactAmount } from '../utils/formatCompactAmount';
+import { formatPrice } from '../utils/formatPrice';
 import {
   ShoppingBag,
   Sparkles,
@@ -16,7 +20,6 @@ import {
   AlertCircle,
   HelpCircle,
   RotateCcw,
-  ArrowRight,
   Mail,
   User,
   ShieldCheck,
@@ -34,10 +37,149 @@ import {
   Download,
   X,
   QrCode,
+  Share2,
+  MoreVertical,
   LogOut,
+  Trash2,
+  LockKeyhole,
+  ClipboardPaste,
+  Zap,
+  Smartphone,
+  ExternalLink,
+  Tag,
+  Clock3,
 } from 'lucide-react';
 import FAQModal from './FAQModal';
 import InAppQRScanner from './InAppQRScanner';
+import ModalShell from './ui/ModalShell';
+import './CustomerModals.css';
+import './CustomerDashboardAuth.css';
+import './CustomerDashboardHeader.css';
+import './CustomerDashboardMenuControls.css';
+import './CustomerDashboardFoodCards.css';
+import './CustomerDashboardCartBar.css';
+
+const PENDING_LOGIN_KEY = 'zovik_pending_login';
+const PENDING_LOGIN_MAX_AGE_MS = 10 * 60 * 1000;
+
+const clearPendingLogin = () => {
+  try { window.sessionStorage.removeItem(PENDING_LOGIN_KEY); } catch { /* Storage may be unavailable. */ }
+  try { window.localStorage.removeItem(PENDING_LOGIN_KEY); } catch { /* Storage may be unavailable. */ }
+};
+
+const isValidCustomerEmail = (email) => (
+  typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+);
+
+const readStoredCustomerValue = (key) => {
+  try { return window.localStorage.getItem(key) || window.sessionStorage.getItem(key) || ''; }
+  catch { return ''; }
+};
+
+const savePendingLogin = ({ name, email, otpSentAt, resendAvailableAt, sessionId, tableToken, tableId }) => {
+  const pendingLogin = {
+    step: 'otp',
+    name: String(name || ''),
+    email: String(email || ''),
+    otpSentAt: Number(otpSentAt) || Date.now(),
+    resendAvailableAt: Number(resendAvailableAt) || 0,
+    sessionId: typeof sessionId === 'string' ? sessionId : readStoredCustomerValue('customer_sessionId'),
+    tableToken: typeof tableToken === 'string' ? tableToken : readStoredCustomerValue('customer_tableToken'),
+    tableId: typeof tableId === 'string' ? tableId : readStoredCustomerValue('customer_tableId'),
+  };
+  const serialized = JSON.stringify(pendingLogin);
+
+  // Keep a localStorage backup because some iOS PWA reloads can lose sessionStorage.
+  try {
+    window.sessionStorage.setItem(PENDING_LOGIN_KEY, serialized);
+  } catch {
+    // Continue to the persistent fallback below.
+  }
+
+  try {
+    window.localStorage.setItem(PENDING_LOGIN_KEY, serialized);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const loadPendingLogin = () => {
+  try {
+    const records = [];
+    let invalidRecordFound = false;
+    for (const storageName of ['sessionStorage', 'localStorage']) {
+      try {
+        const storage = window[storageName];
+        const serialized = storage.getItem(PENDING_LOGIN_KEY);
+        if (!serialized) continue;
+        let record;
+        try {
+          record = JSON.parse(serialized);
+        } catch {
+          invalidRecordFound = true;
+          continue;
+        }
+        const validShape = record
+          && typeof record === 'object'
+          && record.step === 'otp'
+          && (record.name === undefined || typeof record.name === 'string')
+          && isValidCustomerEmail(record.email)
+          && typeof record.otpSentAt === 'number'
+          && Number.isFinite(record.otpSentAt)
+          && typeof record.resendAvailableAt === 'number'
+          && Number.isFinite(record.resendAvailableAt)
+          && !Object.prototype.hasOwnProperty.call(record, 'otp');
+        const age = validShape ? Date.now() - record.otpSentAt : -1;
+        if (!validShape || age < 0 || age >= PENDING_LOGIN_MAX_AGE_MS) {
+          invalidRecordFound = true;
+          continue;
+        }
+        records.push({
+          step: 'otp',
+          name: typeof record.name === 'string' ? record.name : '',
+          email: record.email.trim(),
+          otpSentAt: record.otpSentAt,
+          resendAvailableAt: record.resendAvailableAt,
+          sessionId: typeof record.sessionId === 'string' ? record.sessionId : '',
+          tableToken: typeof record.tableToken === 'string' ? record.tableToken : '',
+          tableId: typeof record.tableId === 'string' ? record.tableId : '',
+        });
+      } catch {
+        // A blocked storage backend should not prevent the customer page from mounting.
+      }
+    }
+    if (invalidRecordFound) {
+      clearPendingLogin();
+      return null;
+    }
+    return records.sort((a, b) => b.otpSentAt - a.otpSentAt)[0] || null;
+  } catch {
+    clearPendingLogin();
+    return null;
+  }
+};
+
+const CustomerSessionTableChip = React.memo(({ label }) => {
+  const previousLabelRef = React.useRef(label);
+  const [isChanging, setIsChanging] = React.useState(false);
+
+  React.useEffect(() => {
+    if (previousLabelRef.current === label) return undefined;
+    previousLabelRef.current = label;
+    setIsChanging(true);
+    const fadeTimer = window.setTimeout(() => setIsChanging(false), 200);
+    return () => window.clearTimeout(fadeTimer);
+  }, [label]);
+
+  return (
+    <span className="customer-header__table" aria-label={`Current table: ${label}`}>
+      <MapPin aria-hidden="true" />
+      <span className={isChanging ? 'customer-header__table-label is-changing' : 'customer-header__table-label'}>{label}</span>
+      <span className="customer-header__live-dot" aria-hidden="true" />
+    </span>
+  );
+});
 
 const DeliveryTableDropdown = ({ value, tables, onChange, onOpen, loading = false, compact = false }) => {
   const [open, setOpen] = useState(false);
@@ -99,7 +241,7 @@ const DeliveryTableDropdown = ({ value, tables, onChange, onOpen, loading = fals
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Delivery table: ${selectedTable?.tableNumber || 'Select table'}`}
-        className={`flex w-full items-center gap-2 rounded-xl border border-stone-200 bg-white text-left text-xs font-bold text-stone-900 shadow-sm transition hover:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}
+        className={`flex w-full items-center gap-2 rounded-xl border border-stone-200 bg-white text-left text-xs font-bold text-stone-900 shadow-sm transition hover:border-orange-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/20 ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}
       >
         <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-500" />
         <span className="min-w-0 flex-1 truncate">{loading ? 'Loading tables…' : selectedTable?.tableNumber || 'Select Table...'}</span>
@@ -147,7 +289,7 @@ const CustomerMenuImage = ({ src, alt, priority, onError }) => {
       <img
         src={src}
         alt={alt}
-        loading={priority ? 'eager' : 'lazy'}
+        loading="lazy"
         fetchPriority={priority ? 'high' : 'auto'}
         decoding="async"
         onLoad={() => {
@@ -158,122 +300,309 @@ const CustomerMenuImage = ({ src, alt, priority, onError }) => {
           setLoaded(true);
           onError(event);
         }}
-        className={`w-full h-full object-cover transition-[transform,opacity] duration-500 group-hover:scale-105 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        width={700}
+        height={700}
+        className={`customer-menu-image ${loaded ? 'is-loaded' : ''}`}
       />
     </>
   );
 };
 
-// Helper to extract clean table display name from token or text
-const parseTableDisplay = (tokenOrName) => {
-  if (!tokenOrName) return 'Dining Table';
-  try {
-    let clean = String(tokenOrName).trim();
-    if (clean.includes('%')) clean = decodeURIComponent(clean);
+// One native text field sits over the six visual OTP slots so mobile browsers
+// can expose their built-in one-time-code and long-press paste affordances.
+export const OtpInputBoxes = ({ value, onChange, disabled, prefillCode = '', onPrefillApplied, secondaryAction }) => {
+  const inputRef = React.useRef(null);
+  const appliedPrefillCode = React.useRef('');
+  const clipboardHintTimer = React.useRef(null);
+  const [suggestedCode, setSuggestedCode] = useState('');
+  const [clipboardHint, setClipboardHint] = useState('');
+  const [focusedIndex, setFocusedIndex] = useState(null);
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 6);
+  const slots = Array.from({ length: 6 }, (_, index) => digits[index] || '');
+  const activeIndex = focusedIndex ?? Math.min(digits.length, 5);
 
-    // Check for signed token format: tbl:tableNumber:branchId:nonce:signature
-    const parts = clean.split(':');
-    if (parts.length >= 2 && parts[0] === 'tbl') {
-      const tblNum = parts[1];
-      if (tblNum) {
-        return tblNum.toLowerCase().startsWith('table') ? tblNum : `Table ${tblNum}`;
-      }
+  const hideClipboardHint = useCallback(() => {
+    if (clipboardHintTimer.current) window.clearTimeout(clipboardHintTimer.current);
+    clipboardHintTimer.current = null;
+    setClipboardHint('');
+  }, []);
+
+  const showClipboardHint = useCallback(() => {
+    if (clipboardHintTimer.current) window.clearTimeout(clipboardHintTimer.current);
+    setClipboardHint('Tap the boxes, then long-press and choose Paste');
+    clipboardHintTimer.current = window.setTimeout(() => {
+      setClipboardHint('');
+      clipboardHintTimer.current = null;
+    }, 4000);
+  }, []);
+
+  const applyClipboardCode = useCallback((text) => {
+    const match = String(text || '').match(/\d{6}/);
+    if (!match) return false;
+    onChange(match[0]);
+    setSuggestedCode('');
+    hideClipboardHint();
+    return true;
+  }, [hideClipboardHint, onChange]);
+
+  const handleInputChange = (event) => {
+    const nextCode = event.target.value.replace(/\D/g, '').slice(0, 6);
+    event.target.value = nextCode;
+    onChange(nextCode);
+    const cursorPosition = event.target.selectionStart ?? nextCode.length;
+    setFocusedIndex(Math.min(cursorPosition, 5));
+    if (nextCode) hideClipboardHint();
+  };
+
+  const handlePaste = (event) => {
+    event.preventDefault();
+    const text = event.clipboardData?.getData('text') || '';
+    const match = text.match(/\d{6}/);
+    const pastedCode = match?.[0] || text.replace(/\D/g, '').slice(0, 6);
+    if (pastedCode) applyClipboardCode(pastedCode);
+  };
+
+  const handleInputPointerDown = (event) => {
+    if (disabled) return;
+    const visual = event.currentTarget.previousElementSibling;
+    if (!visual) return;
+    const bounds = visual.getBoundingClientRect();
+    const boxWidth = 46;
+    const gap = 8;
+    const contentWidth = (boxWidth * 6) + (gap * 5);
+    const inset = Math.max(0, (bounds.width - contentWidth) / 2);
+    const offsetX = event.clientX - bounds.left - inset;
+    const index = Math.max(0, Math.min(5, Math.floor((offsetX + gap / 2) / (boxWidth + gap))));
+    const input = event.currentTarget;
+    input.focus({ preventScroll: true });
+    if (digits[index]) input.setSelectionRange(index, index + 1);
+    else {
+      const cursorPosition = Math.min(index, digits.length);
+      input.setSelectionRange(cursorPosition, cursorPosition);
     }
+    setFocusedIndex(index);
+    event.preventDefault();
+  };
 
-    // Check if it already starts with "Table"
-    if (clean.toLowerCase().startsWith('table')) {
-      const suffix = clean.slice(5).trim();
-      const digitsOnly = suffix.replace(/[^0-9]/g, '');
-      if (digitsOnly && digitsOnly.length > 4) {
-        return 'Dining Table';
-      }
-      return clean;
+  useEffect(() => {
+    if (!/^\d{6}$/.test(prefillCode) || appliedPrefillCode.current === prefillCode) return;
+    if (applyClipboardCode(prefillCode)) {
+      appliedPrefillCode.current = prefillCode;
+      onPrefillApplied?.();
     }
+  }, [prefillCode, onPrefillApplied, applyClipboardCode]);
 
-    // Check if it's a short numeric table number (1 to 4 digits, e.g. "14", "7")
-    const num = clean.replace(/[^0-9]/g, '');
-    if (num && num.length > 0 && num.length <= 4) {
-      return `Table ${num}`;
-    }
-
-    return 'Dining Table';
-  } catch {
-    return 'Dining Table';
-  }
-};
-
-// Clean 6-box separate digit OTP input component
-export const OtpInputBoxes = ({ value, onChange, disabled }) => {
-  const digits = (value || '').padEnd(6, '').slice(0, 6).split('');
-  const inputRefs = React.useRef([]);
-
-  const handleChange = (e, index) => {
-    const val = e.target.value.replace(/[^0-9]/g, '');
-    if (!val) {
-      const newDigits = [...digits];
-      newDigits[index] = '';
-      onChange(newDigits.join('').trim());
+  const handleClipboardPaste = async () => {
+    inputRef.current?.focus();
+    if (!window.isSecureContext || !navigator.clipboard?.readText) {
+      showClipboardHint();
       return;
     }
-    const char = val[val.length - 1];
-    const newDigits = [...digits];
-    newDigits[index] = char;
-    const result = newDigits.join('');
-    onChange(result);
-
-    if (index < 5) {
-      inputRefs.current[index + 1]?.focus();
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!applyClipboardCode(text)) showClipboardHint();
+    } catch {
+      inputRef.current?.focus();
+      showClipboardHint();
     }
   };
 
-  const handleKeyDown = (e, index) => {
-    if (e.key === 'Backspace' && !digits[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
-  };
+  useEffect(() => {
+    if (!window.isSecureContext || !navigator.clipboard?.readText) return undefined;
+    const suggestClipboardCode = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const text = await navigator.clipboard.readText();
+        const match = String(text || '').match(/\d{6}/);
+        if (match) {
+          setSuggestedCode(match[0]);
+          hideClipboardHint();
+        }
+      } catch {
+        // Clipboard suggestions are optional and remain silent when blocked.
+      }
+    };
+    document.addEventListener('visibilitychange', suggestClipboardCode);
+    return () => document.removeEventListener('visibilitychange', suggestClipboardCode);
+  }, [hideClipboardHint]);
 
-  const handlePaste = (e) => {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/[^0-9]/g, '').slice(0, 6);
-    if (pasted) {
-      onChange(pasted);
-      const nextFocus = Math.min(pasted.length, 5);
-      inputRefs.current[nextFocus]?.focus();
-    }
-  };
+  useEffect(() => () => {
+    if (clipboardHintTimer.current) window.clearTimeout(clipboardHintTimer.current);
+  }, []);
 
   return (
-    <div className="flex gap-2 sm:gap-2.5 justify-center my-3" onPaste={handlePaste}>
-      {[0, 1, 2, 3, 4, 5].map((idx) => (
+    <div className="customer-auth-otp-entry">
+      {suggestedCode && (
+        <button
+          type="button"
+          className="customer-auth-paste-suggestion"
+          aria-label={`Paste suggested verification code ${suggestedCode}`}
+          disabled={disabled}
+          onClick={() => applyClipboardCode(suggestedCode)}
+        >
+          <ClipboardPaste aria-hidden="true" />
+          <span>Paste code {suggestedCode}?</span>
+        </button>
+      )}
+      <div className="customer-auth-otp">
+        <div className="customer-auth-otp-visual" aria-hidden="true">
+          {slots.map((digit, index) => (
+            <span key={index} className={`customer-otp-box${digit ? ' is-filled' : ''}${index === activeIndex ? ' is-active' : ''}`}>
+              {digit}
+            </span>
+          ))}
+        </div>
         <input
-          key={idx}
-          ref={(el) => (inputRefs.current[idx] = el)}
+          ref={inputRef}
           type="text"
+          className="customer-auth-otp-input"
+          value={digits}
+          disabled={disabled}
           inputMode="numeric"
           pattern="[0-9]*"
-          maxLength={1}
-          disabled={disabled}
-          value={digits[idx] || ''}
-          onChange={(e) => handleChange(e, idx)}
-          onKeyDown={(e) => handleKeyDown(e, idx)}
-          className={`w-10 h-12 sm:w-11 sm:h-13 text-center text-lg sm:text-xl font-black font-mono rounded-xl border-2 transition-all focus:outline-none ${digits[idx]
-              ? 'border-[#E85D2A] bg-white dark:bg-[#2B2522] text-[#E85D2A] dark:text-[#FF9B70] shadow-sm'
-              : 'border-[#E7E5E4] dark:border-[#45403D] bg-[#FAF9F7] dark:bg-[#292725] text-[#171717] dark:text-[#F5F5F5] focus:border-[#E85D2A] focus:bg-white dark:focus:bg-[#302A27] focus:ring-4 focus:ring-[#E85D2A]/15'
-            }`}
+          autoComplete="one-time-code"
+          maxLength={6}
+          aria-label="6-digit verification code"
+          onChange={handleInputChange}
+          onPaste={handlePaste}
+          onPointerDown={handleInputPointerDown}
+          onFocus={() => setFocusedIndex(Math.min(digits.length, 5))}
+          onBlur={() => setFocusedIndex(null)}
         />
-      ))}
+      </div>
+      <div className="customer-auth-clipboard-tools">
+        <button
+          type="button"
+          className="customer-auth-paste-button"
+          aria-label="Paste verification code from clipboard"
+          disabled={disabled}
+          onClick={handleClipboardPaste}
+        >
+          <ClipboardPaste aria-hidden="true" />
+          <span>Paste code</span>
+        </button>
+        {secondaryAction}
+        {clipboardHint && <span className="customer-auth-clipboard-hint" role="status" aria-live="polite">{clipboardHint}</span>}
+      </div>
     </div>
   );
 };
 
+const CustomerInstallGuideModal = ({ isIosDevice, onClose, hasNativePrompt, onInstall }) => {
+  const [platform, setPlatform] = useState(isIosDevice ? 'ios' : 'android');
+  const showIosSteps = platform === 'ios';
+
+  return (
+    <ModalShell isOpen onClose={onClose} labelledBy="install-guide-title" closeOnBackdrop={false} closeOnEscape={false} className="customer-modal customer-modal--install">
+      <header className="customer-modal__header customer-install__header">
+        <span className="customer-install__app-icon"><Utensils aria-hidden="true" /></span>
+        <div className="customer-install__heading">
+          <h2 id="install-guide-title">Install ZOVIKPOS</h2>
+        </div>
+        <button type="button" onClick={onClose} className="customer-modal__close icon-btn" aria-label="Close install guide">
+          <X aria-hidden="true" />
+        </button>
+        <p className="customer-install__subtitle">Add it to your home screen for faster ordering.</p>
+      </header>
+      <div className="customer-install__benefits" aria-label="App benefits">
+        <div><Zap aria-hidden="true" /><span>Instant</span></div>
+        <div><Smartphone aria-hidden="true" /><span>App-like</span></div>
+        <div><ShieldCheck aria-hidden="true" /><span>No store</span></div>
+      </div>
+      <div className={`customer-modal__platform-switch${showIosSteps ? ' is-ios' : ' is-android'}`} role="group" aria-label="Choose your device platform">
+        <span className="customer-modal__platform-indicator" aria-hidden="true" />
+        <button type="button" aria-pressed={showIosSteps} className={showIosSteps ? 'is-active' : ''} onClick={() => setPlatform('ios')}>
+          <Share2 aria-hidden="true" /> iOS
+        </button>
+        <button type="button" aria-pressed={!showIosSteps} className={!showIosSteps ? 'is-active' : ''} onClick={() => setPlatform('android')}>
+          <MoreVertical aria-hidden="true" /> Android
+        </button>
+      </div>
+
+      <div className="customer-modal__install-steps">
+        {showIosSteps ? (
+          <>
+            <div><span className="customer-modal__install-step-number">1</span><span><Share2 aria-hidden="true" /> Tap <strong>Share</strong> in Safari.</span></div>
+            <div><span className="customer-modal__install-step-number">2</span><span><Plus aria-hidden="true" /> Choose <strong>Add to Home Screen</strong>.</span></div>
+            <div><span className="customer-modal__install-step-number">3</span><span><Check aria-hidden="true" /> Tap <strong>Add</strong>.</span></div>
+          </>
+        ) : (
+          <>
+            <div><span className="customer-modal__install-step-number">1</span><span><MoreVertical aria-hidden="true" /> Open the Chrome menu.</span></div>
+            <div><span className="customer-modal__install-step-number">2</span><span><Download aria-hidden="true" /> Choose <strong>Install app</strong>.</span></div>
+            <div><span className="customer-modal__install-step-number">3</span><span><Check aria-hidden="true" /> Confirm by tapping <strong>Install</strong>.</span></div>
+          </>
+        )}
+      </div>
+      <div className="customer-modal__actions customer-install__actions">
+        {hasNativePrompt ? (
+          <button type="button" onClick={onInstall} className="customer-modal__button customer-modal__button--primary">Install Now</button>
+        ) : (
+          <button type="button" onClick={onClose} className="customer-modal__button customer-modal__button--primary">Got it</button>
+        )}
+        <button type="button" onClick={onClose} className="customer-modal__button customer-modal__button--secondary customer-install__later">Maybe later</button>
+      </div>
+    </ModalShell>
+  );
+};
+
+const scrollCardWithinNearestContainer = (card) => {
+  if (!card || typeof window === 'undefined') return;
+  let container = card.parentElement;
+  while (container && container !== document.body && container !== document.documentElement) {
+    const { overflowY } = window.getComputedStyle(container);
+    if (/(auto|scroll|overlay)/.test(overflowY) && container.scrollHeight > container.clientHeight) break;
+    container = container.parentElement;
+  }
+
+  const pageScroll = !container || container === document.body || container === document.documentElement;
+  const scrollContainer = pageScroll ? document.scrollingElement : container;
+  if (!scrollContainer) return;
+
+  const cardRect = card.getBoundingClientRect();
+  const scrollRect = pageScroll
+    ? { top: 0, bottom: window.innerHeight }
+    : scrollContainer.getBoundingClientRect();
+  const headerBottom = document.querySelector('.customer-header')?.getBoundingClientRect().bottom || scrollRect.top;
+  const categoryBar = document.querySelector('.customer-category-sticky.is-stuck');
+  const categoryBottom = categoryBar?.getBoundingClientRect().bottom || scrollRect.top;
+  const cartTop = document.querySelector('.customer-cart-dock')?.getBoundingClientRect().top || scrollRect.bottom;
+  const visibleTop = Math.max(scrollRect.top, headerBottom, categoryBottom);
+  const visibleBottom = Math.min(scrollRect.bottom, cartTop);
+
+  // A card taller than the available viewport cannot fit at both ends; prefer
+  // keeping its top clear of the sticky controls so the user can scroll down.
+  const delta = cardRect.top < visibleTop
+    ? cardRect.top - visibleTop
+    : cardRect.bottom > visibleBottom
+      ? cardRect.bottom - visibleBottom
+      : 0;
+  if (!delta) return;
+
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (pageScroll) window.scrollBy({ top: delta, behavior: reduceMotion ? 'auto' : 'smooth' });
+  else scrollContainer.scrollBy({ top: delta, behavior: reduceMotion ? 'auto' : 'smooth' });
+};
+
 const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
+  useEffect(() => {
+    const dismissTooltipOnEscape = (event) => {
+      if (event.key === 'Escape') document.documentElement.classList.add('customer-tooltip-dismissed');
+    };
+    document.addEventListener('keydown', dismissTooltipOnEscape);
+    return () => document.removeEventListener('keydown', dismissTooltipOnEscape);
+  }, []);
+
   const navigate = useNavigate();
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
 
   const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleCustomerLogout = () => {
     // Clear all customer tokens, state and session caches
+    clearPendingLogin();
     localStorage.removeItem('customer_token');
     localStorage.removeItem('customer_user');
     localStorage.removeItem('customer_verifiedSessionId');
@@ -290,20 +619,47 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     setIsSessionVerified(false);
     setSessionId('');
     setCart({});
+    setTableId('');
+    setRequiresTableQr(true);
+    setCategory('All');
+    setSearchQuery('');
+    setTableError('');
+    setError('');
+    setAuthName('');
+    setAuthEmail('');
+    setGuestName('');
+    setOtpCode('');
+    setOtpSent(false);
+    setOtpSentAt(0);
+    setResendAvailableAt(0);
+    setOtpError('');
+    setOtpSuccess('');
+    setCooldown(0);
+    setExpandedGroup(null);
+    setPendingVariant({});
+    setPendingQty({});
     if (onLogout) {
       onLogout();
     }
     navigate('/customer', { replace: true });
-    window.location.reload();
+  };
+
+  const requestCustomerLogout = () => setShowSignOutConfirm(true);
+
+  const confirmCustomerLogout = () => {
+    setShowSignOutConfirm(false);
+    setIsSigningOut(true);
+    window.setTimeout(handleCustomerLogout, 160);
   };
 
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('theme', theme);
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    themeColor?.setAttribute('content', theme === 'dark' ? '#111111' : '#FAF9F7');
   }, [theme]);
 
-  const { menu, isLoading: isMenuLoading } = useCustomerMenu();
   const [cart, setCart] = useState(() => {
     try {
       const saved = localStorage.getItem('customer_cart');
@@ -312,14 +668,64 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       return {};
     }
   });
+  const handleOpenCustomerCart = () => {
+    // Persist the latest rendered cart before the cart route initializes from storage.
+    try { localStorage.setItem('customer_cart', JSON.stringify(cart)); } catch { /* Storage may be unavailable. */ }
+    navigate('/customer/cart');
+  };
   const [tableId, setTableId] = useState(() => {
-    const saved = localStorage.getItem('customer_tableId');
+    const saved = localStorage.getItem('customer_tableId') || sessionStorage.getItem('customer_tableId');
     if (saved) return parseTableDisplay(saved);
     if (tableIdFromRoute) return parseTableDisplay(tableIdFromRoute);
-    return 'Dining Table';
+    return '';
   });
-  const [sessionId, setSessionId] = useState(() => localStorage.getItem('customer_sessionId') || '');
+  const lastValidTableLabelRef = React.useRef((() => {
+    const saved = parseTableDisplay(localStorage.getItem('customer_tableId'));
+    return saved && saved !== 'Counter' ? saved : '';
+  })());
+  const [requiresTableQr, setRequiresTableQr] = useState(false);
+  const [sessionRetryAttempt, setSessionRetryAttempt] = useState(0);
+  const [tableConnectionError, setTableConnectionError] = useState('');
+  const [tableConnectionRetryable, setTableConnectionRetryable] = useState(true);
+  const stableTableLabel = useMemo(() => {
+    const label = resolveTableLabel({
+      sessionLabel: tableId,
+      routeToken: tableIdFromRoute,
+      qrToken: localStorage.getItem('customer_tableToken'),
+      lastValidLabel: lastValidTableLabelRef.current,
+      forCustomer: true,
+    });
+    if (label) lastValidTableLabelRef.current = label;
+    return label;
+  }, [tableId, tableIdFromRoute]);
+  const [sessionId, setSessionId] = useState(() => localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId') || '');
+  const [sessionInitializationDone, setSessionInitializationDone] = useState(false);
   const [tableError, setTableError] = useState('');
+  const { menu, isLoading: isMenuLoading, isError: isMenuError, refetch: refetchMenu } = useCustomerMenu({
+    enabled: sessionInitializationDone && !requiresTableQr,
+  });
+  const previousMenuSnapshotRef = React.useRef(null);
+
+  useEffect(() => {
+    const currentSnapshot = new Map(menu.map((item) => [String(item.id), JSON.stringify(item)]));
+    const previousSnapshot = previousMenuSnapshotRef.current;
+    if (previousSnapshot) {
+      const changedItemIds = [...currentSnapshot.keys()].filter((id) => (
+        previousSnapshot.has(id) && previousSnapshot.get(id) !== currentSnapshot.get(id)
+      ));
+      if (changedItemIds.length) {
+        document.querySelectorAll('.customer-food-card').forEach((card) => {
+          const cardItemIds = card.getAttribute('data-menu-item-ids')?.split(',') || [];
+          if (!cardItemIds.some((id) => changedItemIds.includes(id))) return;
+          card.classList.remove('is-updated');
+          void card.offsetWidth;
+          card.classList.add('is-updated');
+          window.setTimeout(() => card.classList.remove('is-updated'), 600);
+        });
+      }
+    }
+    previousMenuSnapshotRef.current = currentSnapshot;
+  }, [menu]);
   const [category, setCategory] = useState(() => localStorage.getItem('customer_category') || 'All');
   const [transferSuccessMessage, setTransferSuccessMessage] = useState('');
   const [transferLoading, setTransferLoading] = useState(false);
@@ -330,10 +736,18 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   // ─── Variant / Quantity Selection State ───────────────────────────────────
   // expandedGroup: the groupKey of the currently-open food card (only one open at a time)
   const [expandedGroup, setExpandedGroup] = useState(null);
+  const expandedScrollTargetRef = React.useRef(null);
   // pendingVariant: { [groupKey]: variantObject } — the selected variant pill per group
   const [pendingVariant, setPendingVariant] = useState({});
   // pendingQty: { [variantId]: number } — EACH VARIANT has its own quantity, independent
   const [pendingQty, setPendingQty] = useState({});
+
+  useEffect(() => {
+    if (!expandedGroup || !expandedScrollTargetRef.current) return undefined;
+    const target = expandedScrollTargetRef.current;
+    const timer = window.setTimeout(() => scrollCardWithinNearestContainer(target), 280);
+    return () => window.clearTimeout(timer);
+  }, [expandedGroup]);
 
   // ─── Safely fetch stored customer identity (ignoring staff accounts like Demo Kitchen) ───
   const getStoredCustomerUser = () => {
@@ -365,29 +779,132 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   // ─── Session OTP Verification State ──────────────────────────────────────
   const [isSessionVerified, setIsSessionVerified] = useState(() => {
     if (checkIsCustomerLoggedIn()) return true;
-    const savedSession = localStorage.getItem('customer_sessionId');
-    const verifiedSessionId = localStorage.getItem('customer_verifiedSessionId');
+    const savedSession = localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId');
+    const verifiedSessionId = localStorage.getItem('customer_verifiedSessionId') || sessionStorage.getItem('customer_verifiedSessionId');
     return Boolean(savedSession && verifiedSessionId === savedSession);
   });
 
-  const { activeOrders, failedOrders, refetch: refetchActiveOrders, dismissFailedOrder } = useCustomerActiveOrders({
-    enabled: isSessionVerified,
+  const [pendingLoginOnMount] = useState(() => {
+    const saved = loadPendingLogin();
+    if (!saved) return null;
+    // A persisted verifiedSessionId is only a local hint; the session is checked
+    // with the server below. Preserve pending OTP context until that check ends.
+    if (checkIsCustomerLoggedIn()) {
+      clearPendingLogin();
+      return null;
+    }
+
+    const sentAt = Number(saved.otpSentAt);
+    const age = Date.now() - sentAt;
+    if (saved.step !== 'otp' || !Number.isFinite(sentAt) || age < 0 || age >= PENDING_LOGIN_MAX_AGE_MS) {
+      clearPendingLogin();
+      return null;
+    }
+
+    return {
+      ...saved,
+      name: String(saved.name || ''),
+      email: String(saved.email || ''),
+      otpSentAt: sentAt,
+      resendAvailableAt: Number(saved.resendAvailableAt) || 0,
+    };
   });
 
+  useEffect(() => {
+    if (!isSigningOut || isSessionVerified || sessionId) return undefined;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => setIsSigningOut(false));
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [isSigningOut, isSessionVerified, sessionId]);
+
+  const { activeOrders, failedOrders, refetch: refetchActiveOrders, dismissFailedOrder } = useCustomerActiveOrders({
+    enabled: isSessionVerified && sessionInitializationDone && !requiresTableQr,
+  });
+  const hasProtectedCustomerState = () => (
+    checkIsCustomerLoggedIn()
+    || Object.values(cart).some((item) => Number(item?.quantity) > 0)
+    || activeOrders.some((order) => ['PENDING', 'PAID', 'PREPARING', 'READY'].includes(order.status))
+    || (() => { try { return (JSON.parse(localStorage.getItem('customer_active_orders_cache') || '{}').activeOrders || []).some((order) => ['PENDING', 'PAID', 'PREPARING', 'READY'].includes(order.status)); } catch { return false; } })()
+  );
+
   const [authName, setAuthName] = useState(() => {
+    if (pendingLoginOnMount?.name) return pendingLoginOnMount.name;
     const u = getStoredCustomerUser();
     return u ? (u.name || '') : '';
   });
   const [authEmail, setAuthEmail] = useState(() => {
+    if (pendingLoginOnMount?.email) return pendingLoginOnMount.email;
     const u = getStoredCustomerUser();
     return u ? (u.email || '') : '';
   });
   const [otpCode, setOtpCode] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
+  const [otpSent, setOtpSent] = useState(() => Boolean(pendingLoginOnMount));
+  const [otpPrefillCode, setOtpPrefillCode] = useState('');
+  const emailLinkClipboardCodeRef = React.useRef('');
+  const emailLinkClipboardListenerRef = React.useRef(null);
+  const clearOtpPrefillCode = useCallback(() => setOtpPrefillCode(''), []);
+  const [otpSentAt, setOtpSentAt] = useState(() => pendingLoginOnMount?.otpSentAt || 0);
+  const [resendAvailableAt, setResendAvailableAt] = useState(() => pendingLoginOnMount?.resendAvailableAt || 0);
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
   const [otpSuccess, setOtpSuccess] = useState('');
-  const [cooldown, setCooldown] = useState(0);
+  const [cooldown, setCooldown] = useState(() => Math.max(0, Math.ceil(((pendingLoginOnMount?.resendAvailableAt || 0) - Date.now()) / 1000)));
+
+  useEffect(() => {
+    const code = emailLinkClipboardCodeRef.current;
+    if (isSessionVerified || !code || otpCode !== code) {
+      if (isSessionVerified) emailLinkClipboardCodeRef.current = '';
+      return undefined;
+    }
+
+    const copyCodeAfterGesture = () => {
+      try {
+        if (window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          const writePromise = navigator.clipboard.writeText(code);
+          writePromise?.catch(() => {});
+        }
+      } catch {
+        // Clipboard writes are optional and may be blocked by the browser.
+      }
+      emailLinkClipboardCodeRef.current = '';
+      emailLinkClipboardListenerRef.current = null;
+    };
+
+    document.addEventListener('pointerdown', copyCodeAfterGesture, { once: true, passive: true });
+    const cleanupListener = () => document.removeEventListener('pointerdown', copyCodeAfterGesture);
+    emailLinkClipboardListenerRef.current = cleanupListener;
+    return () => {
+      cleanupListener();
+      if (emailLinkClipboardListenerRef.current === cleanupListener) {
+        emailLinkClipboardListenerRef.current = null;
+      }
+    };
+  }, [otpCode, isSessionVerified]);
+
+  useEffect(() => () => {
+    emailLinkClipboardListenerRef.current?.();
+    emailLinkClipboardListenerRef.current = null;
+    emailLinkClipboardCodeRef.current = '';
+  }, []);
+
+  const persistCurrentPendingLogin = useCallback(() => {
+    const cleanEmail = (authEmail || '').trim();
+    if (isSessionVerified) {
+      clearPendingLogin();
+      return;
+    }
+    if (!otpSent || !cleanEmail || !otpSentAt) return;
+    if (Date.now() - otpSentAt >= PENDING_LOGIN_MAX_AGE_MS) {
+      clearPendingLogin();
+      return;
+    }
+    savePendingLogin({ name: authName, email: cleanEmail, otpSentAt, resendAvailableAt });
+  }, [isSessionVerified, otpSent, authEmail, otpSentAt, authName, resendAvailableAt]);
 
   // Table Switching Modal State
   const [showTableSwitchModal, setShowTableSwitchModal] = useState(false);
@@ -410,7 +927,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   });
 
-  const [guestName] = useState(() => {
+  const [guestName, setGuestName] = useState(() => {
     const saved = localStorage.getItem('user');
     if (saved) {
       try {
@@ -421,13 +938,48 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     return '';
   });
 
-  // Cooldown timer effect
+  // Derive cooldown from its deadline so time spent outside the app is accounted for.
   useEffect(() => {
-    if (cooldown > 0) {
-      const timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [cooldown]);
+    const updateCooldown = () => {
+      setCooldown(Math.max(0, Math.ceil((resendAvailableAt - Date.now()) / 1000)));
+    };
+    const refreshOnReturn = () => {
+      if (document.visibilityState === 'visible') updateCooldown();
+    };
+    updateCooldown();
+    document.addEventListener('visibilitychange', refreshOnReturn);
+    const timer = resendAvailableAt ? window.setInterval(updateCooldown, 1000) : null;
+    return () => {
+      document.removeEventListener('visibilitychange', refreshOnReturn);
+      if (timer) window.clearInterval(timer);
+    };
+  }, [resendAvailableAt]);
+
+  useEffect(() => {
+    if (!otpSent || !otpSentAt) return undefined;
+    const expiryTimer = window.setTimeout(
+      clearPendingLogin,
+      Math.max(0, otpSentAt + PENDING_LOGIN_MAX_AGE_MS - Date.now()),
+    );
+    return () => window.clearTimeout(expiryTimer);
+  }, [otpSent, otpSentAt]);
+
+  useEffect(() => {
+    if (isSessionVerified) clearPendingLogin();
+  }, [isSessionVerified]);
+
+  useEffect(() => {
+    const saveWhenHidden = () => {
+      if (document.visibilityState === 'hidden') persistCurrentPendingLogin();
+    };
+    const saveOnPageHide = () => persistCurrentPendingLogin();
+    document.addEventListener('visibilitychange', saveWhenHidden);
+    window.addEventListener('pagehide', saveOnPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', saveWhenHidden);
+      window.removeEventListener('pagehide', saveOnPageHide);
+    };
+  }, [persistCurrentPendingLogin]);
 
   // ─── PWA Installation Prompt State ─────────────────────────────────────────
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
@@ -490,56 +1042,162 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   const handleQrScanned = (scannedText) => {
     if (!scannedText) return;
     try {
-      let token = scannedText.trim();
-      // If full URL scanned (e.g. http://.../customer/tbl%3A7%3A5...)
-      if (token.includes('/customer/')) {
-        const parts = token.split('/customer/');
-        token = parts[1]?.split('?')[0]?.split('#')[0] || token;
+      const parsed = parseTableToken(scannedText);
+      if (!parsed.token) {
+        setTableError('This QR code is not valid. Please scan again or ask the staff.');
+        setRequiresTableQr(true);
+        return;
       }
-      if (token.includes('%')) {
-        try { token = decodeURIComponent(token); } catch { /* Keep scanning token as-is if it is not valid URI encoding. */ }
+      const token = parsed.token;
+
+      const scannedTableLabel = parseTableDisplay(token);
+      if (scannedTableLabel) {
+        lastValidTableLabelRef.current = scannedTableLabel;
+        setTableId(scannedTableLabel);
       }
 
       // If user is scanning to recover expired session or switch table
       if (sessionExpired) {
+        ['customer_sessionId', 'customer_verifiedSessionId', 'customer_tableToken', 'customer_tableId', 'customer_cart', 'customer_checkoutStep'].forEach((key) => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
+        setSessionId('');
+        setTableId('');
+        setCart({});
+        setIsSessionVerified(false);
         setSessionExpired(false);
       }
 
-      navigate(`/customer/${encodeURIComponent(token)}`);
+      navigate(`/customer/table/${encodeURIComponent(token)}${window.location.search}`);
     } catch (err) {
       console.error('Scan process error:', err);
       setTableError('Could not read table QR code. Please try again.');
     }
   };
   useEffect(() => {
+    let isActive = true;
+    let timedOut = false;
+    const abortController = new AbortController();
     const initSession = async () => {
-      const storedSession = localStorage.getItem('customer_sessionId');
-      const storedToken = localStorage.getItem('customer_tableToken');
-      const storedTable = localStorage.getItem('customer_tableId');
+      setTableConnectionError('');
+      setTableConnectionRetryable(true);
+      let storedSession = localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId') || pendingLoginOnMount?.sessionId || '';
+      let storedTable = localStorage.getItem('customer_tableId') || sessionStorage.getItem('customer_tableId') || pendingLoginOnMount?.tableId || '';
+      const storedTableToken = localStorage.getItem('customer_tableToken') || sessionStorage.getItem('customer_tableToken') || '';
+      const restoreToken = pendingLoginOnMount?.tableToken || (hasProtectedCustomerState() ? storedTableToken : '');
+
+      const restoreFromPendingScannedQr = async () => {
+        if (!restoreToken) return false;
+        try {
+          const response = await api.post('/sessions/start', { qrToken: restoreToken }, { signal: abortController.signal });
+          if (!isActive || timedOut) return false;
+          const restoredSession = response.data?.session;
+          const restoredLabel = resolveTableLabel({
+            tableLabel: restoredSession?.tableLabel,
+            table: restoredSession?.table,
+            routeToken: restoreToken,
+            forCustomer: true,
+          });
+          if (!restoredSession?.id || !restoredSession.tableId && !restoredSession.table?.id || !restoredLabel) return false;
+          setRequiresTableQr(false);
+          setSessionId(restoredSession.id);
+          setTableId(restoredLabel);
+          lastValidTableLabelRef.current = restoredLabel;
+          localStorage.setItem('customer_sessionId', restoredSession.id);
+          localStorage.setItem('customer_tableToken', restoreToken);
+          localStorage.setItem('customer_tableId', restoredLabel);
+          if (checkIsCustomerLoggedIn()) {
+            localStorage.setItem('customer_verifiedSessionId', restoredSession.id);
+            setIsSessionVerified(true);
+          } else {
+            localStorage.removeItem('customer_verifiedSessionId');
+            setIsSessionVerified(false);
+          }
+          fetchServerCart(restoredSession.id);
+          checkForExistingOrder(restoredSession.id);
+          return true;
+        } catch {
+          return false;
+        }
+      };
 
       if (tableIdFromRoute) {
-        let cleanRouteToken = String(tableIdFromRoute).trim();
-        if (cleanRouteToken.includes('%')) {
-          try {
-            cleanRouteToken = decodeURIComponent(cleanRouteToken);
-          } catch  { /* Optional storage or parsing failure. */ }
+        const parsedRouteToken = parseTableToken(String(tableIdFromRoute));
+        const cleanRouteToken = parsedRouteToken.token;
+        if (!cleanRouteToken) {
+          setRequiresTableQr(true);
+          setTableError('This QR code is not valid. Please scan again or ask the staff.');
+          return;
         }
 
-        const newTableDisplay = parseTableDisplay(cleanRouteToken);
+        let validatedQr;
+        try {
+          const validationResponse = await api.post('/sessions/start', { qrToken: cleanRouteToken, validateOnly: true }, { signal: abortController.signal });
+          if (!isActive || timedOut) return;
+          validatedQr = validationResponse.data;
+        } catch (validationError) {
+          if (!isActive || timedOut) return;
+          const invalidQr = validationError.response?.data?.code === 'TABLE_QR_REQUIRED'
+            || ((validationError.response?.status === 400 || validationError.response?.status === 401)
+              && /invalid|expired|token|qr code/i.test(validationError.response?.data?.error || validationError.response?.data?.message || ''));
+          if (invalidQr) {
+            setRequiresTableQr(true);
+            setTableError('This QR code is not valid. Please scan again or ask the staff.');
+          } else {
+            setTableConnectionRetryable(!validationError.response || validationError.response.status >= 500);
+            setTableConnectionError(validationError.response?.data?.error || 'The table service is temporarily unavailable.');
+          }
+          return;
+        }
+        const newTableDisplay = resolveTableLabel({ table: validatedQr.table, tableLabel: validatedQr.tableLabel, routeToken: cleanRouteToken, forCustomer: true });
+        if (!newTableDisplay) {
+          setRequiresTableQr(true);
+          setTableError('This QR code is not linked to an active physical table. Scan the QR code attached to your table.');
+          return;
+        }
+        setRequiresTableQr(false);
+        setTableError('');
 
-        // Check if user has an active session on a DIFFERENT table
-        const isDifferentTable = Boolean(
-          storedSession && (
-            (storedToken && storedToken !== cleanRouteToken && storedToken !== tableIdFromRoute) ||
-            (storedTable && storedTable !== newTableDisplay && storedToken && storedToken !== cleanRouteToken)
-          )
-        );
+        // A table-switch choice is offered only when the saved session is still
+        // active and linked to a real table. Stale counter sessions are discarded.
+        let savedSessionIsPhysical = false;
+        let savedSessionTableId = '';
+        if (storedSession) {
+          try {
+            const currentSessionResponse = await api.get(`/sessions/${storedSession}`, { signal: abortController.signal });
+            if (!isActive || timedOut) return;
+            const currentSession = currentSessionResponse.data.session;
+            savedSessionIsPhysical = Boolean(currentSession?.status === 'ACTIVE' && currentSession.tableId && currentSession.table?.isActive);
+            savedSessionTableId = String(currentSession?.tableId || currentSession?.table?.id || '');
+          } catch {
+            // A server/network error must not discard a customer's session or cart.
+            setTableConnectionError('The table service is temporarily unavailable.');
+            return;
+          }
+          if (!savedSessionIsPhysical) {
+            const protectedCustomer = checkIsCustomerLoggedIn()
+              || Object.values(cart).some((item) => Number(item?.quantity) > 0)
+              || (() => { try { return (JSON.parse(localStorage.getItem('customer_active_orders_cache') || '{}').activeOrders || []).some((order) => ['PENDING', 'PAID', 'PREPARING', 'READY'].includes(order.status)); } catch { return false; } })();
+            const preservedCart = protectedCustomer;
+            ['customer_sessionId', 'customer_verifiedSessionId', 'customer_tableToken', 'customer_tableId', ...(!preservedCart ? ['customer_cart', 'customer_checkoutStep'] : [])].forEach((key) => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
+            storedSession = '';
+            storedTable = '';
+            setSessionId('');
+            setTableId('');
+            if (!preservedCart) setCart({});
+            if (!checkIsCustomerLoggedIn()) setIsSessionVerified(false);
+          }
+        }
+
+        const isDifferentTable = savedSessionIsPhysical
+          && Boolean(savedSessionTableId)
+          && savedSessionTableId !== String(validatedQr.table?.id || '');
 
         if (isDifferentTable) {
           // Await active orders and cart BEFORE showing modal so the correct card opens instantly without flickering
           if (storedSession) {
             await checkForExistingOrder(storedSession);
+            if (!isActive || timedOut) return;
             await fetchServerCart(storedSession);
+            if (!isActive || timedOut) return;
           }
           // Snapshot current table BEFORE we trigger the modal so it shows correctly
           const oldTable = storedTable ? parseTableDisplay(storedTable) : (tableId || 'your table');
@@ -550,17 +1208,71 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
           return;
         }
 
-        // Normal flow or same table: start or refresh session with complete signed token
+        // Reuse an active stored session when it already belongs to this table.
+        // /sessions/start always creates a new UUID, so calling it on remount would
+        // otherwise replace the customer's current session and its cart context.
+        if (storedSession) {
+          try {
+            const existingRes = await api.get(`/sessions/${storedSession}`, { signal: abortController.signal });
+            if (!isActive || timedOut) return;
+            const existingSession = existingRes.data.session;
+            const existingTable = existingSession?.table?.tableNumber
+              ? parseTableDisplay(existingSession.table.tableNumber)
+              : '';
+
+            if (existingSession?.status === 'ACTIVE' && existingTable === newTableDisplay) {
+              setSessionId(existingSession.id);
+              const sessionDisplay = resolveTableLabel({
+                tableLabel: existingSession.tableLabel,
+                table: existingSession.table,
+                routeToken: cleanRouteToken,
+                forCustomer: true,
+              });
+              setTableId(sessionDisplay);
+              localStorage.setItem('customer_sessionId', existingSession.id);
+              localStorage.setItem('customer_tableId', sessionDisplay);
+              localStorage.setItem('customer_tableToken', cleanRouteToken);
+              setTableError('');
+
+              if (checkIsCustomerLoggedIn()) {
+                localStorage.setItem('customer_verifiedSessionId', existingSession.id);
+                setIsSessionVerified(true);
+              } else {
+                const verifiedSessionId = localStorage.getItem('customer_verifiedSessionId');
+                if (existingSession.customerId && verifiedSessionId === existingSession.id) {
+                  setIsSessionVerified(true);
+                } else if (!existingSession.customerId) {
+                  setIsSessionVerified(false);
+                }
+              }
+
+              fetchServerCart(existingSession.id);
+              checkForExistingOrder(existingSession.id);
+              return;
+            }
+          } catch (existingSessionError) {
+            if (!isActive || timedOut) return;
+            if (!([404, 410].includes(existingSessionError.response?.status))) {
+              setTableConnectionRetryable(!existingSessionError.response || existingSessionError.response.status >= 500);
+              setTableConnectionError(existingSessionError.response?.data?.error || 'The table service is temporarily unavailable.');
+              return;
+            }
+            // A truly missing/expired stored session falls through to start from the scanned QR.
+          }
+        }
+
+        // No active matching session exists; start one from the scanned signed token.
         try {
           const res = await api.post('/sessions/start', {
             qrToken: cleanRouteToken,
-          });
+          }, { signal: abortController.signal });
+          if (!isActive || timedOut) return;
 
           if (res.data.session) {
             const s = res.data.session;
             setSessionId(s.id);
             localStorage.setItem('customer_sessionId', s.id);
-            const tName = s.table?.tableNumber || `Table ${s.table?.id}`;
+            const tName = resolveTableLabel({ tableLabel: s.tableLabel, table: s.table, routeToken: cleanRouteToken, forCustomer: true });
             setTableId(tName);
             localStorage.setItem('customer_tableId', tName);
             localStorage.setItem('customer_tableToken', cleanRouteToken);
@@ -584,69 +1296,182 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             checkForExistingOrder(s.id);
           }
         } catch (err) {
+          if (!isActive || timedOut) return;
           console.warn('Session start error:', err.response?.data?.error || err.message);
-          if (err.response?.status === 403) {
-            setTableError(err.response.data.error || 'This dining table is currently disabled.');
-          } else if (err.response?.status === 404 || err.response?.status === 400) {
-            setTableError('Invalid or unverified table QR code. Please scan the QR code at your table.');
+          const invalidQr = err.response?.data?.code === 'TABLE_QR_REQUIRED'
+            || ((err.response?.status === 400 || err.response?.status === 401)
+              && /invalid|expired|token|qr code/i.test(err.response?.data?.error || err.response?.data?.message || ''));
+          if (invalidQr) {
+            setRequiresTableQr(true);
+            setTableError('This QR code is not valid. Please scan again or ask the staff.');
+          } else {
+            setTableConnectionRetryable(!err.response || err.response.status >= 500);
+            setTableConnectionError(err.response?.data?.error || (err.response?.status === 403
+              ? 'This table is currently unavailable.'
+              : 'The table service is temporarily unavailable.'));
           }
         }
       } else {
-        // Fallback when no route param is provided
-        const startFreshDefaultSession = async () => {
-          try {
-            const res = await api.post('/sessions/start', {
-              tableNumber: storedTable || 'Table 1',
-            });
-            if (res.data.session) {
-              const s = res.data.session;
-              setSessionId(s.id);
-              localStorage.setItem('customer_sessionId', s.id);
-              const tName = s.table?.tableNumber || `Table ${s.table?.id}`;
-              setTableId(tName);
-              localStorage.setItem('customer_tableId', tName);
-
-              const isUserLoggedIn = checkIsCustomerLoggedIn();
-
-              if (isUserLoggedIn) {
-                localStorage.setItem('customer_verifiedSessionId', s.id);
-                setIsSessionVerified(true);
-              } else {
-                setIsSessionVerified(false);
-              }
-
-              fetchServerCart(s.id);
-              checkForExistingOrder(s.id);
-            }
-          } catch (err) {
-            console.warn('Default session start fallback:', err.message);
-          }
-        };
-
+        // A bare /customer URL may restore only an existing, active physical-table
+        // session. A remembered label or old token is not enough to create a session.
         if (!storedSession) {
-          await startFreshDefaultSession();
+          const restored = await restoreFromPendingScannedQr();
+          if (!restored) {
+            if (restoreToken) {
+              setTableConnectionError('The table service is temporarily unavailable.');
+              return;
+            }
+            const protectedCustomer = checkIsCustomerLoggedIn()
+              || Object.values(cart).some((item) => Number(item?.quantity) > 0)
+              || (() => { try { return (JSON.parse(localStorage.getItem('customer_active_orders_cache') || '{}').activeOrders || []).some((order) => ['PENDING', 'PAID', 'PREPARING', 'READY'].includes(order.status)); } catch { return false; } })();
+            setTableId('');
+            if (!protectedCustomer) {
+              ['customer_tableToken', 'customer_tableId', 'customer_cart', 'customer_checkoutStep'].forEach((key) => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
+              setCart({});
+              setRequiresTableQr(true);
+            } else {
+              setTableConnectionError('Reconnect to your table to continue your saved session.');
+            }
+          }
         } else {
           try {
-            const checkRes = await api.get(`/sessions/${storedSession}`);
-            if (checkRes.data.session && checkRes.data.session.status === 'ACTIVE') {
+            const checkRes = await api.get(`/sessions/${storedSession}`, { signal: abortController.signal });
+            if (!isActive || timedOut) return;
+            if (checkRes.data.session && checkRes.data.session.status === 'ACTIVE' && checkRes.data.session.tableId && checkRes.data.session.table?.isActive) {
+              const activeSession = checkRes.data.session;
+              const sessionDisplay = resolveTableLabel({
+                tableLabel: activeSession.tableLabel,
+                table: activeSession.table,
+                forCustomer: true,
+              });
+              if (!sessionDisplay) throw new Error('The saved session has no physical table.');
+              lastValidTableLabelRef.current = sessionDisplay;
+              setRequiresTableQr(false);
+              setSessionId(activeSession.id);
+              setTableId(sessionDisplay);
+              localStorage.setItem('customer_sessionId', activeSession.id);
+              localStorage.setItem('customer_tableId', sessionDisplay);
+              localStorage.setItem('customer_tableToken', storedTableToken || '');
+              if (checkIsCustomerLoggedIn()) {
+                localStorage.setItem('customer_verifiedSessionId', activeSession.id);
+                setIsSessionVerified(true);
+              } else if (localStorage.getItem('customer_verifiedSessionId') !== activeSession.id) {
+                setIsSessionVerified(false);
+              }
               fetchServerCart(storedSession);
               checkForExistingOrder(storedSession);
             } else {
-              console.warn('Stored session is inactive/expired. Initializing fresh session.');
-              await startFreshDefaultSession();
+              const expiredSession = new Error('Stored customer session has expired or no longer points to an active table.');
+              expiredSession.code = 'SESSION_INVALID';
+              throw expiredSession;
             }
-          } catch {
-            console.warn('Stored session not found in DB. Initializing fresh session.');
-            await startFreshDefaultSession();
+          } catch (sessionError) {
+            if (!isActive || timedOut) return;
+            const sessionIsInvalid = sessionError.code === 'SESSION_INVALID' || [404, 410].includes(sessionError.response?.status);
+            if (!sessionIsInvalid) {
+              setTableConnectionRetryable(!sessionError.response || sessionError.response.status >= 500);
+              setTableConnectionError(sessionError.response?.data?.error || 'The table service is temporarily unavailable.');
+              return;
+            }
+            if (sessionError.code === 'SESSION_INVALID' && !hasProtectedCustomerState()) {
+              setSessionExpired(true);
+              setRequiresTableQr(false);
+              return;
+            }
+            console.info('Customer must scan an active table QR:', sessionError.response?.data?.error || sessionError.message);
+            const restored = await restoreFromPendingScannedQr();
+            if (!restored) {
+              const protectedCustomer = checkIsCustomerLoggedIn()
+                || Object.values(cart).some((item) => Number(item?.quantity) > 0)
+                || (() => { try { return (JSON.parse(localStorage.getItem('customer_active_orders_cache') || '{}').activeOrders || []).some((order) => ['PENDING', 'PAID', 'PREPARING', 'READY'].includes(order.status)); } catch { return false; } })();
+              if (!protectedCustomer) {
+                ['customer_sessionId', 'customer_verifiedSessionId', 'customer_tableToken', 'customer_tableId', 'customer_cart', 'customer_checkoutStep'].forEach((key) => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
+                setSessionId('');
+                setTableId('');
+                setCart({});
+                setIsSessionVerified(false);
+                setRequiresTableQr(true);
+              } else {
+                setTableConnectionError('Reconnect to your table to continue your saved session.');
+              }
+            }
           }
         }
       }
     };
 
-    initSession();
+    const initTimeout = window.setTimeout(() => {
+      if (!isActive) return;
+      timedOut = true;
+      abortController.abort();
+      setTableConnectionError('The table service did not respond. Check your connection and retry.');
+      setSessionInitializationDone(true);
+    }, 8000);
+    setSessionInitializationDone(false);
+    initSession().finally(() => {
+      window.clearTimeout(initTimeout);
+      if (isActive && !timedOut) setSessionInitializationDone(true);
+    });
+    return () => { isActive = false; abortController.abort(); window.clearTimeout(initTimeout); };
   // Session restoration checks are intentionally kept together to preserve the existing login/session flow.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableIdFromRoute]);
+  }, [tableIdFromRoute, sessionRetryAttempt]);
+
+  // Retry connection failures with a bounded 2s / 5s / 10s backoff while the screen remains visible.
+  useEffect(() => {
+    if (!tableConnectionError || !tableConnectionRetryable || requiresTableQr) return undefined;
+    const delays = [2000, 5000, 10000];
+    const timer = window.setTimeout(() => {
+      setSessionInitializationDone(false);
+      setTableConnectionError('');
+      setSessionRetryAttempt((attempt) => attempt + 1);
+    }, delays[Math.min(sessionRetryAttempt, delays.length - 1)]);
+    return () => window.clearTimeout(timer);
+  }, [tableConnectionError, tableConnectionRetryable, requiresTableQr, sessionRetryAttempt]);
+
+  useEffect(() => {
+    if (!sessionInitializationDone || requiresTableQr) return;
+
+    try {
+      const currentUrl = new URL(window.location.href);
+      const code = currentUrl.searchParams.get('otp') || '';
+      const email = currentUrl.searchParams.get('e') || '';
+      const hasOtpLink = currentUrl.searchParams.has('otp') || currentUrl.searchParams.has('e');
+
+      if (hasOtpLink && !isSessionVerified && /^\d{6}$/.test(code) && isValidCustomerEmail(email)) {
+        const cleanEmail = email.trim();
+        const sentAt = Date.now();
+        setAuthEmail(cleanEmail);
+        setOtpCode('');
+        setOtpSent(true);
+        setOtpSentAt(sentAt);
+        setResendAvailableAt(0);
+        setCooldown(0);
+        setOtpError('');
+        setOtpSuccess('');
+        setOtpPrefillCode(code);
+        emailLinkClipboardCodeRef.current = code;
+        savePendingLogin({
+          name: authName || pendingLoginOnMount?.name || '',
+          email: cleanEmail,
+          otpSentAt: sentAt,
+          resendAvailableAt: 0,
+        });
+      }
+    } catch {
+      // A malformed URL or unavailable browser API should leave the email form usable.
+    } finally {
+      try {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('otp');
+        cleanUrl.searchParams.delete('e');
+        const cleanAddress = `${cleanUrl.pathname}${cleanUrl.search ? `?${cleanUrl.searchParams.toString()}` : ''}${cleanUrl.hash}`;
+        window.history.replaceState(window.history.state, '', cleanAddress);
+      } catch {
+        try { window.history.replaceState(window.history.state, '', window.location.pathname); } catch { /* Ignore unavailable history APIs. */ }
+      }
+    }
+  }, [sessionInitializationDone, requiresTableQr, isSessionVerified, authName, pendingLoginOnMount]);
 
   // ─── Session Expiry Check (every 30 seconds) ────────────────────────────
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -658,10 +1483,10 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       try {
         const res = await api.get(`/sessions/${sessionId}`);
         if (res.data.session?.status === 'EXPIRED' || res.data.session?.status === 'CANCELLED') {
-          setSessionExpired(true);
+          if (!hasProtectedCustomerState()) setSessionExpired(true);
         }
       } catch (err) {
-        if (err.response?.status === 404) {
+        if (err.response?.status === 404 && !hasProtectedCustomerState()) {
           setSessionExpired(true);
         }
       }
@@ -669,7 +1494,9 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
     const interval = setInterval(checkSessionHealth, 30000); // Check every 30 seconds
     return () => clearInterval(interval);
-  }, [sessionId, sessionExpired]);
+  // The protection predicate reads the latest local auth/cart/order state; restarting this interval on each update is unnecessary.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, sessionExpired, cart, activeOrders]);
 
   const handleTransferTableAndOrders = async () => {
     const curSessionId = sessionId || localStorage.getItem('customer_sessionId');
@@ -736,7 +1563,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       if (res.data.session) {
         const s = res.data.session;
         const newSessionId = s.id;
-        const newTableDisplay = s.table?.tableNumber || `Table ${s.table?.id}`;
+        const newTableDisplay = resolveTableLabel({ tableLabel: s.tableLabel, table: s.table, routeToken: pendingTableToken, forCustomer: true });
 
         setSessionId(newSessionId);
         setTableId(newTableDisplay);
@@ -754,6 +1581,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
           setIsSessionVerified(false);
         }
 
+        clearPendingLogin();
         setOtpSent(false);
         setOtpCode('');
 
@@ -771,7 +1599,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       }
     } catch (err) {
       console.error('Table switch confirmation error:', err);
-      setTableError(err.response?.data?.error || 'Failed to switch dining table.');
+      setTableError(err.response?.data?.error || 'Failed to switch tables.');
       setShowTableSwitchModal(false);
     } finally {
       setTransferLoading(false);
@@ -837,7 +1665,8 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       }
     } catch (e) {
       if (e.response?.status === 403) {
-        setSessionExpired(true);
+        if (!hasProtectedCustomerState()) setSessionExpired(true);
+        else setTableConnectionError('Your saved table session needs to reconnect.');
         return;
       }
       console.warn('Could not sync server cart:', e.message);
@@ -856,7 +1685,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       return;
     }
     if (!STUDENT_EMAIL_REGEX.test(cleanEmail)) {
-      setOtpError('Please enter a valid UIT student email address (e.g. 23SP-051-SE@students.uitu.edu.pk).');
+      setOtpError('Enter a valid UIT student email address.');
       return;
     }
     setOtpError('');
@@ -872,9 +1701,14 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       });
 
       if (res.data.success) {
+        const sentAt = Date.now();
+        const resendAt = sentAt + 60 * 1000;
         setOtpSent(true);
-        setOtpSuccess('Verification code sent to your student email. Check inbox.');
-        setCooldown(30);
+        setOtpSentAt(sentAt);
+        setResendAvailableAt(resendAt);
+        setOtpSuccess('Code sent. Check your inbox and spam folder.');
+        setCooldown(60);
+        savePendingLogin({ name: authName, email: cleanEmail, otpSentAt: sentAt, resendAvailableAt: resendAt });
       }
     } catch (err) {
       setOtpError(err.response?.data?.error || 'Failed to send OTP code.');
@@ -882,11 +1716,57 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
         const responseData = err.response?.data || {};
         const messageDelay = String(responseData.error || '').match(/(\d+)\s*seconds?/i);
         const retryDelay = Number(responseData.retryAfterSeconds || messageDelay?.[1] || 30);
+        const retryAt = Date.now() + Math.max(1, retryDelay) * 1000;
+        setResendAvailableAt(retryAt);
         setCooldown(Math.max(1, retryDelay));
+        if (otpSent && otpSentAt) {
+          savePendingLogin({ name: authName, email: cleanEmail, otpSentAt, resendAvailableAt: retryAt });
+        }
       }
     } finally {
       setOtpLoading(false);
     }
+  };
+
+  const handleOpenGmail = () => {
+    persistCurrentPendingLogin();
+    const cleanEmail = (authEmail || '').trim();
+    const mobileWebUrl = 'https://mail.google.com/mail/u/0/';
+    const userAgent = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isAndroid = /Android/i.test(userAgent);
+
+    if (isAndroid) {
+      // Some Xiaomi and other in-app browsers block Android intents. The Gmail app also cannot be forced to a particular account.
+      const intentUrl = `intent://#Intent;package=com.google.android.gm;category=android.intent.category.LAUNCHER;launchFlags=0x10000000;S.browser_fallback_url=${encodeURIComponent(mobileWebUrl)};end`;
+      window.location.href = intentUrl;
+      return;
+    }
+
+    if (isIOS) {
+      let fallbackTimer;
+      const cancelFallback = () => {
+        if (fallbackTimer) window.clearTimeout(fallbackTimer);
+        document.removeEventListener('visibilitychange', cancelWhenHidden);
+        window.removeEventListener('pagehide', cancelFallback);
+      };
+      const cancelWhenHidden = () => {
+        if (document.visibilityState === 'hidden') cancelFallback();
+      };
+      document.addEventListener('visibilitychange', cancelWhenHidden);
+      window.addEventListener('pagehide', cancelFallback, { once: true });
+      window.location.href = 'googlegmail://';
+      fallbackTimer = window.setTimeout(() => {
+        cancelFallback();
+        if (document.visibilityState === 'visible') window.location.href = mobileWebUrl;
+      }, 900);
+      return;
+    }
+
+    // The Gmail app cannot be forced to a particular account; the web URL opens Gmail's account chooser.
+    const mailWindow = window.open(mobileWebUrl, '_blank', 'noopener');
+    if (!mailWindow) window.location.href = `mailto:${cleanEmail}`;
   };
 
   const handleVerifyOtp = async (e) => {
@@ -910,6 +1790,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       });
 
       if (res.data.success) {
+        clearPendingLogin();
         const { user: verifiedUser, accessToken, refreshToken } = res.data;
         setActiveAuthTokens(accessToken, refreshToken);
         if (typeof sessionStorage !== 'undefined') {
@@ -977,7 +1858,12 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   );
 
   useEffect(() => { localStorage.setItem('customer_cart', JSON.stringify(cart)); }, [cart]);
-  useEffect(() => { localStorage.setItem('customer_tableId', tableId); }, [tableId]);
+  useEffect(() => {
+    localStorage.setItem('customer_tableId', tableId);
+    if (tableId && tableId !== 'Counter') {
+      lastValidTableLabelRef.current = tableId;
+    }
+  }, [tableId]);
   useEffect(() => { localStorage.setItem('customer_category', category); }, [category]);
   useEffect(() => { localStorage.setItem('customer_checkoutStep', checkoutStep); }, [checkoutStep]);
 
@@ -1049,12 +1935,37 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
         });
       } catch (err) {
         if (err.response?.status === 403) {
-          setSessionExpired(true);
+          if (!hasProtectedCustomerState()) setSessionExpired(true);
+          else setTableConnectionError('Your saved table session needs to reconnect.');
           return;
         }
         console.warn('Backend cart add warning:', err.message);
       }
     }
+  };
+
+  const animateCartFlight = (sourceElement) => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const cartTarget = document.querySelector('.customer-header__cart');
+    if (!cartTarget || !sourceElement) return;
+
+    const sourceRect = sourceElement.getBoundingClientRect();
+    const targetRect = cartTarget.getBoundingClientRect();
+    const startX = sourceRect.left + sourceRect.width / 2;
+    const startY = sourceRect.top + sourceRect.height / 2;
+    const deltaX = targetRect.left + targetRect.width / 2 - startX;
+    const deltaY = targetRect.top + targetRect.height / 2 - startY;
+    const dot = document.createElement('span');
+
+    dot.className = 'customer-fly-dot';
+    dot.style.left = `${startX}px`;
+    dot.style.top = `${startY}px`;
+    dot.style.setProperty('--fly-mid-x', `${deltaX * 0.55}px`);
+    dot.style.setProperty('--fly-mid-y', `${deltaY * 0.55 - 64}px`);
+    dot.style.setProperty('--fly-end-x', `${deltaX}px`);
+    dot.style.setProperty('--fly-end-y', `${deltaY}px`);
+    dot.addEventListener('animationend', () => dot.remove(), { once: true });
+    document.body.appendChild(dot);
   };
 
   const totalCartQuantity = Object.values(cart).reduce((sum, item) => sum + item.quantity, 0);
@@ -1094,80 +2005,266 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   // ─── Promotional Carousel ────────────────────────────────────────────────
   const promoSlides = useMemo(() => [
     {
-      headline: 'Authentic Flavors & Fresh Cooking ✨',
-      sub: 'Prepared fresh on order using premium ingredients & traditional recipes.',
-      bg: 'from-[#EA580C] via-[#E85D2A] to-[#C2410C]',
-      icon: '👨‍🍳',
+      eyebrow: "TODAY'S OFFERS",
+      headline: 'Special deals',
+      sub: 'Chef-picked favorites and seasonal offers.',
+      style: 'special',
+      eyebrowIcon: Tag,
+      visualIcon: Tag,
+      chipIcon: Tag,
+      chipLabel: 'Fresh offers',
     },
     {
-      headline: 'Signature Biryani & Karahi 🍛',
-      sub: 'Fragrant basmati rice, tender meats & aromatic clay-pot gravies.',
-      bg: 'from-[#D97706] via-[#B45309] to-[#92400E]',
-      icon: '🍚',
+      eyebrow: 'FAST SERVICE',
+      headline: 'Ready in no time',
+      sub: 'Order from your table and track it live.',
+      style: 'fast',
+      eyebrowIcon: Clock3,
+      visualIcon: Clock3,
+      chipIcon: Clock3,
+      chipLabel: 'Live tracking',
     },
     {
-      headline: 'Chilled Drinks & Shakes 🥤',
-      sub: 'Pair your meal with fresh juices, seasonal shakes & iced tea.',
-      bg: 'from-[#C2410C] via-[#EA580C] to-[#D97706]',
-      icon: '🧃',
-    },
-    {
-      headline: 'Fast & Easy Smart Dining ⚡',
-      sub: 'Order directly from your table — instant kitchen sync & quick delivery.',
-      bg: 'from-[#9A3412] via-[#C2410C] to-[#EA580C]',
-      icon: '📱',
+      eyebrow: 'SMART DINING',
+      headline: 'Scan. Order. Enjoy.',
+      sub: 'Browse and order right from your table.',
+      style: 'smart',
+      eyebrowIcon: QrCode,
+      visualIcon: QrCode,
+      chipIcon: QrCode,
+      chipLabel: 'Table ordering',
     },
   ], []);
+  const promoRenderSlides = useMemo(() => [
+    { slide: promoSlides[promoSlides.length - 1], position: 0, realIndex: promoSlides.length - 1, isClone: true },
+    ...promoSlides.map((slide, index) => ({ slide, position: index + 1, realIndex: index, isClone: false })),
+    { slide: promoSlides[0], position: promoSlides.length + 1, realIndex: 0, isClone: true },
+  ], [promoSlides]);
 
   const [promoIndex, setPromoIndex] = useState(0);
   const promoTimerRef = React.useRef(null);
-  const touchStartX = React.useRef(0);
-  const touchEndX = React.useRef(0);
+  const promoSettleTimerRef = React.useRef(null);
+  const promoScrollRef = React.useRef(null);
+  const promoPauseReasonsRef = React.useRef({});
+  const promoDragRef = React.useRef(null);
+  const promoIndexRef = React.useRef(0);
+  const promoJumpingRef = React.useRef(false);
 
-  const startAutoplay = React.useCallback(() => {
-    if (promoTimerRef.current) clearInterval(promoTimerRef.current);
-    promoTimerRef.current = setInterval(() => {
-      setPromoIndex((prev) => (prev + 1) % promoSlides.length);
-    }, 5000);
-  }, [promoSlides.length]);
+  const clearPromoTimer = useCallback(() => {
+    if (promoTimerRef.current) window.clearTimeout(promoTimerRef.current);
+    promoTimerRef.current = null;
+  }, []);
+
+  const scrollPromoToPosition = useCallback((position, behavior = 'smooth') => {
+    const viewport = promoScrollRef.current;
+    const slide = viewport?.querySelector(`[data-promo-position="${position}"]`);
+    if (!viewport || !slide) return;
+    const viewportRect = viewport.getBoundingClientRect();
+    const slideRect = slide.getBoundingClientRect();
+    const left = viewport.scrollLeft + slideRect.left - viewportRect.left
+      - (viewport.clientWidth - slideRect.width) / 2;
+    viewport.scrollTo({ left: Math.max(0, left), behavior });
+  }, []);
+
+  const scrollPromoToIndex = useCallback((idx, behavior = 'smooth') => {
+    const length = promoSlides.length;
+    const current = promoIndexRef.current;
+    const target = (idx + length) % length;
+    let position = target + 1;
+    if (current === length - 1 && target === 0) position = length + 1;
+    else if (current === 0 && target === length - 1) position = 0;
+    scrollPromoToPosition(position, behavior);
+  }, [promoSlides.length, scrollPromoToPosition]);
+
+  const schedulePromoAutoplay = useCallback((delay = 5000) => {
+    clearPromoTimer();
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      || document.visibilityState === 'hidden'
+      || Object.values(promoPauseReasonsRef.current).some(Boolean)) {
+      return;
+    }
+    promoTimerRef.current = window.setTimeout(() => {
+      const nextIndex = (promoIndexRef.current + 1) % promoSlides.length;
+      scrollPromoToIndex(nextIndex);
+    }, delay);
+  }, [clearPromoTimer, promoSlides.length, scrollPromoToIndex]);
+
+  const setPromoPauseReason = useCallback((reason, paused, resumeDelay = 4000) => {
+    promoPauseReasonsRef.current[reason] = paused;
+    if (paused) clearPromoTimer();
+    else schedulePromoAutoplay(resumeDelay);
+  }, [clearPromoTimer, schedulePromoAutoplay]);
+
+  const settlePromoScroll = useCallback(() => {
+    const viewport = promoScrollRef.current;
+    if (!viewport || promoJumpingRef.current) return;
+    const slides = [...viewport.querySelectorAll('[data-promo-position]')];
+    if (!slides.length) return;
+    const viewportCenter = viewport.getBoundingClientRect().left + viewport.clientWidth / 2;
+    const nearestSlide = slides.reduce((nearest, slide) => {
+      const rect = slide.getBoundingClientRect();
+      const nearestRect = nearest.getBoundingClientRect();
+      return Math.abs(rect.left + rect.width / 2 - viewportCenter)
+        < Math.abs(nearestRect.left + nearestRect.width / 2 - viewportCenter) ? slide : nearest;
+    }, slides[0]);
+    const position = Number(nearestSlide.dataset.promoPosition);
+    let realIndex = Math.min(Math.max(position - 1, 0), promoSlides.length - 1);
+    let jumpTo = null;
+    if (position === 0) {
+      realIndex = promoSlides.length - 1;
+      jumpTo = promoSlides.length;
+    } else if (position === promoSlides.length + 1) {
+      realIndex = 0;
+      jumpTo = 1;
+    }
+
+    promoIndexRef.current = realIndex;
+    setPromoIndex((current) => current === realIndex ? current : realIndex);
+
+    if (jumpTo !== null) {
+      promoJumpingRef.current = true;
+      viewport.style.scrollSnapType = 'none';
+      viewport.style.scrollBehavior = 'auto';
+      scrollPromoToPosition(jumpTo, 'auto');
+      window.requestAnimationFrame(() => {
+        viewport.style.removeProperty('scroll-snap-type');
+        viewport.style.removeProperty('scroll-behavior');
+        promoJumpingRef.current = false;
+        schedulePromoAutoplay(5000);
+      });
+      return;
+    }
+    schedulePromoAutoplay(5000);
+  }, [promoSlides.length, schedulePromoAutoplay, scrollPromoToPosition]);
+
+  const pauseAutoplay = useCallback(() => setPromoPauseReason('hover', true), [setPromoPauseReason]);
+  const startAutoplay = useCallback(() => setPromoPauseReason('hover', false), [setPromoPauseReason]);
 
   useEffect(() => {
-    startAutoplay();
-    return () => {
-      if (promoTimerRef.current) clearInterval(promoTimerRef.current);
+    const viewport = promoScrollRef.current;
+    if (!viewport) return undefined;
+    const alignCurrentSlide = () => scrollPromoToPosition(promoIndexRef.current + 1, 'auto');
+    const resizeObserver = new ResizeObserver(alignCurrentSlide);
+    resizeObserver.observe(viewport);
+    window.requestAnimationFrame(alignCurrentSlide);
+    const handleScrollEnd = () => {
+      if (promoSettleTimerRef.current) window.clearTimeout(promoSettleTimerRef.current);
+      promoSettleTimerRef.current = null;
+      settlePromoScroll();
     };
-  }, [startAutoplay]);
+    viewport.addEventListener('scrollend', handleScrollEnd);
 
-  const goToSlide = (idx) => {
-    setPromoIndex(idx);
-    startAutoplay();
-  };
+    const motionPreference = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    const updateAutoplay = () => {
+      if (motionPreference?.matches) clearPromoTimer();
+      else schedulePromoAutoplay(5000);
+    };
+    const handleVisibilityChange = () => setPromoPauseReason('hidden', document.visibilityState === 'hidden');
+
+    updateAutoplay();
+    motionPreference?.addEventListener?.('change', updateAutoplay);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      motionPreference?.removeEventListener?.('change', updateAutoplay);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      viewport.removeEventListener('scrollend', handleScrollEnd);
+      resizeObserver.disconnect();
+      clearPromoTimer();
+      if (promoSettleTimerRef.current) window.clearTimeout(promoSettleTimerRef.current);
+    };
+  }, [clearPromoTimer, schedulePromoAutoplay, scrollPromoToPosition, setPromoPauseReason, settlePromoScroll]);
+
+  const goToSlide = useCallback((idx) => {
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    scrollPromoToIndex(idx, reduceMotion ? 'auto' : 'smooth');
+  }, [scrollPromoToIndex]);
 
   const handleTouchStart = (e) => {
-    touchStartX.current = e.touches[0].clientX;
-  };
-
-  const handleTouchMove = (e) => {
-    touchEndX.current = e.touches[0].clientX;
+    setPromoPauseReason('touch', true);
+    if (e.currentTarget.setPointerCapture && e.pointerId !== undefined) {
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* Native touch scrolling remains available. */ }
+    }
   };
 
   const handleTouchEnd = () => {
-    if (!touchStartX.current || !touchEndX.current) return;
-    const diffX = touchStartX.current - touchEndX.current;
-    const minSwipeDistance = 40;
+    setPromoPauseReason('touch', false, 4000);
+  };
 
-    if (diffX > minSwipeDistance) {
-      goToSlide((promoIndex + 1) % promoSlides.length);
-    } else if (diffX < -minSwipeDistance) {
-      goToSlide((promoIndex - 1 + promoSlides.length) % promoSlides.length);
+  const handlePromoScroll = (event) => {
+    const viewport = event.currentTarget;
+    if (promoJumpingRef.current) return;
+    const viewportCenter = viewport.getBoundingClientRect().left + viewport.clientWidth / 2;
+    const slides = [...viewport.querySelectorAll('[data-promo-position]')];
+    const nearestSlide = slides.reduce((nearest, slide) => {
+      const rect = slide.getBoundingClientRect();
+      const nearestRect = nearest.getBoundingClientRect();
+      return Math.abs(rect.left + rect.width / 2 - viewportCenter)
+        < Math.abs(nearestRect.left + nearestRect.width / 2 - viewportCenter) ? slide : nearest;
+    }, slides[0]);
+    if (!nearestSlide) return;
+    const position = Number(nearestSlide.dataset.promoPosition);
+    const nearestIndex = position === 0
+      ? promoSlides.length - 1
+      : position === promoSlides.length + 1 ? 0 : position - 1;
+    promoIndexRef.current = nearestIndex;
+    setPromoIndex((current) => current === nearestIndex ? current : nearestIndex);
+    if (promoSettleTimerRef.current) window.clearTimeout(promoSettleTimerRef.current);
+    promoSettleTimerRef.current = window.setTimeout(() => {
+      promoSettleTimerRef.current = null;
+      settlePromoScroll();
+    }, 450);
+  };
+
+  const handlePromoWheel = () => {
+    setPromoPauseReason('wheel', true);
+    clearPromoTimer();
+    promoTimerRef.current = window.setTimeout(() => {
+      promoPauseReasonsRef.current.wheel = false;
+      schedulePromoAutoplay(0);
+    }, 4000);
+  };
+
+  const handlePromoPointerDown = (event) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0 || event.target.closest('button')) return;
+    const viewport = promoScrollRef.current;
+    if (!viewport) return;
+    promoDragRef.current = { pointerId: event.pointerId, x: event.clientX, left: viewport.scrollLeft, dragged: false };
+    setPromoPauseReason('drag', true);
+    viewport.setPointerCapture?.(event.pointerId);
+  };
+
+  const handlePromoPointerMove = (event) => {
+    const drag = promoDragRef.current;
+    const viewport = promoScrollRef.current;
+    if (!drag || !viewport || drag.pointerId !== event.pointerId) return;
+    const delta = event.clientX - drag.x;
+    if (Math.abs(delta) > 4) drag.dragged = true;
+    if (drag.dragged) {
+      event.preventDefault();
+      viewport.scrollLeft = drag.left - delta;
     }
+  };
 
-    touchStartX.current = 0;
-    touchEndX.current = 0;
+  const handlePromoPointerEnd = () => {
+    if (!promoDragRef.current) return;
+    promoDragRef.current = null;
+    setPromoPauseReason('drag', false, 4000);
+  };
+
+  const handlePromoKeyDown = (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    if (event.target.closest('button')) return;
+    event.preventDefault();
+    goToSlide((promoIndexRef.current + (event.key === 'ArrowRight' ? 1 : -1) + promoSlides.length) % promoSlides.length);
+    clearPromoTimer();
+    schedulePromoAutoplay(4000);
   };
 
   // Category Bar Mouse Drag-to-Scroll & Wheel Scroll
   const categoryScrollRef = React.useRef(null);
+  const categoryStickyRef = React.useRef(null);
+  const categorySentinelRef = React.useRef(null);
+  const [categoryCanScroll, setCategoryCanScroll] = useState(false);
   const isMouseDownRef = React.useRef(false);
   const startXRef = React.useRef(0);
   const scrollLeftRef = React.useRef(0);
@@ -1201,183 +2298,264 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     }
   };
 
-  const handleCategoryWheel = (e) => {
-    if (categoryScrollRef.current) {
-      if (e.deltaY !== 0) {
-        categoryScrollRef.current.scrollLeft += e.deltaY;
+  const handleCategoryWheel = useCallback((e) => {
+    const row = categoryScrollRef.current;
+    if (row && e.deltaY !== 0 && row.scrollWidth > row.clientWidth) {
+      const canMoveInDirection = e.deltaY > 0
+        ? row.scrollLeft + row.clientWidth < row.scrollWidth - 1
+        : row.scrollLeft > 0;
+      if (canMoveInDirection) {
+        e.preventDefault();
+        row.scrollLeft += e.deltaY;
       }
     }
+  }, []);
+
+  const updateCategoryOverflow = useCallback(() => {
+    const row = categoryScrollRef.current;
+    setCategoryCanScroll(Boolean(row && row.scrollWidth > row.clientWidth + 1));
+  }, []);
+
+  const scrollCategoriesBy = (direction) => {
+    const row = categoryScrollRef.current;
+    if (!row) return;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    row.scrollTo({ left: row.scrollLeft + direction * Math.max(180, row.clientWidth * 0.6), behavior: reduceMotion ? 'auto' : 'smooth' });
   };
 
+  useEffect(() => {
+    const row = categoryScrollRef.current;
+    if (!row) return undefined;
+    updateCategoryOverflow();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateCategoryOverflow) : null;
+    observer?.observe(row);
+    row.addEventListener('scroll', updateCategoryOverflow, { passive: true });
+    // Use a non-passive native listener because React delegates wheel events
+    // through a passive listener in modern browsers.
+    row.addEventListener('wheel', handleCategoryWheel, { passive: false });
+    window.addEventListener('resize', updateCategoryOverflow, { passive: true });
+    return () => {
+      observer?.disconnect();
+      row.removeEventListener('scroll', updateCategoryOverflow);
+      row.removeEventListener('wheel', handleCategoryWheel);
+      window.removeEventListener('resize', updateCategoryOverflow);
+    };
+  }, [combinedCategories.length, handleCategoryWheel, updateCategoryOverflow]);
+
+  useEffect(() => {
+    const sentinel = categorySentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return undefined;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      categoryStickyRef.current?.classList.toggle('is-stuck', !entry.isIntersecting);
+    }, {
+      rootMargin: '-112px 0px 0px 0px',
+      threshold: 0,
+    });
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const activeTab = categoryScrollRef.current?.querySelector('[role="tab"][aria-selected="true"]');
+    const row = categoryScrollRef.current;
+    if (!activeTab || !row) return;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const rowRect = row.getBoundingClientRect();
+    const tabRect = activeTab.getBoundingClientRect();
+    const targetLeft = row.scrollLeft + tabRect.left - rowRect.left - (row.clientWidth - tabRect.width) / 2;
+    row.scrollTo({ left: Math.max(0, targetLeft), behavior: reduceMotion ? 'auto' : 'smooth' });
+  }, [category]);
+
   return (
-    <div className="responsive-shell min-h-screen bg-[#FAF9F7] dark:bg-[#121212] text-[#171717] dark:text-[#E5E5E5] flex flex-col font-sans selection:bg-[#F97316]/20">
+    <div className={`responsive-shell customer-dashboard-shell min-h-screen bg-[#FAF9F7] dark:bg-[#121212] text-[#171717] dark:text-[#E5E5E5] flex flex-col font-sans selection:bg-[#F97316]/20${!isSessionVerified ? ' customer-dashboard-shell--auth' : ''}`}>
       {sessionExpired && (
-        <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-8 space-y-6 text-center shadow-2xl">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-red-100 text-red-500 mx-auto">
-              <AlertCircle className="w-8 h-8" />
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-xl font-black text-gray-900">Session Expired</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Your dining session has expired due to inactivity. Please scan the QR code at your table to start a new session.
-              </p>
-            </div>
-            <div className="space-y-2.5">
+        <ModalShell isOpen onClose={undefined} labelledBy="session-expired-title" closeOnBackdrop={false} closeOnEscape={false} className="customer-modal customer-modal--session">
+          <div className="customer-modal__header">
+            <span className="customer-modal__icon customer-modal__icon--warning"><AlertCircle aria-hidden="true" /></span>
+            <div><h2 id="session-expired-title">Session Expired</h2><p>You were inactive for 10 minutes.</p></div>
+          </div>
+          <div className="customer-modal__body customer-session-expired__body">
+            <p>Your dining session has expired due to inactivity. Please scan the QR code at your table to start a new session.</p>
+            <div className="customer-modal__actions customer-session-expired__actions">
               <button
                 type="button"
                 onClick={() => {
                   setShowInAppScanner(true);
                 }}
-                className="w-full py-3.5 bg-[#E85D2A] hover:bg-[#D94E1B] text-white font-black text-sm rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                className="customer-modal__button customer-modal__button--primary"
               >
-                <QrCode className="w-5 h-5" />
-                Scan Table QR to Reconnect
+                <QrCode aria-hidden="true" />
+                Scan Table QR
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  // Clear all session data
-                  localStorage.removeItem('customer_sessionId');
-                  localStorage.removeItem('customer_verifiedSessionId');
-                  localStorage.removeItem('customer_tableToken');
-                  localStorage.removeItem('customer_tableId');
-                  localStorage.removeItem('customer_cart');
-                  localStorage.removeItem('customer_checkoutStep');
-                  localStorage.removeItem('customer_category');
-                  setSessionExpired(false);
-                  setSessionId('');
-                  setIsSessionVerified(false);
-                  setCart({});
-                  navigate('/customer', { replace: true });
-                }}
-                className="w-full py-2.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 font-bold text-xs transition-colors cursor-pointer"
-              >
-                Start Default Table Session
-              </button>
             </div>
           </div>
-        </div>
+        </ModalShell>
       )}
 
-      {/* ── Top Application Header — Ultra Clean & Professional ──────────────── */}
-      <header className="bg-white/95 dark:bg-[#18181B]/95 backdrop-blur-xl border-b border-gray-200/80 dark:border-zinc-800 sticky top-0 z-30 shadow-xs transition-colors">
-        {/* Row 1: Brand & Actions */}
-        <div className="max-w-7xl mx-auto px-3.5 sm:px-6 py-2.5 flex items-center justify-between gap-3">
-          {/* Brand */}
-          <div className="flex items-center gap-2.5 shrink-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-[#E85D2A] to-[#FB923C] flex items-center justify-center text-white shadow-md shadow-[#E85D2A]/20 shrink-0">
-              <Utensils className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <div>
-              <h2 className="text-sm sm:text-base font-black tracking-tight text-[#171717] dark:text-white leading-none">
-                ZOVIKPOS
-              </h2>
-              <span className="text-[9px] sm:text-[10px] font-bold text-[#78716C] dark:text-zinc-400 tracking-wide block mt-0.5">
-                Smart Dining
-              </span>
-            </div>
+      {/* ── Customer app header ─────────────────────────────────────────────── */}
+      <header className="customer-header glass sticky top-0 z-30 safe-area-top">
+        <div className="customer-header__main">
+          <div className="customer-header__brand" aria-label="ZOVIKPOS Smart Dining">
+            <span className="customer-header__mark" aria-hidden="true">
+              <Utensils />
+            </span>
+            <span className="customer-header__brand-copy">
+              <span className="customer-header__wordmark">ZOVIKPOS</span>
+              <span className="customer-header__caption">Smart Dining</span>
+            </span>
           </div>
 
-          {/* Action Toolbar */}
-          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5">
-            {/* Install PWA App Button */}
+          <nav
+            className="customer-header__toolbar"
+            aria-label="Customer actions"
+            onPointerEnter={() => document.documentElement.classList.remove('customer-tooltip-dismissed')}
+            onPointerLeave={() => document.documentElement.classList.remove('customer-tooltip-dismissed')}
+            onBlurCapture={() => document.documentElement.classList.add('customer-tooltip-dismissed')}
+          >
             {!isAppInstalled && (
               <button
                 type="button"
                 onClick={handleInstallClick}
-                className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer font-bold text-[11px] shrink-0"
-                title="Install app on mobile/desktop"
+                className="customer-header__action customer-header__install desktop-action icon-btn"
+                aria-label="Install app"
+                data-tooltip="Install App"
               >
-                <Download className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden xs:inline">Install</span>
+                <Download aria-hidden="true" />
+                {deferredInstallPrompt && <span className="customer-header__install-dot" aria-hidden="true" />}
               </button>
             )}
 
-            {/* In-App Table QR Scanner Button */}
             <button
               type="button"
               onClick={() => setShowInAppScanner(true)}
-              className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg bg-[#E85D2A]/10 border border-[#E85D2A]/25 text-[#E85D2A] hover:bg-[#E85D2A] hover:text-white transition-all flex items-center gap-1.5 cursor-pointer font-bold text-[11px] shrink-0"
-              title="Scan Table QR Code"
+              className="customer-header__action icon-btn desktop-action"
+              aria-label="Scan QR code"
+              data-tooltip="Scan QR"
             >
-              <QrCode className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden xs:inline">Scan QR</span>
+              <QrCode aria-hidden="true" />
             </button>
 
-            {/* Dark/Light mode toggle */}
             <button
               type="button"
               onClick={() => setTheme((curr) => (curr === 'dark' ? 'light' : 'dark'))}
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 hover:text-[#E85D2A] transition-all flex items-center justify-center cursor-pointer shrink-0"
-              title="Toggle theme"
+              className="customer-header__action customer-header__theme icon-btn"
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              aria-pressed={theme === 'dark'}
+              data-tooltip="Theme"
             >
-              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              <span className="customer-header__theme-icon-stack" aria-hidden="true">
+                <Sun className={`customer-header__theme-icon${theme === 'dark' ? ' is-active' : ''}`} />
+                <Moon className={`customer-header__theme-icon${theme === 'light' ? ' is-active' : ''}`} />
+              </span>
             </button>
 
-            {/* Help FAQ button */}
             <button
               type="button"
               onClick={() => setShowFAQ(true)}
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 hover:text-[#E85D2A] transition-all flex items-center justify-center cursor-pointer shrink-0"
-              title="Help & FAQ"
+              className="customer-header__action desktop-action icon-btn"
+              aria-label="Help and FAQ"
+              data-tooltip="Help & FAQ"
             >
-              <HelpCircle className="w-3.5 h-3.5" />
+              <HelpCircle aria-hidden="true" />
             </button>
 
-            {/* Sign Out Button (Visible when customer is logged in / session verified) */}
-            {isSessionVerified && (
+            {isSessionVerified && sessionInitializationDone && !requiresTableQr && (
               <button
                 type="button"
-                onClick={handleCustomerLogout}
-                className="h-8 sm:h-9 px-2 sm:px-2.5 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white transition-all flex items-center gap-1 cursor-pointer font-bold text-[11px] shrink-0"
-                title="Sign Out"
+                onClick={requestCustomerLogout}
+                className="customer-header__action customer-header__signout desktop-action icon-btn"
+                aria-label="Sign out"
+                data-tooltip="Sign Out"
               >
-                <LogOut className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden md:inline">Sign Out</span>
+                <LogOut aria-hidden="true" />
               </button>
             )}
 
-            {/* Cart Button */}
-            {isSessionVerified && (
+            {isSessionVerified && sessionInitializationDone && !requiresTableQr && (
               <button
                 type="button"
-                onClick={() => navigate('/customer/cart')}
-                className="relative h-8 sm:h-9 px-3 sm:px-4 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-[#E85D2A]/20 flex items-center gap-1.5 cursor-pointer shrink-0"
+                onClick={handleOpenCustomerCart}
+                className={`customer-header__action customer-header__cart icon-btn${totalCartQuantity > 0 ? ' has-items' : ''}`}
+                aria-label={`Cart${totalCartQuantity > 0 ? `, ${totalCartQuantity} items` : ''}`}
+                data-tooltip="Cart"
               >
-                <ShoppingBag className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Cart</span>
-                {totalCartQuantity > 0 && (
-                  <span className="bg-white text-[#E85D2A] px-1.5 py-0.2 rounded-full font-black text-[10px] shadow-xs">
-                    {totalCartQuantity}
-                  </span>
-                )}
+                <span className="customer-header__cart-icon-wrap" aria-hidden="true">
+                  <ShoppingBag />
+                  {totalCartQuantity > 0 && (
+                    <span
+                      key={totalCartQuantity}
+                      className={`customer-header__cart-count${totalCartQuantity < 10 ? ' is-single' : ''}`}
+                    >
+                      {totalCartQuantity > 99 ? '99+' : totalCartQuantity}
+                    </span>
+                  )}
+                </span>
               </button>
             )}
-          </div>
+
+            <button
+              type="button"
+              className="customer-header__action customer-header__more mobile-action icon-btn"
+              id="customer-header-menu-trigger"
+              popoverTarget="customer-header-menu"
+              popoverTargetAction="toggle"
+              aria-label="More actions"
+              aria-expanded="false"
+            >
+              <MoreVertical aria-hidden="true" />
+            </button>
+
+            <div
+              id="customer-header-menu"
+              className="customer-header__popover"
+              popover="auto"
+              onToggle={(event) => {
+                document.getElementById('customer-header-menu-trigger')?.setAttribute(
+                  'aria-expanded',
+                  String(event.currentTarget.matches(':popover-open')),
+                )
+              }}
+            >
+              {!isAppInstalled && (
+                <button type="button" popoverTarget="customer-header-menu" popoverTargetAction="hide" onClick={handleInstallClick} className="customer-header__menu-row">
+                  <Download aria-hidden="true" />
+                  <span>Install App</span>
+                  {deferredInstallPrompt && <span className="customer-header__install-dot" aria-hidden="true" />}
+                </button>
+              )}
+              <button type="button" popoverTarget="customer-header-menu" popoverTargetAction="hide" onClick={() => setShowInAppScanner(true)} className="customer-header__menu-row">
+                <QrCode aria-hidden="true" />
+                <span>Scan QR</span>
+              </button>
+              <button type="button" popoverTarget="customer-header-menu" popoverTargetAction="hide" onClick={() => setShowFAQ(true)} className="customer-header__menu-row">
+                <HelpCircle aria-hidden="true" />
+                <span>Help & FAQ</span>
+              </button>
+              {isSessionVerified && (
+                <button type="button" popoverTarget="customer-header-menu" popoverTargetAction="hide" onClick={requestCustomerLogout} className="customer-header__menu-row customer-header__menu-row--signout">
+                  <LogOut aria-hidden="true" />
+                  <span>Sign Out</span>
+                </button>
+              )}
+            </div>
+          </nav>
         </div>
 
-        {/* Row 2: Status Bar */}
-        <div className="max-w-7xl mx-auto px-3.5 sm:px-6 pb-2 pt-0.5 flex items-center justify-between text-[11px] border-t border-gray-100 dark:border-zinc-800/60 gap-2 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center gap-1 bg-[#E85D2A]/10 text-[#E85D2A] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider text-[10px]">
-              <MapPin className="w-3 h-3" />
-              {tableId}
-            </span>
-            <span className="inline-flex items-center gap-1 text-gray-500 dark:text-zinc-400 font-medium">
-              <Clock className="w-3 h-3" />
-              {scanTime}
-            </span>
+        {sessionInitializationDone && !requiresTableQr && stableTableLabel && (
+          <div className="customer-header__session" aria-label="Current dining session">
+            <CustomerSessionTableChip label={stableTableLabel} />
+            {(authName || guestName) && (
+              <div className="customer-header__session-user">
+                <span className="customer-header__avatar" aria-hidden="true">{(authName || guestName).trim().charAt(0).toUpperCase()}</span>
+                <span className="customer-header__session-name" title={authName || guestName}>{authName || guestName}</span>
+              </div>
+            )}
+            {(authName || guestName) && <span className="customer-header__scanned">Scanned {scanTime}</span>}
           </div>
-
-          <div className="flex items-center gap-1.5 text-gray-600 dark:text-zinc-400">
-            <User className="w-3 h-3 text-[#E85D2A]" />
-            <span className="truncate max-w-[140px] sm:max-w-none">
-              Welcome, <strong className="text-gray-900 dark:text-white font-bold">{authName || guestName || 'Customer'}</strong>
-            </span>
-          </div>
-        </div>
+        )}
       </header>
 
       {/* FAQ Modal */}
@@ -1385,59 +2563,54 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
       {/* Table Switching Confirmation Modal */}
       {showTableSwitchModal && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-gray-100 space-y-5 animate-scale-up">
-            <div className="w-12 h-12 bg-orange-50 text-[#E85D2A] rounded-2xl flex items-center justify-center mx-auto">
-              <RotateCcw className="w-6 h-6" />
-            </div>
-            <div className="text-center space-y-2">
-              <h3 className="text-lg font-black text-gray-900">
-                {activeOrders.length > 0
-                  ? `Deliver to ${pendingTableNumber}?`
-                  : totalCartQuantity > 0
-                    ? `Take your cart to ${pendingTableNumber}?`
-                    : `Switch to ${pendingTableNumber}?`}
-              </h3>
-              <p className="text-xs text-gray-500 leading-relaxed">
+        <ModalShell isOpen onClose={undefined} labelledBy="table-switch-title" closeOnBackdrop={false} closeOnEscape={false} className="customer-modal customer-modal--switch">
+          <div className="customer-modal__header">
+            <span className="customer-modal__icon"><RotateCcw aria-hidden="true" /></span>
+            <div><h2 id="table-switch-title">Switch to {pendingTableNumber}?</h2><p>You're currently at {currentTableSnapshot || stableTableLabel}.</p></div>
+          </div>
+          <div className="customer-modal__body">
+              <p className="customer-modal__copy">
                 {activeOrders.length > 0 ? (
                   <>
-                    You scanned <strong className="text-[#E85D2A] font-bold">{pendingTableNumber}</strong>, but you have{' '}
-                    <strong className="text-emerald-700 font-bold">{activeOrders.length} active order(s)</strong>{' '}
-                    placed from <strong className="text-gray-800">{currentTableSnapshot || tableId}</strong>.
+                    You scanned <strong>{pendingTableNumber}</strong>, but you have{' '}
+                    <strong className="customer-modal__copy-success">{activeOrders.length} active order(s)</strong>{' '}
+                    placed from <strong>{currentTableSnapshot || stableTableLabel}</strong>.
                     {totalCartQuantity > 0 && (
-                      <> Your cart with <strong className="text-amber-600 font-bold">{totalCartQuantity} item(s)</strong> will also move.</>
+                      <> Your cart with <strong className="customer-modal__copy-warning">{totalCartQuantity} item(s)</strong> will also move.</>
                     )}
-                    {' '}Do you want to transfer your current session &amp; active orders to <strong className="text-[#E85D2A] font-bold">{pendingTableNumber}</strong>, or start a fresh session?
+                    {' '}Do you want to transfer your current session &amp; active orders to <strong>{pendingTableNumber}</strong>, or start a fresh session?
                   </>
                 ) : totalCartQuantity > 0 ? (
                   <>
-                    You have <strong className="text-amber-600 font-bold">{totalCartQuantity} item(s)</strong> in your cart from{' '}
-                    <strong className="text-gray-800 font-bold">{currentTableSnapshot || tableId}</strong>. Transfer your session to{' '}
-                    <strong className="text-[#E85D2A] font-bold">{pendingTableNumber}</strong> to keep your items!
+                    You have <strong className="customer-modal__copy-warning">{totalCartQuantity} item(s)</strong> in your cart from{' '}
+                    <strong>{currentTableSnapshot || stableTableLabel}</strong>. Transfer your session to{' '}
+                    <strong>{pendingTableNumber}</strong> to keep your items!
                   </>
                 ) : (
                   <>
-                    Switch your active session from <strong className="text-gray-800 font-bold">{currentTableSnapshot || tableId}</strong> to{' '}
-                    <strong className="text-[#E85D2A] font-bold">{pendingTableNumber}</strong>.
+                    Switch your active session from <strong>{currentTableSnapshot || stableTableLabel}</strong> to{' '}
+                    <strong>{pendingTableNumber}</strong>.
                   </>
                 )}
               </p>
-            </div>
-            <div className="space-y-2.5 pt-2">
+            <div className="customer-modal__actions">
               {/* Primary Option 1: Move/Transfer current session & orders to new table */}
               {(activeOrders.length > 0 || totalCartQuantity > 0) && (
                 <button
                   disabled={transferLoading}
                   onClick={handleTransferTableAndOrders}
-                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center space-x-2"
+                  className="customer-modal__button customer-modal__button--primary customer-modal__button--transfer"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>
-                    {transferLoading
+                  <span className="customer-modal__option-copy">
+                    <strong>{transferLoading
                       ? 'Transferring...'
                       : activeOrders.length > 0
                         ? `Transfer Session & Orders to ${pendingTableNumber}`
-                        : `Move Cart to ${pendingTableNumber}`}
+                        : `Move Cart to ${pendingTableNumber}`}</strong>
+                    <small>{activeOrders.length > 0
+                      ? `Keep your active orders and cart with you at ${pendingTableNumber}.`
+                      : `Move your current cart to ${pendingTableNumber}.`}</small>
                   </span>
                 </button>
               )}
@@ -1446,31 +2619,91 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
               <button
                 disabled={transferLoading}
                 onClick={handleConfirmTableSwitch}
-                className="w-full py-3 bg-[#E85D2A] hover:bg-[#D94E1B] disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center space-x-2"
+                className="customer-modal__button customer-modal__button--primary customer-modal__button--fresh"
               >
-                <span>
-                  {transferLoading
+                <RotateCcw className="w-4 h-4" aria-hidden="true" />
+                <span className="customer-modal__option-copy">
+                  <strong>{transferLoading
                     ? 'Switching...'
                     : totalCartQuantity > 0 || activeOrders.length > 0
                     ? `Start Fresh Session at ${pendingTableNumber}`
-                    : `Switch to ${pendingTableNumber}`}
+                    : `Switch to ${pendingTableNumber}`}</strong>
+                  <small>Start a new session at this table.</small>
                 </span>
               </button>
 
               {/* Cancel Option */}
               <button
                 onClick={handleCancelTableSwitch}
-                className="w-full py-2 text-gray-400 hover:text-gray-600 font-bold text-xs transition-all cursor-pointer text-center"
+                className="customer-modal__button customer-modal__button--secondary"
               >
                 Cancel & Close
               </button>
             </div>
           </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* ── Main content ─────────────────────────────────────────────────────── */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 pb-32 sm:p-6 sm:pb-36 lg:p-8 space-y-6 dark:text-[#E5E5E5]">
+      <main className={`${isSessionVerified ? 'customer-cart-safe-space ' : ''}flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 dark:text-[#E5E5E5]${!isSessionVerified ? ' customer-auth-main' : ''}`}>
+
+        {!sessionInitializationDone ? (
+          <section className="customer-table-gate" aria-live="polite">
+            <span className="customer-table-gate__mark" aria-hidden="true"><QrCode /></span>
+            <h1>Checking your table</h1>
+            <p>Verifying the table QR code…</p>
+          </section>
+        ) : sessionExpired ? (
+          <section className="customer-table-gate" aria-live="polite">
+            <span className="customer-table-gate__mark" aria-hidden="true"><AlertCircle /></span>
+            <h1>Session expired</h1>
+            <p>Reconnect to your table using the scan option.</p>
+          </section>
+        ) : tableConnectionError ? (
+          <section className="customer-table-gate" aria-labelledby="customer-server-error-title" role="alert">
+            <span className="customer-table-gate__mark" aria-hidden="true"><AlertCircle /></span>
+            <p className="customer-table-gate__eyebrow">{stableTableLabel || 'TABLE SERVICE'}</p>
+            <h1 id="customer-server-error-title">Can't reach the server</h1>
+            <p>{tableConnectionError}</p>
+            <button
+              type="button"
+              className="customer-table-gate__button"
+              onClick={() => {
+                setSessionInitializationDone(false);
+                setTableConnectionError('');
+                setSessionRetryAttempt((attempt) => attempt + 1);
+              }}
+            >
+              <RotateCcw aria-hidden="true" />
+              <span>Retry</span>
+            </button>
+          </section>
+        ) : requiresTableQr ? (
+          <section className="customer-table-gate" aria-labelledby="customer-table-gate-title">
+            <span className="customer-table-gate__mark" aria-hidden="true"><QrCode /></span>
+            <p className="customer-table-gate__eyebrow">TABLE ACCESS REQUIRED</p>
+            <h1 id="customer-table-gate-title">Scan your table QR</h1>
+            <p>{tableError || 'Scan the QR code attached to your table to view the menu and start ordering.'}</p>
+            <button type="button" className="customer-table-gate__button" onClick={() => setShowInAppScanner(true)}>
+              <QrCode aria-hidden="true" />
+              <span>Scan table QR</span>
+            </button>
+            {tableIdFromRoute && (
+              <button
+                type="button"
+                className="customer-table-gate__retry"
+                onClick={() => {
+                  setSessionInitializationDone(false);
+                  setRequiresTableQr(false);
+                  setTableError('');
+                  setSessionRetryAttempt((attempt) => attempt + 1);
+                }}
+              >
+                Retry this table QR
+              </button>
+            )}
+          </section>
+        ) : <>
 
         {/* Table QR Error */}
         {tableError && (
@@ -1490,124 +2723,178 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
         {/* ── EMAIL + OTP VERIFICATION VIEW (Required before ordering) ────────── */}
         {!isSessionVerified ? (
-          <div className="w-full max-w-[440px] mx-auto my-5 sm:my-8 bg-white dark:bg-[#1E1C1B] border border-[#EEE9E5] dark:border-[#383330] rounded-[28px] sm:rounded-[32px] p-5 sm:p-8 shadow-[0_24px_70px_-28px_rgba(41,25,15,0.24)] dark:shadow-[0_24px_70px_-28px_rgba(0,0,0,0.72)] text-center space-y-5 sm:space-y-6 animate-fade-in">
-            <div className="w-[68px] h-[68px] bg-[#FFF4EF] dark:bg-[#3A2821] text-[#E85D2A] dark:text-[#FF9B70] rounded-[24px] flex items-center justify-center mx-auto ring-8 ring-[#E85D2A]/[0.04]">
-              <ShieldCheck className="w-8 h-8" strokeWidth={2.1} />
-            </div>
-
-            <div>
-              <span className="inline-flex px-3 py-1.5 bg-[#FFF0E9] dark:bg-[#3A2821] text-[#D94E1B] dark:text-[#FF9B70] rounded-full text-[10px] font-extrabold uppercase tracking-[0.09em]">
-                {tableId} • Smart Dining Session
-              </span>
-              <h2 className="text-[25px] sm:text-[27px] font-extrabold tracking-tight text-[#171717] dark:text-white mt-3">Welcome to {tableId}</h2>
-              <p className="text-[13px] text-[#78716C] dark:text-[#B8B0AA] mt-1.5 leading-[1.6] max-w-[300px] mx-auto">
-                Please verify your email address to unlock the menu and place your order.
-              </p>
-            </div>
-
-            {otpError && (
-              <div className="p-3.5 bg-rose-50 dark:bg-rose-950/35 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-300 rounded-2xl text-xs font-bold flex items-center space-x-2 text-left">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{otpError}</span>
+          <div className="customer-auth-card w-full max-w-[440px] mx-auto animate-fade-in">
+            <section className={`customer-auth-panel${otpSent ? ' is-inactive' : ' is-active'}`} aria-hidden={otpSent} inert={Boolean(otpSent)}>
+              <div className="customer-auth-heading">
+                <p className="customer-auth-step-label">STEP 1 OF 2</p>
+                <h2 className="customer-auth-title">Verify to place your order</h2>
+                <p className="customer-auth-subtitle">Use your name and university email.</p>
               </div>
-            )}
-
-            {otpSuccess && (
-              <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-900/60 text-emerald-600 dark:text-emerald-300 rounded-2xl text-xs font-bold flex items-center space-x-2 text-left">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>{otpSuccess}</span>
-              </div>
-            )}
-
-            {!otpSent ? (
-              <form onSubmit={handleSendOtp} className="space-y-4 sm:space-y-[18px] text-left">
+              <form onSubmit={handleSendOtp} className="customer-auth-email-form text-left">
                 <div>
-                  <label className="text-xs font-semibold text-[#332E2A] dark:text-[#E7E0DB] block mb-1.5">Your Full Name</label>
-                  <div className="relative">
+                  <label htmlFor="customer-auth-name" className="customer-auth-label">Full Name</label>
+                  <div className="customer-auth-field">
                     <input
+                      id="customer-auth-name"
                       type="text"
                       value={authName}
                       onChange={(e) => setAuthName(e.target.value)}
-                      placeholder="e.g. John Doe"
-                      className="w-full h-12 bg-[#FAF9F7] dark:bg-[#292725] border border-[#E7E5E4] dark:border-[#45403D] rounded-[14px] px-4 pr-11 text-[13px] text-[#171717] dark:text-[#F5F5F5] placeholder:text-[#A8A29E] focus:outline-none focus:border-[#E85D2A] focus:bg-white dark:focus:bg-[#302A27] focus:ring-4 focus:ring-[#E85D2A]/[0.08] transition-all"
+                      autoComplete="name"
+                      placeholder="e.g. Ahmed Khan"
+                      className="customer-auth-input"
                     />
-                    <User className="w-[17px] h-[17px] text-[#8A817B] dark:text-[#B8B0AA] absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <User className="customer-auth-field-icon" aria-hidden="true" />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-[#332E2A] dark:text-[#E7E0DB] block mb-1.5">UIT Student Email <span className="font-normal text-[#8A817B] dark:text-[#B8B0AA]">(e.g. 23SP-051-SE@students.uitu.edu.pk)</span></label>
-                  <div className="relative">
+                  <label htmlFor="customer-auth-email" className="customer-auth-label">UIT Student Email</label>
+                  <div className="customer-auth-field">
                     <input
+                      id="customer-auth-email"
                       type="email"
                       required
+                      inputMode="email"
+                      autoComplete="email"
+                      autoCapitalize="none"
+                      spellCheck={false}
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
-                      placeholder="23SP-051-SE@students.uitu.edu.pk"
-                      className="w-full h-12 bg-[#FAF9F7] dark:bg-[#292725] border border-[#E7E5E4] dark:border-[#45403D] rounded-[14px] px-4 pr-11 text-[13px] text-[#171717] dark:text-[#F5F5F5] placeholder:text-[#A8A29E] focus:outline-none focus:border-[#E85D2A] focus:bg-white dark:focus:bg-[#302A27] focus:ring-4 focus:ring-[#E85D2A]/[0.08] transition-all"
+                      aria-invalid={Boolean(otpError && !otpSent)}
+                      aria-describedby={otpError && !otpSent ? 'customer-auth-email-error' : 'customer-auth-email-help'}
+                      placeholder="Your university email"
+                      className="customer-auth-input customer-auth-input--email"
                     />
-                    <Mail className="w-[17px] h-[17px] text-[#8A817B] dark:text-[#B8B0AA] absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <Mail className="customer-auth-field-icon" aria-hidden="true" />
+                    <CheckCircle2 className="customer-auth-valid-icon" aria-hidden="true" />
                   </div>
+                  {otpError && !otpSent ? (
+                    <p id="customer-auth-email-error" className="customer-auth-field-message customer-auth-field-message--error" role="alert">
+                      {otpError.includes('UIT student email') ? 'Enter a valid university email' : otpError}
+                    </p>
+                  ) : (
+                    <p id="customer-auth-email-help" className="customer-auth-field-help">
+                      Use your @students.uitu.edu.pk email
+                    </p>
+                  )}
                 </div>
 
                 <button
                   type="submit"
                   disabled={otpLoading || cooldown > 0}
-                  className="w-full min-h-12 py-3 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-[0.99] text-white font-bold text-[13px] rounded-[14px] shadow-[0_8px_18px_-8px_rgba(232,93,42,0.65)] transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-60 disabled:cursor-wait"
+                  className="customer-auth-submit"
+                  aria-label={otpLoading ? 'Sending verification code' : 'Continue'}
                 >
-                  {otpLoading ? (
-                    <span>Sending Code...</span>
-                  ) : cooldown > 0 ? (
-                    <span>Try again in {cooldown}s</span>
-                  ) : (
-                    <>
-                      <span>Send 6-Digit Code</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
+                  {otpLoading ? <Loader2 className="customer-auth-spinner" aria-hidden="true" /> : <span>Continue</span>}
                 </button>
+                <p className="customer-auth-trust"><LockKeyhole aria-hidden="true" /> We only use your email to verify your order.</p>
               </form>
-            ) : (
-              <form onSubmit={handleVerifyOtp} className="space-y-4 text-left">
-                <div>
-                  <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1 mb-2">
-                    <label className="text-xs font-semibold text-[#332E2A] dark:text-[#E7E0DB]">Enter 6-Digit Code</label>
-                    <span className="text-[10px] text-[#78716C] dark:text-[#B8B0AA] font-mono truncate max-w-full">{authEmail}</span>
+            </section>
+
+            <section className={`customer-auth-panel customer-auth-panel--otp${otpSent ? ' is-active' : ' is-inactive'}`} aria-hidden={!otpSent} inert={!otpSent}>
+              <div className="customer-auth-heading">
+                <p className="customer-auth-step-label">STEP 2 OF 2</p>
+                <h2 className="customer-auth-title">Enter verification code</h2>
+                <p className="customer-auth-subtitle">We sent a 6-digit code to</p>
+                <div className="customer-auth-address-row">
+                  <span className="customer-auth-address">{authEmail}</span>
+                  <button type="button" onClick={() => { clearPendingLogin(); setOtpSent(false); }} className="customer-auth-change-email">Change email</button>
+                </div>
+              </div>
+
+              {!authName.trim() && (
+                <div className="customer-auth-name-prompt">
+                  <label htmlFor="customer-auth-name-otp" className="customer-auth-label">Full Name</label>
+                  <div className="customer-auth-field">
+                    <input
+                      id="customer-auth-name-otp"
+                      type="text"
+                      value={authName}
+                      onChange={(event) => setAuthName(event.target.value)}
+                      autoComplete="name"
+                      placeholder="e.g. Ahmed Khan"
+                      className="customer-auth-input"
+                      required
+                    />
+                    <User className="customer-auth-field-icon" aria-hidden="true" />
                   </div>
-                  <OtpInputBoxes
-                    value={otpCode}
-                    onChange={setOtpCode}
-                    disabled={otpLoading}
-                  />
+                </div>
+              )}
+
+              {otpError && (
+                <div className="customer-auth-message customer-auth-message--error" role="alert">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{otpError}</span>
+                </div>
+              )}
+
+              {otpSuccess && !otpSuccess.startsWith('Verified') && (
+                <div className="customer-auth-success-note" role="status" aria-live="polite">
+                  <CheckCircle2 aria-hidden="true" />
+                  <span>{otpSuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleVerifyOtp} className="customer-auth-verify-form text-left">
+                <div className={`customer-auth-otp-state${otpError ? ' has-error' : ''}${otpSuccess?.startsWith('Verified') ? ' is-success' : ''}`}>
+                  {otpSent ? (
+                    <OtpInputBoxes
+                      value={otpCode}
+                      onChange={setOtpCode}
+                      disabled={otpLoading}
+                      prefillCode={otpPrefillCode}
+                      onPrefillApplied={clearOtpPrefillCode}
+                      secondaryAction={(
+                        <button
+                          type="button"
+                          className="customer-auth-open-mail"
+                          onClick={handleOpenGmail}
+                          aria-label="Open Gmail to check your verification code"
+                        >
+                          <ExternalLink aria-hidden="true" />
+                          <span>Open Gmail</span>
+                        </button>
+                      )}
+                    />
+                  ) : (
+                    <div className="customer-auth-otp-placeholder" aria-hidden="true" />
+                  )}
                 </div>
 
                 <button
                   type="submit"
                   disabled={otpLoading || otpCode.length < 6}
-                  className="w-full min-h-12 py-3 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-[0.99] text-white font-bold text-[13px] rounded-[14px] shadow-[0_8px_18px_-8px_rgba(232,93,42,0.65)] transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-55 disabled:cursor-not-allowed"
+                  className={`customer-auth-submit customer-auth-verify${otpLoading ? ' is-loading' : ''}${otpSuccess?.startsWith('Verified') ? ' is-success' : ''}`}
                 >
-                  {otpLoading ? <span>Verifying...</span> : <span>Verify &amp; Enter Menu</span>}
+                  {otpLoading ? (
+                    <><Loader2 className="customer-auth-spinner" aria-hidden="true" /><span>Verifying…</span></>
+                  ) : otpSuccess?.startsWith('Verified') ? (
+                    <><CheckCircle2 className="customer-auth-success-check" aria-hidden="true" /><span>Verified</span></>
+                  ) : (
+                    <span>Verify and Continue</span>
+                  )}
                 </button>
 
-                <div className="flex justify-between items-center text-[11px] pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setOtpSent(false)}
-                    className="text-[#78716C] dark:text-[#B8B0AA] hover:text-[#171717] dark:hover:text-white cursor-pointer"
-                  >
-                    Change Email
-                  </button>
+                <div className="customer-auth-verify-footer">
                   <button
                     type="button"
                     disabled={cooldown > 0 || otpLoading}
                     onClick={handleSendOtp}
-                    className="text-[#E85D2A] font-bold hover:underline disabled:opacity-50 cursor-pointer"
+                    className="customer-auth-resend"
                   >
-                    {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend Code'}
+                    {cooldown > 0 ? (
+                      <>
+                        <svg className="customer-auth-resend-ring" viewBox="0 0 24 24" aria-hidden="true">
+                          <circle className="customer-auth-resend-track" cx="12" cy="12" r="9" />
+                          <circle className="customer-auth-resend-progress" cx="12" cy="12" r="9" style={{ strokeDashoffset: 56.55 * (1 - (Math.min(cooldown, 60) / 60)) }} />
+                        </svg>
+                        <span>Resend code in {Math.floor(cooldown / 60)}:{String(cooldown % 60).padStart(2, '0')}</span>
+                      </>
+                    ) : 'Resend code'}
                   </button>
                 </div>
               </form>
-            )}
+            </section>
           </div>
         ) : (
           <>
@@ -1621,11 +2908,10 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
             {/* Active Order Banner — ZovikPOS Premium */}
             {activeOrders.length === 1 && (
-              <div className="bg-white dark:bg-[#1E1E1E] border border-[#E85D2A]/25 dark:border-[#E85D2A]/40 p-4 sm:p-5 rounded-3xl shadow-md shadow-[#E85D2A]/8 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-orange-50/60 via-transparent to-transparent pointer-events-none" />
-                <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="customer-active-order">
+                <div className="customer-active-order__top">
                   <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-2xl bg-[#E85D2A]/10 flex items-center justify-center shrink-0">
+                    <div className="customer-active-order__indicator" aria-hidden="true">
                       <span className="relative flex h-2.5 w-2.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#E85D2A] opacity-60"></span>
                         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#E85D2A]"></span>
@@ -1633,22 +2919,22 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <strong className="text-sm font-black text-[#171717] dark:text-[#E5E5E5]">
+                        <strong className="customer-active-order__number" title={activeOrders[0].orderNumber || `#${activeOrders[0].id}`}>
                           Order {activeOrders[0].orderNumber || `#${activeOrders[0].id}`}
                         </strong>
-                        <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-[#E85D2A]/10 dark:bg-[#E85D2A]/20 text-[#E85D2A] dark:text-orange-400 border border-[#E85D2A]/20 uppercase tracking-wide">
+                        <span className={`customer-active-order__status customer-active-order__status--${String(activeOrders[0].status || '').toLowerCase()}`}>
                           {activeOrders[0].status}
                         </span>
                       </div>
-                      <p className="text-[11px] text-[#78716C] dark:text-[#A8A29E] mt-0.5">
-                        Delivering to:{' '}
-                        <strong className="text-[#171717] dark:text-white font-bold bg-[#FAF9F7] dark:bg-[#2A2A2A] px-2 py-0.5 rounded-lg border border-[#E7E5E4] dark:border-[#404040]">
-                          {activeOrders[0].tableNumber || tableId}
+                      <p className="customer-active-order__table">
+                        <strong>
+                          {resolveTableLabel({ ...activeOrders[0], forCustomer: true })}
                         </strong>
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="customer-active-order__actions">
+                    {/* TEMP: hidden table-switch button
                     <button
                       onClick={() => {
                         if (deliveryChangeOrderId === activeOrders[0].id) {
@@ -1663,12 +2949,12 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                       <span>📍</span>
                       <span className="hidden sm:inline">Change Seat</span>
                     </button>
+                    */}
                     <button
                       onClick={() => navigate(`/customer/track/${activeOrders[0].trackingToken || activeOrders[0].id}`)}
-                      className="px-4 py-2 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-95 text-white font-extrabold rounded-xl text-xs transition-all shadow-md shadow-[#E85D2A]/20 cursor-pointer flex items-center gap-1.5"
+                      className="customer-active-order__track"
                     >
                       <span>Track Order</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -1735,7 +3021,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                             </span>
                           </div>
                           <p className="text-[11px] text-gray-500">
-                            Delivering to: <strong className="text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded font-bold">{ord.tableNumber || tableId}</strong> • {ord.orderItems?.length || 0} items
+                            Delivering to: <strong className="text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded font-bold">{resolveTableLabel({ ...ord, forCustomer: true })}</strong> • {ord.orderItems?.length || 0} items
                           </p>
                         </div>
                         <button
@@ -1823,146 +3109,210 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
             {/* ── MENU VIEW ──────────────────────────────────────────────────────── */}
             <div className="space-y-6">
-              {/* PROMOTIONAL CAROUSEL — Auto-rotating, Touch Swipable & Fixed Uniform Sizing */}
-              <div
+              {/* PROMOTIONAL CAROUSEL */}
+              <section
+                className="customer-promo"
+                aria-label="Featured dining promotions"
+                onMouseEnter={pauseAutoplay}
+                onMouseLeave={startAutoplay}
+                onFocus={pauseAutoplay}
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) startAutoplay();
+                }}
                 onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
-                className="relative overflow-hidden rounded-[28px] shadow-xl border border-white/10 select-none touch-pan-y min-h-[170px] sm:min-h-[190px] flex items-center bg-[#EA580C]"
+                onTouchCancel={handleTouchEnd}
+                onWheel={handlePromoWheel}
               >
-                {/* Slides */}
-                {promoSlides.map((slide, idx) => (
-                  <div
-                    key={idx}
-                    className={`${idx === promoIndex ? 'flex' : 'hidden'} w-full h-full min-h-[170px] sm:min-h-[190px] relative bg-gradient-to-br ${slide.bg} text-white px-10 py-5 sm:px-14 sm:py-6 lg:px-16 transition-all duration-500 items-center`}
-                  >
-                    {/* Decorative blurs */}
-                    <div className="absolute top-0 right-0 w-72 h-72 bg-white/10 rounded-full blur-3xl pointer-events-none" />
-                    <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-black/5 rounded-full blur-2xl pointer-events-none" />
-
-                    <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 w-full">
-                      <div className="flex-1 space-y-2">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/15 backdrop-blur-sm rounded-full text-[10px] sm:text-[11px] font-extrabold tracking-wider uppercase border border-white/20">
-                          <Sparkles className="w-3 h-3 text-amber-300" />
-                          <span>ZovikPOS • Smart Dining</span>
-                        </div>
-
-                        <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight leading-tight line-clamp-1">
-                          {slide.headline}
-                        </h1>
-
-                        <p className="text-[11px] sm:text-xs text-white/90 max-w-md leading-snug line-clamp-2">
-                          {slide.sub}
-                        </p>
-
+                <div
+                  ref={promoScrollRef}
+                  className="customer-promo__viewport"
+                  role="group"
+                  tabIndex={0}
+                  aria-roledescription="carousel"
+                  aria-label="Promotions"
+                  onScroll={handlePromoScroll}
+                  onKeyDown={handlePromoKeyDown}
+                  onPointerDown={handlePromoPointerDown}
+                  onPointerMove={handlePromoPointerMove}
+                  onPointerUp={handlePromoPointerEnd}
+                  onPointerCancel={handlePromoPointerEnd}
+                >
+                  {promoRenderSlides.map(({ slide, position, realIndex, isClone }) => (
+                    <article
+                      key={`${slide.style}-${position}`}
+                      data-promo-position={position}
+                      className={`customer-promo__slide customer-promo__slide--${slide.style}`}
+                      role="group"
+                      aria-roledescription="slide"
+                      aria-label={`${realIndex + 1} of ${promoSlides.length}: ${slide.headline}`}
+                      aria-hidden={isClone ? 'true' : undefined}
+                    >
+                      <span className="customer-promo__orb customer-promo__orb--one" aria-hidden="true" />
+                      <span className="customer-promo__orb customer-promo__orb--two" aria-hidden="true" />
+                      <div className="customer-promo__content">
+                        <span className="customer-promo__eyebrow">
+                          <slide.eyebrowIcon aria-hidden="true" strokeWidth={1.75} />
+                          <span>{slide.eyebrow}</span>
+                        </span>
+                        <h1>{slide.headline}</h1>
+                        <p>{slide.sub}</p>
                         <button
+                          type="button"
+                          tabIndex={isClone ? -1 : undefined}
                           onClick={() => navigate('/customer/cart')}
-                          className="inline-flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 bg-white hover:bg-white/90 text-[#171717] font-extrabold text-xs rounded-xl shadow-xl active:scale-95 transition-all cursor-pointer mt-1"
+                          className="customer-promo__cta"
                         >
-                          <ShoppingBag className="w-3.5 h-3.5" />
-                          <span>View Cart {totalCartQuantity > 0 ? `(${totalCartQuantity})` : ''}</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
+                          <span>Explore menu</span>
                         </button>
                       </div>
-
-                      {/* Large emoji icon on desktop */}
-                      <div className="hidden sm:flex items-center justify-center w-20 h-20 lg:w-24 lg:h-24 text-4xl lg:text-5xl bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl shrink-0">
-                        {slide.icon}
+                      <div className="customer-promo__visual" aria-hidden="true">
+                        <span className="customer-promo__visual-orb" />
+                        <span className="customer-promo__visual-ring customer-promo__visual-ring--outer" />
+                        <span className="customer-promo__visual-ring customer-promo__visual-ring--inner" />
+                        <span className="customer-promo__visual-tile">
+                          <slide.visualIcon strokeWidth={1.75} />
+                        </span>
+                        <span className="customer-promo__visual-chip">
+                          <slide.chipIcon strokeWidth={1.75} />
+                          <span>{slide.chipLabel}</span>
+                        </span>
                       </div>
-                    </div>
-                  </div>
-                ))}
-
-                {/* Carousel Arrows (desktop) */}
-                <button
-                  onClick={() => goToSlide((promoIndex - 1 + promoSlides.length) % promoSlides.length)}
-                  className="hidden sm:flex absolute left-2.5 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-full items-center justify-center text-white transition-all cursor-pointer z-20 shadow-md"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => goToSlide((promoIndex + 1) % promoSlides.length)}
-                  className="hidden sm:flex absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-full items-center justify-center text-white transition-all cursor-pointer z-20 shadow-md"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-
-                {/* Pagination Dots */}
-                <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20">
-                  {promoSlides.map((_, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => goToSlide(idx)}
-                      className={`rounded-full transition-all duration-300 cursor-pointer ${
-                        idx === promoIndex
-                          ? 'w-5 h-1.5 bg-white'
-                          : 'w-1.5 h-1.5 bg-white/40 hover:bg-white/60'
-                      }`}
-                    />
+                    </article>
                   ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => goToSlide((promoIndex - 1 + promoSlides.length) % promoSlides.length)}
+                  className="customer-promo__arrow customer-promo__arrow--previous icon-btn"
+                  aria-label="Previous promotion"
+                >
+                  <ChevronLeft aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => goToSlide((promoIndex + 1) % promoSlides.length)}
+                  className="customer-promo__arrow customer-promo__arrow--next icon-btn"
+                  aria-label="Next promotion"
+                >
+                  <ChevronRight aria-hidden="true" />
+                </button>
+
+                <div className="customer-promo__pagination" role="group" aria-label="Choose a promotion">
+                  {promoSlides.map((slide, idx) => (
+                    <button
+                      key={slide.style}
+                      type="button"
+                      onClick={() => goToSlide(idx)}
+                      className="customer-promo__dot-button"
+                      aria-label={`Go to slide ${idx + 1}`}
+                      aria-current={idx === promoIndex ? 'true' : undefined}
+                    >
+                      <span className={`customer-promo__dot${idx === promoIndex ? ' is-active' : ''}`} />
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {/* SEARCH AND CATEGORY FILTERS */}
+              <div className="customer-menu-controls">
+                <div className="customer-search">
+                  <Search className="customer-search__icon" aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search dishes, drinks, and more"
+                    aria-label="Search menu"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      className="customer-search__clear icon-btn"
+                      onClick={() => setSearchQuery('')}
+                      aria-label="Clear search"
+                    >
+                      <X aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* SEARCH BAR — PREMIUM */}
-              <div className="space-y-5">
-                <div className="relative group">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search for biryani, zinger burgers, chai, fries..."
-                    className="w-full bg-white dark:bg-[#2A2A2A] border border-[#E7E5E4] dark:border-[#404040] rounded-2xl px-5 py-4 pl-12 text-sm text-[#171717] dark:text-[#E5E5E5] placeholder-[#A8A29E] dark:placeholder-[#6B7280] focus:outline-none focus:border-[#E85D2A] focus:ring-4 focus:ring-[#E85D2A]/10 dark:focus:ring-[#E85D2A]/20 transition-all shadow-sm hover:shadow-md font-medium"
-                  />
-                  <Search className="w-5 h-5 text-[#A8A29E] dark:text-[#6B7280] group-focus-within:text-[#E85D2A] absolute left-4 top-4 transition-colors" />
-                </div>
-
-                {/* CATEGORY FILTERS — Drag-To-Scroll & Mouse Wheel Scroll Enabled */}
-                <div
-                  ref={categoryScrollRef}
-                  onMouseDown={handleCategoryMouseDown}
-                  onMouseLeave={handleCategoryMouseLeave}
-                  onMouseUp={handleCategoryMouseUp}
-                  onMouseMove={handleCategoryMouseMove}
-                  onWheel={handleCategoryWheel}
-                  className="flex items-center gap-2.5 overflow-x-auto pb-2 scrollbar-none cursor-grab active:cursor-grabbing select-none"
-                >
-                  {combinedCategories.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => {
-                        if (isDraggingRef.current) return;
-                        setCategory(cat);
-                      }}
-                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold whitespace-nowrap transition-all duration-200 cursor-pointer ${category === cat
-                          ? 'bg-[#E85D2A] text-white shadow-md shadow-[#E85D2A]/25 border border-[#E85D2A] scale-105'
-                          : 'bg-white dark:bg-[#2A2A2A] border border-[#E7E5E4] dark:border-[#404040] text-[#78716C] dark:text-[#A8A29E] hover:border-[#E85D2A]/40 hover:text-[#E85D2A]'
-                        }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
+              <div ref={categorySentinelRef} className="customer-category-sentinel" aria-hidden="true" />
+              <div ref={categoryStickyRef} className="customer-category-sticky">
+                <div className="customer-category-row">
+                  <div
+                    ref={categoryScrollRef}
+                    onMouseDown={handleCategoryMouseDown}
+                    onMouseLeave={handleCategoryMouseLeave}
+                    onMouseUp={handleCategoryMouseUp}
+                    onMouseMove={handleCategoryMouseMove}
+                    className="customer-category-scroll"
+                    role="tablist"
+                    aria-label="Filter dishes by category"
+                  >
+                    {combinedCategories.map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        role="tab"
+                        aria-selected={category === cat}
+                        onClick={() => {
+                          if (isDraggingRef.current) return;
+                          setCategory(cat);
+                        }}
+                        className={`customer-category-tab${category === cat ? ' is-active' : ''}`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                  {categoryCanScroll && (
+                    <div className="customer-category-arrows" aria-label="Scroll categories">
+                      <button type="button" onClick={() => scrollCategoriesBy(-1)} aria-label="Scroll categories left" className="icon-btn"><ChevronLeft aria-hidden="true" /></button>
+                      <button type="button" onClick={() => scrollCategoriesBy(1)} aria-label="Scroll categories right" className="icon-btn"><ChevronRight aria-hidden="true" /></button>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* FOOD PRODUCTS GRID — Premium mobile-first layout with uniform card heights */}
               {isMenuLoading && menu.length === 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                <div className="customer-food-grid">
                   {[1, 2, 3, 4, 5, 6].map((i) => (
-                    <div key={i} className="bg-white dark:bg-[#2A2A2A] rounded-2xl p-4 border border-[#E7E5E4] dark:border-[#404040] animate-pulse space-y-3">
-                      <div className="w-full h-36 bg-stone-200 dark:bg-stone-700 rounded-xl" />
-                      <div className="h-4 bg-stone-200 dark:bg-stone-700 rounded w-3/4" />
-                      <div className="h-3 bg-stone-200 dark:bg-stone-700 rounded w-1/2" />
+                    <div key={i} className="customer-food-card-skeleton">
+                      <span className="skeleton customer-food-card-skeleton__image" />
+                      <span className="skeleton customer-food-card-skeleton__title" />
+                      <span className="skeleton customer-food-card-skeleton__description" />
+                      <span className="skeleton customer-food-card-skeleton__price" />
                     </div>
                   ))}
                 </div>
+              ) : isMenuError && menu.length === 0 ? (
+                <div className="customer-menu-error" role="alert">
+                  <span className="customer-menu-error__icon" aria-hidden="true"><AlertCircle /></span>
+                  <p>We couldn’t load the menu right now.</p>
+                  <button type="button" onClick={() => refetchMenu()}>
+                    <RotateCcw aria-hidden="true" />
+                    <span>Try again</span>
+                  </button>
+                </div>
               ) : filteredGrouped.length === 0 ? (
-                <div className="py-16 text-center text-xs font-bold text-[#78716C] bg-white dark:bg-[#2A2A2A] border border-[#E7E5E4] dark:border-[#404040] rounded-3xl p-8 shadow-xs">
-                  <div className="text-3xl mb-3">🍽️</div>
-                  <p className="text-sm font-extrabold text-[#171717] dark:text-white">No dishes found</p>
-                  <p className="text-xs text-[#78716C] dark:text-[#A8A29E] mt-1">Try a different category or search term.</p>
+                <div className="customer-empty-results">
+                  <span className="customer-empty-results__icon" aria-hidden="true"><Search /></span>
+                  <p className="customer-empty-results__title">
+                    No dishes found for ‘{searchQuery || category}’
+                  </p>
+                  <p className="customer-empty-results__hint">Try another search or choose a different category.</p>
+                  {searchQuery && (
+                    <button type="button" onClick={() => setSearchQuery('')} className="customer-empty-results__clear">
+                      Clear search
+                    </button>
+                  )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 items-start">
+                <div className="customer-food-grid">
                   {filteredGrouped.map(({ groupKey, variants }, imageIndex) => {
                     const isExpanded = expandedGroup === groupKey;
                     const selectedVariant = pendingVariant[groupKey] || variants[0];
@@ -1971,22 +3321,37 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                     const inCartQty = variants.reduce((sum, v) => sum + (cart[v.id]?.quantity || 0), 0);
                     const isOutOfStock = variants.every((v) => v.stock <= 0);
                     const isSelectedOutOfStock = selectedVariant.stock <= 0;
+                    const startingPrice = Math.min(...variants.map((variant) => Number(variant.price) || 0));
+                    const toggleCard = (event) => {
+                      if (isOutOfStock) return;
+                      const willOpen = !isExpanded;
+                      if (willOpen) expandedScrollTargetRef.current = event.currentTarget.closest('.customer-food-card');
+                      setExpandedGroup(willOpen ? groupKey : null);
+                    };
 
                     return (
-                      <div
+                      <article
                         key={groupKey}
-                        className={`bg-white dark:bg-[#2A2A2A] overflow-hidden flex transition-all duration-300 group ${
-                          isExpanded
-                            ? 'flex-col rounded-2xl border-2 border-[#E85D2A] shadow-xl ring-4 ring-[#E85D2A]/8'
-                            : 'sm:flex-col flex-row rounded-2xl border border-[#E7E5E4] dark:border-[#404040] hover:border-[#E85D2A]/40 hover:shadow-lg hover:-translate-y-0.5'
-                        } ${isOutOfStock ? 'opacity-60' : ''}`}
+                        data-menu-item-ids={variants.map((variant) => variant.id).join(',')}
+                        aria-disabled={isOutOfStock ? 'true' : undefined}
+                        aria-expanded={!isOutOfStock ? isExpanded : undefined}
+                        role="button"
+                        tabIndex={isOutOfStock ? -1 : 0}
+                        onClick={(event) => {
+                          if (isOutOfStock || event.target.closest('button')) return;
+                          toggleCard(event);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget || isOutOfStock) return;
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            toggleCard(event);
+                          }
+                        }}
+                        className={`customer-food-card${isExpanded ? ' is-expanded' : ''}${isOutOfStock ? ' is-sold-out' : ''}${inCartQty > 0 ? ' is-in-cart' : ''}`}
                       >
-                        {/* Food Image — fixed square on mobile row, fixed ratio on tablet/desktop */}
-                        <div className={`relative overflow-hidden bg-[#FAF9F7] shrink-0 ${
-                          isExpanded
-                            ? 'aspect-[16/9] w-full'
-                            : 'w-32 h-32 sm:w-full sm:h-44 rounded-l-2xl sm:rounded-t-2xl sm:rounded-bl-none'
-                        }`}>
+                        <div className="customer-food-card__top">
+                        <div className="customer-food-card__media">
                           <CustomerMenuImage
                             src={getItemImage(selectedVariant)}
                             alt={groupKey}
@@ -1996,156 +3361,186 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                               e.target.src = 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=700&auto=format&fit=crop&q=80';
                             }}
                           />
-                          {/* Gradient overlay */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-70" />
-                          {/* Category Badge */}
-                          <div className="absolute top-2 left-2 bg-black/55 backdrop-blur-sm text-white text-[9px] sm:text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide">
-                            {selectedVariant.category}
-                          </div>
-                          {/* Prep time */}
-                          {selectedVariant.prepTime && (
-                            <div className="absolute top-2 right-2 bg-white/95 text-[#171717] text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 shadow-sm">
-                              <Clock className="w-2.5 h-2.5 text-[#E85D2A]" />
-                              <span>{selectedVariant.prepTime}m</span>
+                          {selectedVariant.category && (
+                            <div className={`customer-food-card__overlay-zone customer-food-card__overlay-zone--top-left${inCartQty > 0 ? ' has-in-cart' : ''}`}>
+                              <span className="customer-food-card__category">
+                                <span className="customer-food-card__category-label">{selectedVariant.category}</span>
+                              </span>
                             </div>
                           )}
-                          {/* In cart badge */}
-                          {inCartQty > 0 && !isExpanded && (
-                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-2 bg-[#E85D2A] text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-md whitespace-nowrap">
-                              {inCartQty} in cart
+                          {inCartQty > 0 && (
+                            <div className="customer-food-card__overlay-zone customer-food-card__overlay-zone--top-right">
+                              <span key={inCartQty} className="customer-food-card__in-cart" role="status" aria-label={`${inCartQty} in cart`}>
+                                <span className="customer-food-card__in-cart-label">{inCartQty} in cart</span>
+                                <span className="customer-food-card__in-cart-count" aria-hidden="true">{inCartQty}</span>
+                              </span>
                             </div>
+                          )}
+                          {selectedVariant.prepTime && (
+                            <div className="customer-food-card__overlay-zone customer-food-card__overlay-zone--bottom-left">
+                              <span className="customer-food-card__prep glass">
+                                <Clock aria-hidden="true" />
+                                <span>{selectedVariant.prepTime}m</span>
+                              </span>
+                            </div>
+                          )}
+                          {isOutOfStock && (
+                            <span className="customer-food-card__sold-out glass">Sold Out</span>
                           )}
                         </div>
 
-                        {/* Card Body */}
-                        <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between min-w-0">
-                          <div className="flex-1">
-                            <h3 className="font-extrabold text-sm text-[#171717] dark:text-white group-hover:text-[#E85D2A] transition-colors leading-snug line-clamp-2">
+                        <div className="customer-food-card__body">
+                          <div className="customer-food-card__copy">
+                            <h3 className="customer-food-card__title">
                               {groupKey}
                             </h3>
-                            {!isExpanded && (
-                              <p className="text-[10px] sm:text-[11px] text-[#78716C] dark:text-[#A8A29E] mt-1 line-clamp-2 leading-relaxed">
-                                {selectedVariant.description || 'Freshly prepared to order.'}
-                              </p>
-                            )}
+                            <p className="customer-food-card__description">
+                              {selectedVariant.description || 'Freshly prepared to order.'}
+                            </p>
                           </div>
 
-                          {/* ── COLLAPSED STATE ── */}
-                          {!isExpanded && (
-                            <div className="flex items-end justify-between mt-3 pt-2.5 border-t border-[#F5F5F4] dark:border-[#333]">
-                              <div>
-                                <span className="text-[10px] text-[#78716C] dark:text-[#A8A29E] font-semibold block">
-                                  {variants.length > 1 ? variants.map((v) => v.unit).join(' / ') : (selectedVariant.unit || '')}
+                            <div className="customer-food-card__summary">
+                              <div className="customer-food-card__price-block">
+                                <span className="customer-food-card__unit">
+                                  {variants.length > 1 ? 'Multiple sizes' : selectedVariant.unit || ''}
                                 </span>
-                                <span className="text-base font-black text-[#E85D2A] leading-none">
-                                  Rs. {selectedVariant.price}
+                                <span className="customer-food-card__price">
+                                  {variants.length > 1 && <span>From</span>}
+                                  <span>Rs.</span>
+                                  <strong className="price-type">{variants.length > 1 ? startingPrice.toLocaleString() : Number(selectedVariant.price).toLocaleString()}</strong>
                                 </span>
-                                {variants.length > 1 && (
-                                  <span className="text-[9px] text-[#E85D2A] font-bold block mt-0.5">{variants.length} sizes ▾</span>
-                                )}
                               </div>
                               {isOutOfStock ? (
-                                <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded-xl border border-rose-100">Sold Out</span>
+                                <span className="customer-food-card__unavailable" aria-disabled="true">Unavailable</span>
+                              ) : variants.length > 1 ? (
+                                <button
+                                  type="button"
+                                  onClick={(event) => { event.stopPropagation(); toggleCard(event); }}
+                                  className="customer-food-card__customize"
+                                  aria-label={`Choose size for ${groupKey}`}
+                                >
+                                  Choose size <ChevronDown aria-hidden="true" />
+                                </button>
                               ) : (
                                 <button
-                                  onClick={() => setExpandedGroup(groupKey)}
-                                  className="w-9 h-9 sm:w-auto sm:h-auto sm:px-3.5 sm:py-2 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-90 text-white font-extrabold text-[11px] rounded-xl transition-all shadow-md shadow-[#E85D2A]/20 cursor-pointer flex items-center justify-center gap-1"
+                                  type="button"
+                                  onClick={(event) => { event.stopPropagation(); toggleCard(event); }}
+                                  className="customer-food-card__add icon-btn"
+                                  aria-label={`Open options for ${groupKey}`}
                                 >
-                                  <CartIcon className="w-3.5 h-3.5" />
-                                  <span className="hidden sm:inline">{inCartQty > 0 ? 'More' : 'Add'}</span>
+                                  <Plus aria-hidden="true" />
                                 </button>
                               )}
                             </div>
-                          )}
+                        </div>
+                        </div>
 
-                          {/* ── EXPANDED STATE ── */}
-                          {isExpanded && (
-                            <div className="space-y-3 mt-3 pt-3 border-t border-[#F5F5F4]">
-                              {/* Variant selector */}
+                        <div className={`customer-food-card__expand-grid${isExpanded ? ' is-expanded' : ''}`} aria-hidden={!isExpanded} inert={!isExpanded} onClick={(event) => event.stopPropagation()}>
+                            <div className="customer-food-card__expand-content">
+                              <div className="customer-food-card__expand-inner">
+                              <div className="customer-food-card__section-heading">
+                                <span>{variants.length > 1 ? 'Choose size' : 'Customize item'}</span>
+                                <button
+                                  type="button"
+                                  onClick={(event) => { event.stopPropagation(); setExpandedGroup(null); }}
+                                  aria-label={`Collapse ${groupKey} options`}
+                                 className="icon-btn icon-btn--32">
+                                  <ChevronDown aria-hidden="true" />
+                                </button>
+                              </div>
                               {variants.length > 1 && (
-                                <div>
-                                  <p className="text-[10px] font-extrabold text-[#78716C] dark:text-[#A8A29E] uppercase tracking-wider mb-2">Choose Portion</p>
-                                  <div className="grid grid-cols-2 gap-1.5">
-                                    {variants.map((v) => (
-                                      <button
-                                        key={v.id}
-                                        onClick={() => setPendingVariant((prev) => ({ ...prev, [groupKey]: v }))}
-                                        className={`px-2.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border-2 flex flex-col items-start gap-0.5 ${
-                                          selectedVariant.id === v.id
-                                            ? 'bg-[#E85D2A] text-white border-[#E85D2A] shadow-md'
-                                            : 'bg-[#FAF9F7] dark:bg-[#333] text-[#171717] dark:text-[#E5E5E5] border-[#E7E5E4] dark:border-[#404040] hover:border-[#E85D2A]/50'
-                                        }`}
-                                      >
-                                        <span className="text-[11px]">{v.unit}</span>
-                                        <span className={`text-[11px] font-black ${selectedVariant.id === v.id ? 'text-orange-200' : 'text-[#E85D2A]'}`}>
-                                          Rs. {v.price}
-                                        </span>
-                                      </button>
-                                    ))}
+                                <div className="customer-food-card__variant-section">
+                                  <div className="customer-food-card__variant-scroll">
+                                    <div
+                                      className="customer-food-card__variant-track"
+                                      style={{ '--variant-count': variants.length }}
+                                    >
+                                      {variants.map((variant) => {
+                                        const isSelected = selectedVariant.id === variant.id;
+                                        return (
+                                          <button
+                                            key={variant.id}
+                                            type="button"
+                                            aria-pressed={isSelected}
+                                            onClick={(event) => { event.stopPropagation(); setPendingVariant((prev) => ({ ...prev, [groupKey]: variant })); }}
+                                            className={`customer-food-card__variant${isSelected ? ' is-selected' : ''}`}
+                                          >
+                                            <span className="customer-food-card__variant-label">{variant.unit || 'Standard'}</span>
+                                            <small>Rs. {Number(variant.price).toLocaleString('en-PK', { maximumFractionDigits: 0 })}</small>
+                                            {isSelected && <Check className="customer-food-card__variant-check" aria-hidden="true" />}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
                                 </div>
                               )}
 
-                              {/* Single variant price pill */}
                               {variants.length === 1 && (
-                                <div className="flex justify-between items-center px-3 py-2 bg-[#FAF9F7] dark:bg-[#333] rounded-xl border border-[#E7E5E4] dark:border-[#404040]">
-                                  <span className="text-xs font-bold text-[#171717] dark:text-[#E5E5E5]">{selectedVariant.unit}</span>
-                                  <span className="text-sm font-black text-[#E85D2A]">Rs. {selectedVariant.price}</span>
+                                <div className="customer-food-card__single-price">
+                                  <span>{selectedVariant.unit}</span>
+                                  <span className="customer-food-card__price">
+                                    <span>Rs.</span>
+                                    <strong className="price-type">{Number(selectedVariant.price).toLocaleString('en-PK', { maximumFractionDigits: 0 })}</strong>
+                                  </span>
                                 </div>
                               )}
 
-                              {/* Quantity stepper — keyed by selectedVariant.id for independent per-variant qty */}
-                              <div>
-                                <p className="text-[10px] font-extrabold text-[#78716C] dark:text-[#A8A29E] uppercase tracking-wider mb-2">
-                                  Quantity{variants.length > 1 ? ` — ${selectedVariant.unit}` : ''}
-                                </p>
-                                <div className="flex items-center gap-0 bg-[#FAF9F7] dark:bg-[#333] border border-[#E7E5E4] dark:border-[#404040] rounded-xl overflow-hidden w-fit">
+                              <div className="customer-food-card__stepper-block">
+                                <span className="customer-food-card__stepper-label">Quantity</span>
+                                <div className="customer-quantity-stepper" role="group" aria-label={`Quantity ${currentVariantQty}`}>
                                   <button
-                                    onClick={() => setPendingQty((prev) => ({ ...prev, [selectedVariant.id]: Math.max(1, (prev[selectedVariant.id] || 1) - 1) }))}
+                                    type="button"
+                                    onClick={(event) => { event.stopPropagation(); setPendingQty((prev) => ({ ...prev, [selectedVariant.id]: Math.max(1, (prev[selectedVariant.id] || 1) - 1) })); }}
                                     disabled={currentVariantQty <= 1}
-                                    className="w-11 h-11 flex items-center justify-center text-[#78716C] dark:text-[#A8A29E] hover:bg-[#E7E5E4] dark:hover:bg-[#404040] disabled:opacity-35 disabled:cursor-not-allowed transition-all cursor-pointer border-r border-[#E7E5E4] dark:border-[#404040]"
+                                    aria-label={currentVariantQty <= 1 ? 'Minimum quantity is one' : 'Decrease quantity'}
                                   >
-                                    <Minus className="w-4 h-4" />
+                                    {currentVariantQty <= 1 ? <Trash2 aria-hidden="true" /> : <Minus aria-hidden="true" />}
                                   </button>
-                                  <span className="text-base font-black text-[#171717] dark:text-white w-14 text-center select-none">{currentVariantQty}</span>
+                                  <span key={currentVariantQty} className="customer-quantity-stepper__value price-type" aria-live="polite">
+                                    {currentVariantQty}
+                                  </span>
                                   <button
-                                    onClick={() => setPendingQty((prev) => ({ ...prev, [selectedVariant.id]: (prev[selectedVariant.id] || 1) + 1 }))}
-                                    className="w-11 h-11 flex items-center justify-center text-[#78716C] dark:text-[#A8A29E] hover:bg-[#E7E5E4] dark:hover:bg-[#404040] transition-all cursor-pointer border-l border-[#E7E5E4] dark:border-[#404040]"
-                                  >
-                                    <Plus className="w-4 h-4" />
+                                    type="button"
+                                    aria-label="Increase quantity"
+                                    onClick={(event) => { event.stopPropagation(); setPendingQty((prev) => ({ ...prev, [selectedVariant.id]: (prev[selectedVariant.id] || 1) + 1 })); }}
+                                    className="icon-btn icon-btn--36">
+                                    <Plus aria-hidden="true" />
                                   </button>
                                 </div>
                               </div>
 
-                              {/* Price preview */}
-                              <div className="bg-[#FAF9F7] dark:bg-[#262626] border border-[#E7E5E4] dark:border-[#333] p-2.5 rounded-xl flex items-center justify-between">
-                                <span className="text-[11px] font-extrabold text-[#78716C] dark:text-[#A8A29E]">Subtotal:</span>
-                                <span className="text-sm font-black text-[#E85D2A]">
-                                  Rs. {(selectedVariant.price * currentVariantQty).toLocaleString()}
-                                </span>
+                              <div className="customer-food-card__subtotal">
+                                <span>{currentVariantQty} × {selectedVariant.unit || groupKey} =</span>
+                                <strong className="price-type">Rs. {(selectedVariant.price * currentVariantQty).toLocaleString('en-PK', { maximumFractionDigits: 0 })}</strong>
                               </div>
 
-                              {/* Action buttons */}
-                              <div className="flex gap-2 pt-0.5">
+                              <div className="customer-food-card__actions">
                                 <button
-                                  onClick={() => setExpandedGroup(null)}
-                                  className="flex-1 py-3 bg-[#FAF9F7] dark:bg-[#333] hover:bg-[#E7E5E4] dark:hover:bg-[#404040] text-[#78716C] dark:text-[#A8A29E] font-bold text-xs rounded-xl transition-all cursor-pointer border border-[#E7E5E4] dark:border-[#404040]"
+                                  type="button"
+                                  onClick={(event) => { event.stopPropagation(); setExpandedGroup(null); }}
+                                  className="customer-food-card__cancel"
                                 >
                                   Cancel
                                 </button>
                                 <button
+                                  type="button"
                                   disabled={isSelectedOutOfStock}
-                                  onClick={() => handleAddWithVariantAndQty(selectedVariant, groupKey)}
-                                  className="flex-[2] py-3 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs rounded-xl transition-all shadow-lg shadow-[#E85D2A]/20 cursor-pointer flex items-center justify-center gap-1.5"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    animateCartFlight(event.currentTarget);
+                                    handleAddWithVariantAndQty(selectedVariant, groupKey);
+                                  }}
+                                  className="customer-food-card__confirm"
                                 >
-                                  <CartIcon className="w-3.5 h-3.5" />
-                                  <span>Add to Cart</span>
+                                  <CartIcon aria-hidden="true" />
+                                  <span>{isSelectedOutOfStock ? 'Unavailable' : 'Add to Cart'}</span>
                                 </button>
                               </div>
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      </div>
+                          </div>
+                      </article>
                     );
                   })}
                 </div>
@@ -2153,41 +3548,76 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             </div>
           </>
         )}
+        </>}
       </main>
 
-      {/* STICKY CART FOOTER BAR — Ultra Clean & Compact */}
-      {totalCartQuantity > 0 && isSessionVerified && (
-        <div className="fixed inset-x-0 bottom-0 z-40 max-w-lg sm:max-w-xl mx-auto px-3 sm:px-4 pt-3 pb-[max(env(safe-area-inset-bottom),12px)] w-full animate-slide-up pointer-events-none">
-          <div className="bg-[#171717]/95 dark:bg-[#1E1E1E]/95 text-white p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl shadow-[0_12px_40px_rgba(0,0,0,0.32)] flex items-center justify-between border border-white/10 backdrop-blur-xl ring-1 ring-black/5 gap-2 pointer-events-auto">
-            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-              {/* Quantity Circle */}
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#E85D2A] text-white flex items-center justify-center font-black text-xs sm:text-sm shadow-md shadow-[#E85D2A]/30 shrink-0">
-                {totalCartQuantity}
-              </div>
-              {/* Subtotal Label + Price in 1 Line */}
-              <div className="min-w-0">
-                <span className="text-[9px] sm:text-[11px] font-bold text-[#A8A29E] block uppercase tracking-wider whitespace-nowrap leading-none mb-1">
-                  Cart Subtotal
-                </span>
-                <span className="text-[13px] sm:text-base font-black text-white font-mono whitespace-nowrap leading-none flex items-baseline gap-1">
-                  <span className="text-[#E85D2A] text-[10px] sm:text-xs font-bold font-sans">Rs.</span>
-                  <span>{totalCartPrice.toFixed(2)}</span>
-                </span>
-              </div>
-            </div>
+      {/* Sticky cart summary */}
+      {totalCartQuantity > 0 && isSessionVerified && sessionInitializationDone && !requiresTableQr && (
+        <section className="customer-cart-dock" role="region" aria-label="Cart summary">
+          <button
+            type="button"
+            onClick={handleOpenCustomerCart}
+            className="customer-cart-dock__button glass"
+            aria-label={`Checkout, ${totalCartQuantity} ${totalCartQuantity === 1 ? 'item' : 'items'}, subtotal Rs. ${totalCartPrice.toFixed(2)}`}
+          >
+            <span className="customer-cart-dock__order">
+              <span className={`customer-cart-dock__count${totalCartQuantity < 10 ? ' is-single' : ''}`} key={totalCartQuantity} aria-hidden="true">
+                {totalCartQuantity > 99 ? '99+' : totalCartQuantity}
+              </span>
+              <span className="customer-cart-dock__order-copy">
+                <span className="customer-cart-dock__label">Your Order</span>
+                <span className="customer-cart-dock__items">{totalCartQuantity} {totalCartQuantity === 1 ? 'item' : 'items'}</span>
+              </span>
+            </span>
 
-            {/* Action Button */}
-            <button
-              onClick={() => navigate('/customer/cart')}
-              className="px-3.5 py-2.5 sm:px-5 sm:py-3 bg-[#E85D2A] hover:bg-[#D94E1B] active:scale-95 text-white font-extrabold text-[11px] sm:text-sm rounded-xl sm:rounded-2xl shadow-lg shadow-[#E85D2A]/25 transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer"
-            >
-              <span className="sm:hidden">Checkout</span>
-              <span className="hidden sm:inline">View Cart &amp; Checkout</span>
-              <ArrowRight className="w-4 h-4 shrink-0" />
-            </button>
-          </div>
-        </div>
+            <span className="customer-cart-dock__subtotal" aria-hidden="true">
+              <span className="customer-cart-dock__subtotal-label">Subtotal</span>
+              <span className="customer-cart-dock__price" key={totalCartPrice}>
+                <span>Rs.</span>
+                <strong title={formatPrice(totalCartPrice)}>{formatCompactAmount(totalCartPrice)}</strong>
+              </span>
+            </span>
+
+            <span className="customer-cart-dock__checkout" aria-hidden="true">
+              <span>Checkout</span>
+              <span className="customer-cart-dock__mobile-total" title={formatPrice(totalCartPrice)}>· Rs. {formatCompactAmount(totalCartPrice)}</span>
+            </span>
+            <span className="customer-cart-dock__announcement" aria-live="polite" aria-atomic="true">
+              Your order has {totalCartQuantity} {totalCartQuantity === 1 ? 'item' : 'items'}. Subtotal Rs. {totalCartPrice.toFixed(2)}.
+            </span>
+          </button>
+        </section>
       )}
+
+      {showSignOutConfirm && (
+        <ModalShell
+          isOpen
+          onClose={() => setShowSignOutConfirm(false)}
+          labelledBy="customer-signout-title"
+          className="customer-modal customer-modal--logout"
+        >
+          <header className="customer-modal__header">
+            <span className="customer-modal__icon"><LogOut aria-hidden="true" /></span>
+            <div>
+              <h2 id="customer-signout-title">Sign out?</h2>
+              <p>Your cart and session will be cleared.</p>
+            </div>
+          </header>
+          <div className="customer-modal__actions customer-modal__actions--logout">
+            <button type="button" onClick={confirmCustomerLogout} className="customer-modal__button customer-modal__button--primary">Sign Out</button>
+            <button type="button" onClick={() => setShowSignOutConfirm(false)} className="customer-modal__button customer-modal__button--secondary">Cancel</button>
+          </div>
+        </ModalShell>
+      )}
+
+      <div className={`customer-signout-overlay${isSigningOut ? ' is-visible' : ''}`} aria-hidden={!isSigningOut} role={isSigningOut ? 'status' : undefined} aria-live={isSigningOut ? 'polite' : undefined} aria-label={isSigningOut ? 'Signing out' : undefined}>
+          <div className="customer-signout-overlay__content">
+            <span className="customer-signout-overlay__mark"><Utensils aria-hidden="true" /></span>
+            <strong>ZOVIKPOS</strong>
+            <span className="customer-signout-overlay__spinner" aria-hidden="true" />
+            <span className="customer-signout-overlay__label">Signing out…</span>
+          </div>
+      </div>
 
       {/* In-App QR Scanner Modal (Direct camera scan to switch tables or reconnect expired sessions) */}
       <InAppQRScanner
@@ -2198,57 +3628,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
       {/* PWA Install Guide Modal (When browser holds deferred prompt or on iOS / Chrome menu) */}
       {showInstallGuide && (
-        <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-[#1E1C1B] border border-gray-100 dark:border-zinc-800 rounded-3xl max-w-sm w-full p-6 space-y-5 text-center shadow-2xl relative">
-            <button
-              onClick={() => setShowInstallGuide(false)}
-              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto ring-8 ring-emerald-500/10">
-              <Download className="w-7 h-7" />
-            </div>
-
-            <div className="space-y-1.5">
-              <h3 className="text-lg font-black text-gray-900 dark:text-white">Install ZovikPOS App</h3>
-              <p className="text-xs text-gray-500 dark:text-zinc-400 leading-relaxed">
-                Install ZovikPOS on your phone for fullscreen dining and quick access.
-              </p>
-            </div>
-
-            {!window.isSecureContext && (
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-left text-xs leading-relaxed text-amber-700 dark:text-amber-200">
-                Direct install and camera scanning need the secure HTTPS customer website. This local HTTP address cannot install the app or access the live camera.
-              </div>
-            )}
-
-            {window.isSecureContext && (
-              <div className="bg-gray-50 dark:bg-zinc-900/60 rounded-2xl p-4 text-left space-y-3 text-xs text-gray-700 dark:text-zinc-300">
-                {isIosDevice ? (
-                  <>
-                    <div className="flex items-start gap-2.5"><span className="w-5 h-5 rounded-full bg-[#E85D2A] text-white flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">1</span><span>Tap <strong>Share</strong> in Safari.</span></div>
-                    <div className="flex items-start gap-2.5"><span className="w-5 h-5 rounded-full bg-[#E85D2A] text-white flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">2</span><span>Choose <strong>Add to Home Screen</strong>.</span></div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-start gap-2.5"><span className="w-5 h-5 rounded-full bg-[#E85D2A] text-white flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">1</span><span>Open the browser menu <strong>(⋮)</strong>.</span></div>
-                    <div className="flex items-start gap-2.5"><span className="w-5 h-5 rounded-full bg-[#E85D2A] text-white flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">2</span><span>Choose <strong>Install app</strong> or <strong>Add to Home Screen</strong>.</span></div>
-                  </>
-                )}
-                <p className="text-gray-500 dark:text-zinc-400">If the browser supports direct install, the Install button opens it immediately.</p>
-              </div>
-            )}
-
-            <button
-              onClick={() => setShowInstallGuide(false)}
-              className="w-full py-3 bg-[#E85D2A] hover:bg-[#D94E1B] text-white font-black text-xs rounded-xl shadow-lg transition-all cursor-pointer"
-            >
-              Got It, Thanks!
-            </button>
-          </div>
-        </div>
+        <CustomerInstallGuideModal isIosDevice={isIosDevice} onClose={() => setShowInstallGuide(false)} hasNativePrompt={Boolean(deferredInstallPrompt)} onInstall={handleInstallClick} />
       )}
     </div>
   );

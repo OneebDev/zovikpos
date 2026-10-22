@@ -259,7 +259,7 @@ const DateRangeFilterBar = ({
               if (onCustomRangeChange) onCustomRangeChange('', '');
               setShowPicker(false);
             }}
-            className="shrink-0 rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] p-1.5 text-[var(--text-muted)] transition-colors hover:border-rose-500/30 hover:text-rose-400 cursor-pointer"
+            className="shrink-0 rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] p-1.5 text-[var(--text-muted)] transition-colors hover:border-rose-500/30 hover:text-rose-400 cursor-pointer icon-btn"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -277,14 +277,14 @@ const DateRangeFilterBar = ({
                 <button
                   type="button"
                   onClick={prevMonth}
-                  className="p-1 rounded-lg hover:bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                  className="p-1 rounded-lg hover:bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
                   onClick={nextMonth}
-                  className="p-1 rounded-lg hover:bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                  className="p-1 rounded-lg hover:bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>

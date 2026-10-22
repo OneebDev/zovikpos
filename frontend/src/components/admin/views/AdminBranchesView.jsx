@@ -1,4 +1,4 @@
-import  { useState, useEffect, useCallback } from 'react';
+﻿import  { useState, useEffect, useCallback } from 'react';
 import {
   Building2,
   Plus,
@@ -70,7 +70,7 @@ const AdminBranchesView = ({ showToast, onBranchesChanged }) => {
   };
 
   const handleDeleteBranch = async (branch) => {
-    const confirmed = window.confirm(`Remove “${branch.name}”? Branches with linked orders, staff, or inventory will be safely deactivated instead of permanently deleted.`);
+    const confirmed = window.confirm(`Remove â€œ${branch.name}â€? Branches with linked orders, staff, or inventory will be safely deactivated instead of permanently deleted.`);
     if (!confirmed) return;
     setDeletingBranchId(branch.id);
     try {
@@ -88,7 +88,7 @@ const AdminBranchesView = ({ showToast, onBranchesChanged }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 glass-card p-6">
         <div>
           <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">Branch & Campus Outlet Management</h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">Manage multi-outlet canteen locations, addresses, and table allocations.</p>
@@ -127,10 +127,10 @@ const AdminBranchesView = ({ showToast, onBranchesChanged }) => {
                   <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold border ${b.isActive === false ? 'bg-slate-500/10 text-slate-400 border-slate-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'}`}>
                     {b.isActive === false ? 'INACTIVE' : 'ACTIVE'}
                   </span>
-                  <button type="button" onClick={() => openEditBranch(b)} aria-label={`Edit ${b.name}`} title="Edit branch" className="rounded-lg border border-[var(--border-color)] p-1.5 text-[var(--text-muted)] transition hover:border-orange-400/50 hover:text-orange-500">
+                  <button type="button" onClick={() => openEditBranch(b)} aria-label={`Edit ${b.name}`} title="Edit branch" className="rounded-lg border border-[var(--border-color)] p-1.5 text-[var(--text-muted)] transition hover:border-orange-400/50 hover:text-orange-500 icon-btn">
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
-                  <button type="button" onClick={() => handleDeleteBranch(b)} disabled={deletingBranchId === b.id} aria-label={`Remove ${b.name}`} title="Remove branch" className="rounded-lg border border-rose-500/20 p-1.5 text-rose-400 transition hover:bg-rose-500/10 disabled:opacity-50">
+                  <button type="button" onClick={() => handleDeleteBranch(b)} disabled={deletingBranchId === b.id} aria-label={`Remove ${b.name}`} title="Remove branch" className="rounded-lg border border-rose-500/20 p-1.5 text-rose-400 transition hover:bg-rose-500/10 disabled:opacity-50 icon-btn">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -180,13 +180,13 @@ const AdminBranchesView = ({ showToast, onBranchesChanged }) => {
 
       {/* Add Branch Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[var(--glass-bg-subtle)] backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-6 shadow-2xl animate-scale-up">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-4">
               <h3 className="text-base font-extrabold text-[var(--text-main)] font-display">{editingBranch ? 'Edit Branch Details' : 'Register New Branch'}</h3>
               <button
                 onClick={() => { setShowAddModal(false); setEditingBranch(null); setFormData({ name: '', address: '', phone: '' }); }}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -237,7 +237,7 @@ const AdminBranchesView = ({ showToast, onBranchesChanged }) => {
                   disabled={saving}
                   className="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold transition-all shadow-md cursor-pointer disabled:opacity-60"
                 >
-                  {saving ? 'Saving…' : editingBranch ? 'Save Changes' : 'Register Branch'}
+                  {saving ? 'Savingâ€¦' : editingBranch ? 'Save Changes' : 'Register Branch'}
                 </button>
               </div>
             </form>
@@ -249,3 +249,5 @@ const AdminBranchesView = ({ showToast, onBranchesChanged }) => {
 };
 
 export default AdminBranchesView;
+
+

@@ -10,7 +10,7 @@ const fetchMenuItems = async () => {
   return response.data.items || [];
 };
 
-export const useCustomerMenu = () => {
+export const useCustomerMenu = ({ enabled = true } = {}) => {
   const queryClient = useQueryClient();
 
   const {
@@ -26,6 +26,7 @@ export const useCustomerMenu = () => {
     gcTime: 1000 * 60 * 60, // 1 hour
     refetchOnMount: false,
     refetchOnWindowFocus: false,
+    enabled,
   });
 
   useEffect(() => {

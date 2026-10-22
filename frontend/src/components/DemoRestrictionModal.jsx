@@ -37,7 +37,7 @@ const DemoRestrictionModal = ({ onLogout }) => {
         {/* Close button */}
         <button
           onClick={() => setIsOpen(false)}
-          className="absolute top-4 right-4 p-2 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+          className="absolute top-4 right-4 p-2 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
         >
           <X className="w-5 h-5" />
         </button>

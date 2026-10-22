@@ -1,4 +1,4 @@
-import  { useState, useEffect } from 'react';
+import  { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { resolveBackendUrl } from '../../services/api';
 import { connectSocket, getSocket } from '../../services/socket';
@@ -6,20 +6,25 @@ import { getETAPrediction } from '../../services/etaService';
 import { OtpInputBoxes } from '../../components/CustomerDashboard';
 import PhoneInput from '../../components/PhoneInput';
 import { paymentMethodLabel } from '../../utils/paymentMethods';
+import { resolveTableLabel } from '../../utils/customerTableLabel';
+import { formatPrice } from '../../utils/formatPrice';
+import Button from '../../components/ui/Button';
+import Skeleton from '../../components/ui/Skeleton';
+import ModalShell from '../../components/ui/ModalShell';
+import './CustomerCartPage.css';
 import {
   ArrowLeft,
   ShoppingBag,
   Trash2,
-  Bot,
   AlertCircle,
   CheckCircle2,
   Banknote,
   Check,
+  Wallet,
+  X,
   RotateCcw,
-  ChevronRight,
-  Smartphone,
+  CreditCard,
   Lock,
-  QrCode,
   Sparkles,
 } from 'lucide-react';
 
@@ -29,8 +34,15 @@ const CustomerCartPage = ({ user }) => {
   // ─── Online Mobile Wallet Payment Modal state ────────────────────────────
   const [showOnlinePaymentModal, setShowOnlinePaymentModal] = useState(false);
   const [walletProvider, setWalletProvider] = useState('Easypaisa');
-  const [walletPhone, setWalletPhone] = useState('0300-1234567');
+  const [walletPhone, setWalletPhone] = useState('');
   const [authorizingPayment, setAuthorizingPayment] = useState(false);
+  const closeWalletModal = useCallback(() => setShowOnlinePaymentModal(false), []);
+  const walletPhoneDigits = (walletPhone || '')
+    .replace(/[\s-]/g, '')
+    .replace(/^\+?92/, '')
+    .replace(/^0/, '')
+    .replace(/\D/g, '');
+  const isWalletPhoneValid = walletPhoneDigits.length === 10;
 
   // ─── Persistent cart state ────────────────────────────────────────────────
   const [cart, setCart] = useState(() => {
@@ -42,13 +54,28 @@ const CustomerCartPage = ({ user }) => {
     }
   });
 
-  const [tableId] = useState(() => localStorage.getItem('customer_tableId') || 'Dining Table');
-  const [sessionId] = useState(() => localStorage.getItem('customer_sessionId') || '');
+  const [tableId] = useState(() => localStorage.getItem('customer_tableId') || sessionStorage.getItem('customer_tableId') || '');
+  const displayTableLabel = resolveTableLabel({
+    sessionLabel: tableId,
+    qrToken: localStorage.getItem('customer_tableToken'),
+    lastValidLabel: tableId,
+    forCustomer: true,
+  });
+  const [sessionId] = useState(() => localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId') || '');
+  // Render the saved cart immediately when it has a session ID; validate in the background.
+  const [tableSessionReady, setTableSessionReady] = useState(() => Boolean(sessionId));
+  const [sessionCheckComplete, setSessionCheckComplete] = useState(false);
+  const [tableSessionError, setTableSessionError] = useState('');
+  const [sessionCheckAttempt, setSessionCheckAttempt] = useState(0);
   const [error, setError] = useState('');
+  const cartEtaKey = JSON.stringify(Object.values(cart).map(item => [item.id, item.quantity, item.unit || '', item.price]));
 
   // ─── ETA / Kitchen Load ───────────────────────────────────────────────────
   const [etaInfo, setEtaInfo] = useState(null);
-  const [, setEtaLoading] = useState(false);
+  const [etaLoading, setEtaLoading] = useState(false);
+  const [etaResolvedCartKey, setEtaResolvedCartKey] = useState('');
+  const [etaFailedCartKey, setEtaFailedCartKey] = useState('');
+  const [showAllCartItems, setShowAllCartItems] = useState(false);
 
   // ─── Safely fetch stored customer identity (ignoring staff accounts like Demo Kitchen) ───
   const getStoredCustomerUser = () => {
@@ -90,6 +117,46 @@ const CustomerCartPage = ({ user }) => {
   const [otpLoading, setOtpLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
 
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      if (active) setTableSessionError('The table service did not respond. Check your connection and retry.');
+      if (active) setSessionCheckComplete(true);
+    }, 8000);
+    const requirePhysicalSession = async () => {
+      if (!sessionId) {
+        window.clearTimeout(timeout);
+        navigate('/customer', { replace: true });
+        return;
+      }
+      try {
+        const response = await api.get(`/sessions/${sessionId}`, { signal: controller.signal });
+        if (!active || timedOut) return;
+        const session = response.data?.session;
+        if (!session || session.status !== 'ACTIVE' || !session.tableId || !session.table?.isActive) {
+          setTableSessionError('Your table session needs to reconnect. Your cart has been kept.');
+          setSessionCheckComplete(true);
+          return;
+        }
+        setTableSessionError('');
+        setTableSessionReady(true);
+        setSessionCheckComplete(true);
+      } catch (sessionError) {
+        if (!active || timedOut || sessionError.name === 'CanceledError' || sessionError.name === 'AbortError') return;
+        setTableSessionError(sessionError.response?.data?.error || 'Could not verify your table session. Your cart has been kept.');
+        setSessionCheckComplete(true);
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    };
+    requirePhysicalSession();
+    return () => { active = false; controller.abort(); window.clearTimeout(timeout); };
+  }, [sessionId, navigate, sessionCheckAttempt]);
+
   // ─── Payment / checkout ───────────────────────────────────────────────────
   const [paymentMethod, setPaymentMethod] = useState(
     () => paymentMethodLabel(localStorage.getItem('customer_paymentMethod'))
@@ -98,6 +165,13 @@ const CustomerCartPage = ({ user }) => {
   const [placingOrder, setPlacingOrder] = useState(false);
   const [activeOrder, setActiveOrder] = useState(null);
   const [checkoutDone, setCheckoutDone] = useState(false);
+  const receiptTableLabel = resolveTableLabel({
+    tableLabel: activeOrder?.tableLabel,
+    tableNumber: activeOrder?.tableNumber,
+    table: activeOrder?.table,
+    sessionLabel: displayTableLabel,
+    forCustomer: true,
+  });
 
   // ─── Fetch payment availability settings ──────────────────────────────────
   useEffect(() => {
@@ -156,22 +230,66 @@ const CustomerCartPage = ({ user }) => {
     }
   }, [cooldown]);
 
-  // ─── Fetch ETA whenever cart changes ─────────────────────────────────────
+  // ─── Refresh ETA after cart changes; retry transient failures automatically ──
   useEffect(() => {
-    const itemsList = Object.values(cart).map(item => ({
-      menuItemId: item.id,
-      quantity: item.quantity,
-    }));
-    if (itemsList.length > 0) {
-      setEtaLoading(true);
-      getETAPrediction(itemsList)
-        .then(data => setEtaInfo(data))
-        .catch(err => console.error('ETA error:', err))
-        .finally(() => setEtaLoading(false));
-    } else {
+    const itemsList = JSON.parse(cartEtaKey).map(([menuItemId, quantity]) => ({ menuItemId, quantity }));
+    if (!itemsList.length) {
       setEtaInfo(null);
+      setEtaLoading(false);
+      setEtaResolvedCartKey('');
+      setEtaFailedCartKey('');
+      return undefined;
     }
-  }, [cart]);
+
+    let cancelled = false;
+    let retryTimer;
+    let timeout;
+    let requestController;
+    let attempt = 0;
+    setEtaLoading(true);
+    setEtaFailedCartKey('');
+
+    const fetchEstimate = () => {
+      if (cancelled) return;
+      requestController = new AbortController();
+      timeout = setTimeout(() => requestController?.abort(), 8000);
+      getETAPrediction(itemsList, { signal: requestController.signal })
+        .then(data => {
+          if (!cancelled && !requestController.signal.aborted) {
+            attempt = 0;
+            setEtaInfo(data);
+            setEtaResolvedCartKey(cartEtaKey);
+            setEtaFailedCartKey('');
+            setEtaLoading(false);
+          }
+        })
+        .catch(err => {
+          if (cancelled) return;
+          if (err?.name !== 'CanceledError' && err?.name !== 'AbortError') {
+            console.warn('ETA request failed; retrying automatically:', err?.message || err);
+          }
+          setEtaLoading(false);
+          setEtaFailedCartKey(cartEtaKey);
+          const retryDelays = [2000, 5000, 10000];
+          const delay = retryDelays[Math.min(attempt, retryDelays.length - 1)];
+          attempt += 1;
+          retryTimer = setTimeout(fetchEstimate, delay);
+        })
+        .finally(() => {
+          clearTimeout(timeout);
+        });
+    };
+
+    const debounceTimer = setTimeout(fetchEstimate, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(debounceTimer);
+      clearTimeout(retryTimer);
+      clearTimeout(timeout);
+      requestController?.abort();
+    };
+  }, [cartEtaKey]);
 
   // ─── Real-time order update via socket ───────────────────────────────────
   useEffect(() => {
@@ -264,6 +382,9 @@ const CustomerCartPage = ({ user }) => {
 
   const getTotal = () => getSubtotal().toFixed(2);
   const totalQty = Object.values(cart).reduce((s, i) => s + i.quantity, 0);
+  const etaIsPending = totalQty > 0 && (etaLoading || (etaResolvedCartKey !== cartEtaKey && etaFailedCartKey !== cartEtaKey));
+  const cartItems = Object.values(cart);
+  const visibleCartItems = showAllCartItems || cartItems.length <= 4 ? cartItems : cartItems.slice(0, 3);
 
   const getItemImage = item => {
     if (item?.imageUrl && typeof item.imageUrl === 'string' && item.imageUrl.trim() !== '') {
@@ -416,6 +537,10 @@ const CustomerCartPage = ({ user }) => {
   const handlePlaceOrder = async () => {
     if (placingOrder || authorizingPayment) return;
     setError('');
+    if (!tableSessionReady || !sessionCheckComplete || tableSessionError) {
+      setError('Your table session is still being verified. Retry the session check before placing your order.');
+      return;
+    }
     if (!otpVerified) {
       setError('Please verify your email via OTP before placing an order.');
       return;
@@ -451,64 +576,83 @@ const CustomerCartPage = ({ user }) => {
     }, 1500);
   };
 
+  if (!tableSessionReady) {
+    return (
+      <div className="customer-cart-page customer-cart-page--checking-session" role="status" aria-live="polite">
+        {tableSessionError ? (
+          <div className="customer-cart-page__session-error" role="alert">
+            <AlertCircle aria-hidden="true" />
+            <p>{tableSessionError}</p>
+            <button type="button" onClick={() => setSessionCheckAttempt((attempt) => attempt + 1)}>
+              <RotateCcw aria-hidden="true" /> Retry
+            </button>
+            <button type="button" onClick={() => navigate('/customer')}>Back to menu</button>
+          </div>
+        ) : (
+          <>
+            <Skeleton className="customer-cart-page__session-skeleton" />
+            <p>Checking your table session…</p>
+          </>
+        )}
+      </div>
+    );
+  }
+
   // ─── If checkout is completed, render confirmation and track button ──────
   if (checkoutDone && activeOrder) {
     return (
-      <div className="responsive-shell w-full bg-[#FAF9F7] dark:bg-[#121212] min-h-screen font-sans flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-[#E85D2A]/20">
-        <div className="max-w-[440px] w-full bg-white dark:bg-[#1C1B1A] border border-[#E7E5E4] dark:border-[#383330] rounded-[28px] sm:rounded-[32px] p-5 sm:p-8 shadow-[0_24px_70px_-28px_rgba(41,25,15,0.24)] dark:shadow-[0_24px_70px_-28px_rgba(0,0,0,0.75)] text-center space-y-5 sm:space-y-6 animate-in fade-in zoom-in duration-300 relative overflow-hidden">
-
-          {/* Top Decorative Glow */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-1 bg-gradient-to-r from-emerald-500 via-[#E85D2A] to-emerald-500 rounded-b-full" />
+      <div className="customer-cart-page customer-cart-confirmation">
+        <div className="customer-cart-confirmation__card">
 
           {/* Celebratory Checkmark Icon */}
-          <div className="relative w-[76px] h-[76px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto ring-8 ring-emerald-500/[0.08] shadow-inner">
-            <CheckCircle2 className="w-9 h-9 stroke-[2.3]" />
+          <div className="customer-cart-confirmation__icon">
+            <CheckCircle2 />
           </div>
 
           <div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80 rounded-full text-[10px] font-extrabold uppercase tracking-[0.12em] mb-2">
-              <Sparkles className="w-3 h-3 text-emerald-500" />
-              <span>Order Confirmed</span>
-            </span>
-            <h1 className="text-[25px] sm:text-[30px] font-extrabold tracking-tight text-[#171717] dark:text-white mt-1 break-words">
+            <h2 className="customer-cart-confirmation__title">Order confirmed</h2>
+            <h1 className="customer-cart-confirmation__number">
               {activeOrder.orderNumber || `#000${activeOrder.id}`}
             </h1>
-            <p className="text-[13px] text-[#78716C] dark:text-[#B8B0AA] mt-2 leading-[1.65] max-w-[340px] mx-auto">
-              Your order is confirmed for <strong className="text-[#D94E1B] dark:text-[#FF9B70] font-bold">{activeOrder.tableNumber || tableId}</strong>.
-              <span className="block mt-1">Receipt sent to <strong className="text-[#332E2A] dark:text-[#F3EFEC] font-semibold break-all">{activeOrder.customerEmail || guestEmail}</strong></span>
+            <p className="customer-cart-confirmation__message">
+              <strong>{receiptTableLabel}</strong>
             </p>
           </div>
 
           {/* Receipt Breakdown Card */}
-          <div className="bg-[#FAF9F7] dark:bg-[#242322] border border-[#E7E5E4] dark:border-[#3A3836] rounded-2xl p-4 sm:p-[18px] text-xs space-y-3 text-left">
-            <div className="flex justify-between items-center gap-3 text-[#78716C] dark:text-[#B8B0AA]">
-              <span className="font-semibold">Estimated Prep Time:</span>
-              <strong className="text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/80 whitespace-nowrap">
+          <div className="customer-cart-confirmation__receipt">
+            <div>
+              <span>Estimated time</span>
+              <strong className="customer-cart-confirmation__eta">
                 ~{activeOrder.etaPrediction?.adjustedEta ? Math.round(activeOrder.etaPrediction.adjustedEta) : 10} min
               </strong>
             </div>
-            <div className="flex justify-between items-center gap-3 text-[#78716C] dark:text-[#B8B0AA]">
-              <span className="font-semibold">Payment Option:</span>
-              <strong className="text-[#332E2A] dark:text-[#F3EFEC] font-bold text-right">{paymentMethodLabel(activeOrder.paymentMethod)} <span className="text-[10px] text-[#78716C] dark:text-[#B8B0AA]">· {activeOrder.paymentStatus}</span></strong>
+            <div>
+              <span>Payment</span>
+              <strong>
+                {paymentMethodLabel(activeOrder.paymentMethod)}{' '}
+                <span className={`customer-cart-payment-status${activeOrder.paymentStatus === 'PAID' ? ' is-paid' : ' is-unpaid'}`}>
+                  {activeOrder.paymentStatus === 'PAID' ? 'Paid' : 'Unpaid'}
+                </span>
+              </strong>
             </div>
-            <div className="flex justify-between items-center gap-3 text-[#171717] dark:text-white font-bold border-t border-[#E7E5E4] dark:border-[#3A3836] pt-3 text-sm">
+            <div className="customer-cart-confirmation__total">
               <span>Order Total</span>
-              <span className="text-[#D94E1B] dark:text-[#FF9B70] font-mono text-base font-extrabold whitespace-nowrap">Rs. {Number(activeOrder.total || 0).toFixed(2)}</span>
+              <span>{formatPrice(activeOrder.total || 0)}</span>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="space-y-2.5 pt-0.5">
+          <div className="customer-cart-confirmation__actions">
             <button
               onClick={() => navigate(`/customer/track/${activeOrder.trackingToken || activeOrder.id}`)}
-              className="w-full min-h-12 py-3.5 bg-gradient-to-r from-[#E85D2A] to-[#F47832] hover:brightness-105 text-white font-bold text-[13px] rounded-[15px] shadow-[0_10px_22px_-10px_rgba(232,93,42,0.8)] transition-all cursor-pointer flex items-center justify-center space-x-2 active:scale-[0.99]"
+              className="customer-cart-action"
             >
-              <QrCode className="w-4.5 h-4.5" />
-              <span>Track Live Order & View QR</span>
+              <span>Track order</span>
             </button>
             <button
               onClick={() => navigate('/customer')}
-              className="w-full min-h-11 py-3 bg-[#FAF9F7] dark:bg-[#292725] hover:bg-[#E7E5E4] dark:hover:bg-[#333] text-[#625A55] dark:text-[#D0C9C4] font-semibold text-xs rounded-[15px] transition-all cursor-pointer border border-[#E7E5E4] dark:border-[#45403D]"
+              className="customer-cart-action customer-cart-action--secondary"
             >
               Back to Menu
             </button>
@@ -520,233 +664,265 @@ const CustomerCartPage = ({ user }) => {
 
   // ════════════════════════════════════════════════════════════════════════════
   return (
-    <div className="responsive-shell w-full bg-[#FAF9F7] dark:bg-[#111111] text-[#171717] dark:text-[#F5F5F5] min-h-screen font-sans flex flex-col transition-colors duration-200">
+    <div className="customer-cart-page responsive-shell w-full min-h-screen flex flex-col">
       {/* HEADER */}
-      <header className="w-full bg-white dark:bg-[#1F1F1F] border-b border-[#E7E5E4] dark:border-[#333] sticky top-0 z-40 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
-        <div className="flex items-center space-x-3">
+      <header className="customer-cart-header glass">
+        <div className="customer-cart-header__identity">
           <button
             onClick={() => navigate('/customer')}
-            className="p-2 hover:bg-[#FFF8F2] dark:hover:bg-orange-950/40 text-[#E85D2A] rounded-xl transition-all cursor-pointer border border-[#E85D2A]/20"
-            title="Back to Menu"
+            aria-label="Back to menu"
+            className="customer-cart-back icon-btn icon-btn--44 pressable"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="font-black text-base text-[#171717] dark:text-white">Your Shopping Cart</h1>
-            <span className="text-[10px] text-[#78716C] dark:text-[#A8A29E] font-bold">{tableId} • {totalQty} items</span>
+            <h1>Your Cart</h1>
+            <span>{receiptTableLabel} · {totalQty} {totalQty === 1 ? 'item' : 'items'}</span>
           </div>
         </div>
 
         {totalQty > 0 && (
           <button
             onClick={clearCart}
-            className="px-3 py-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center space-x-1 border border-red-100 dark:border-red-900/40"
+            className="customer-cart-clear pressable"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            <span>Clear Cart</span>
+            <span>Clear</span>
           </button>
         )}
       </header>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+      <main className="customer-cart-content flex-1 w-full mx-auto">
+        {tableSessionError && (
+          <div className="customer-cart-error customer-cart-error--session" role="alert">
+            <AlertCircle aria-hidden="true" />
+            <span>{tableSessionError}</span>
+            <button type="button" onClick={() => setSessionCheckAttempt((attempt) => attempt + 1)}>
+              <RotateCcw aria-hidden="true" /> Retry
+            </button>
+          </div>
+        )}
         {/* Error Alert */}
         {error && (
-          <div className="p-4 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-300 rounded-2xl text-xs font-bold flex items-center space-x-2.5 shadow-sm">
-            <AlertCircle className="w-5 h-5 shrink-0 text-red-500" />
+            <div className="customer-cart-error">
+            <AlertCircle aria-hidden="true" />
             <span>{error}</span>
           </div>
         )}
 
         {totalQty === 0 ? (
-          <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-[32px] p-12 text-center space-y-4 max-w-md mx-auto shadow-sm">
-            <div className="w-16 h-16 bg-[#FFF8F2] dark:bg-orange-950/40 text-[#E85D2A] rounded-full flex items-center justify-center mx-auto">
+          <div className="customer-cart-empty">
+            <div className="customer-cart-empty__icon">
               <ShoppingBag className="w-8 h-8" />
             </div>
-            <h2 className="text-lg font-black text-gray-900 dark:text-white">Your Cart is Empty</h2>
-            <p className="text-xs text-gray-500 dark:text-[#A8A29E] leading-relaxed">
+            <h2>Your cart is empty</h2>
+            <p>
               Explore our fresh delicious canteen menu and add items to get started.
             </p>
             <button
               onClick={() => navigate('/customer')}
-              className="px-6 py-3 bg-[#E85D2A] text-white font-bold text-xs rounded-2xl shadow-md hover:bg-orange-600 transition-all cursor-pointer"
+              className="customer-cart-browse"
             >
-              Browse Menu
+              Browse menu
             </button>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-12 gap-5 sm:gap-8 items-start">
+          <div className="customer-cart-layout">
             {/* Left: Cart Items List */}
-            <div className="lg:col-span-7 space-y-4">
-              <h2 className="text-xs font-black text-gray-400 dark:text-[#A8A29E] uppercase tracking-wider">Selected Items ({totalQty})</h2>
+            <div className="customer-cart-items-column">
+              <h2 className="customer-cart-section-title"><span>Your items</span><span className="customer-cart-count">{totalQty}</span></h2>
 
-              <div className="space-y-3">
-                {Object.values(cart).map((item) => (
+              <div className="customer-cart-rows">
+                {visibleCartItems.map((item) => (
                   <div
                     key={item.id}
-                    className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-2xl p-3 sm:p-4 flex items-center justify-between gap-3 sm:gap-4 shadow-sm hover:border-orange-200 dark:hover:border-orange-900/50 transition-all"
+                    className="customer-cart-row"
                   >
-                    <div className="flex items-center space-x-3 min-w-0 flex-1">
+                    <div className="customer-cart-row__info flex items-center min-w-0 flex-1">
                       <img
                         src={getItemImage(item)}
                         alt={item.name}
-                        className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover border border-gray-100 dark:border-[#333] shrink-0"
+                        className="customer-cart-row__image"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <h3 className="font-black text-xs sm:text-sm text-gray-900 dark:text-white truncate">{item.name}</h3>
+                          <h3 className="customer-cart-row__title">{item.name}</h3>
                           {item.unit && item.unit !== 'per portion' && item.unit !== 'Full' && (
-                            <span className="bg-orange-50 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 text-[10px] font-extrabold px-1.5 py-0.5 rounded border border-orange-200/60 dark:border-orange-800/60 shrink-0">
+                            <span className="customer-cart-variant-chip">
                               {item.unit}
                             </span>
                           )}
                         </div>
-                        <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 mt-0.5 block">
-                          Rs. {Number(item.price || 0).toFixed(2)} each
+                        <span className="customer-cart-unit-price">
+                          {formatPrice(item.price)} each
                         </span>
-                        <span className="text-[10px] text-gray-400 dark:text-[#A8A29E] block">Subtotal: Rs. {(item.price * item.quantity).toFixed(2)}</span>
                       </div>
                     </div>
-
-                    <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
-                      <div className="flex items-center bg-gray-50 dark:bg-[#262626] border border-gray-200 dark:border-[#333] rounded-xl p-1">
-                        <button
-                          onClick={() => removeOneFromCart(item.id)}
-                          className="w-7 h-7 bg-white dark:bg-[#333] text-gray-700 dark:text-gray-200 font-bold rounded-lg flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-600 dark:hover:text-red-400 transition-all cursor-pointer shadow-sm text-xs"
-                        >
-                          -
-                        </button>
-                        <span className="text-xs font-black text-gray-900 dark:text-white px-2 sm:px-2.5">{item.quantity}</span>
-                        <button
-                          onClick={() => addToCart(item)}
-                          className="w-7 h-7 bg-[#E85D2A] text-white font-bold rounded-lg flex items-center justify-center hover:bg-orange-600 transition-all cursor-pointer shadow-sm text-xs"
-                        >
-                          +
-                        </button>
+                      <div className="customer-cart-row__controls">
+                        <strong className="customer-cart-line-total">{formatPrice(item.price * item.quantity)}</strong>
+                        <div className="customer-cart-stepper">
+                          <button type="button" onClick={() => removeOneFromCart(item.id)} aria-label={`Remove one ${item.name}`} className="pressable">{item.quantity === 1 ? <Trash2 aria-hidden="true" /> : '−'}</button>
+                          <span>{item.quantity}</span>
+                          <button type="button" onClick={() => addToCart(item)} aria-label={`Add one ${item.name}`} className="pressable">+</button>
+                        </div>
+                        {item.quantity > 1 && <button type="button" onClick={() => deleteFromCart(item.id)} aria-label={`Remove ${item.name} from cart`} className="customer-cart-remove icon-btn icon-btn--44 pressable"><Trash2 /></button>}
                       </div>
-                      <button
-                        onClick={() => deleteFromCart(item.id)}
-                        className="p-1.5 sm:p-2 text-gray-400 dark:text-neutral-500 hover:text-red-500 transition-all cursor-pointer"
-                        title="Remove Item"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
                   </div>
                 ))}
               </div>
-
               {/* AI ETA Card */}
-              {etaInfo && (
-                <div className="bg-gradient-to-br from-orange-50 to-orange-50/50 dark:from-[#262626] dark:to-[#1F1F1F] border border-orange-100 dark:border-orange-950/60 rounded-2xl p-5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Bot className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-                      <span className="text-xs font-black text-orange-900 dark:text-orange-200">AI Kitchen Prep Forecast</span>
-                    </div>
-                    <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 bg-emerald-100/80 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-200/50 dark:border-emerald-800/40">
-                      ~{etaInfo.estimatedTime} Mins
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-orange-700 dark:text-orange-300 leading-relaxed">
-                    {etaInfo.explanation || `Estimated ~${etaInfo.estimatedTime} mins based on current kitchen load (${etaInfo.kitchenLoad}) and peak-hour queue analysis.`}
-                  </p>
+              <section className="customer-cart-eta" aria-busy={etaLoading} aria-label="Estimated order time">
+                <div className="customer-cart-eta__heading">
+                  <div className="customer-cart-eta__label"><span className="customer-cart-eta__icon"><Sparkles /></span><span>Estimated time</span></div>
+                  {etaLoading && <span className="customer-cart-eta__loading-label">Calculating...</span>}
                 </div>
-              )}
+                <div className="customer-cart-eta__body" aria-live="polite" aria-atomic="true">
+                  {etaIsPending ? (
+                    <div className="customer-cart-eta__state customer-cart-eta__state--loading" role="status">
+                      <Skeleton width="44%" height="28px" />
+                      <Skeleton width="76%" height="10px" />
+                    </div>
+                  ) : etaFailedCartKey === cartEtaKey || etaResolvedCartKey !== cartEtaKey || !etaInfo ? (
+                    <div className="customer-cart-eta__state customer-cart-eta__state--error" role="status">
+                      <span>Estimate unavailable</span>
+                      <span className="customer-cart-eta__auto-retry">Updating automatically</span>
+                    </div>
+                  ) : (() => {
+                    const level = String(etaInfo.kitchenLoad || '').toLowerCase();
+                    const descriptions = {
+                      low: 'Kitchen is quiet right now.',
+                      medium: 'Kitchen is moderately busy.',
+                      high: 'Kitchen is busy, thanks for your patience.',
+                    };
+                    const validLevel = Object.prototype.hasOwnProperty.call(descriptions, level);
+                    return (
+                      <div className="customer-cart-eta__state customer-cart-eta__state--result">
+                        <strong className="customer-cart-eta__time" aria-live="polite" aria-atomic="true">~{etaInfo.estimatedTime} min</strong>
+                        <p className="customer-cart-eta__queue" aria-live="polite">
+                          {Number(etaInfo.queueLength) > 0
+                            ? `${etaInfo.queueLength} ${Number(etaInfo.queueLength) === 1 ? 'order' : 'orders'} ahead · Your order should be ready in about ${etaInfo.estimatedTime} minutes.`
+                            : `No active orders ahead · Your order should be ready in about ${etaInfo.estimatedTime} minutes.`}
+                        </p>
+                        {validLevel ? (
+                          <>
+                            <div className={`customer-cart-workload customer-cart-workload--${level}`} aria-label={`Kitchen workload: ${level}`}>
+                              <div className="customer-cart-workload__segments" aria-hidden="true"><span /><span /><span /></div>
+                              <span>{level[0].toUpperCase() + level.slice(1)} kitchen workload</span>
+                            </div>
+                            <p className="customer-cart-eta__description">{descriptions[level]}</p>
+                          </>
+                        ) : <p className="customer-cart-eta__description">Kitchen workload is unavailable.</p>}
+                        {etaInfo.explanation && <details className="customer-cart-eta__details"><summary>Details</summary><p>{etaInfo.explanation}</p></details>}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </section>
             </div>
 
             {/* Right: Checkout & Verification Panel */}
-            <div className="lg:col-span-5 space-y-6">
+            <div className="customer-cart-checkout-column">
 
               {/* Customer Verification Card */}
-              <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-[24px] sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-5">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-gray-400 dark:text-[#A8A29E]">Customer Details</h3>
-                  {otpVerified && (
-                    <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/60 flex items-center space-x-1">
-                      <Check className="w-3 h-3" />
-                      <span>Verified</span>
-                    </span>
-                  )}
-                </div>
+              <div className="customer-cart-customer-card">
+                {!otpVerified && <div className="customer-cart-card-heading"><h3>Your details</h3></div>}
 
                 {!otpVerified ? (
-                  <div className="space-y-3.5">
+                    <div className="customer-cart-verification-form">
+                    <p className="customer-cart-verify-note">Verify your email to place your order.</p>
                     <div>
-                      <label className="text-[11px] font-bold text-gray-600 dark:text-gray-300 block mb-1">Your Full Name</label>
+                      <label className="customer-cart-field-label">Your Full Name</label>
                       <input
                         type="text"
                         value={guestName}
                         onChange={(e) => setGuestName(e.target.value)}
                         placeholder="John Doe"
-                        className="w-full bg-gray-50 dark:bg-[#262626] border border-gray-200 dark:border-[#333] rounded-xl px-3.5 py-2.5 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-orange-600"
+                        className="customer-cart-field"
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] font-bold text-gray-600 dark:text-gray-300 block mb-1">Email (for receipts & updates)</label>
+                      <label className="customer-cart-field-label">Email (for receipts &amp; updates)</label>
                       <input
                         type="email"
                         value={guestEmail}
                         onChange={(e) => setGuestEmail(e.target.value)}
                         placeholder="john@example.com"
-                        className="w-full bg-gray-50 dark:bg-[#262626] border border-gray-200 dark:border-[#333] rounded-xl px-3.5 py-2.5 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-orange-600"
+                        className="customer-cart-field"
                       />
                     </div>
 
                     {!otpSent ? (
-                      <button
+                      <Button
                         onClick={handleSendOTP}
                         disabled={otpLoading || !guestEmail || !guestName}
-                        className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm flex items-center justify-center space-x-1.5"
+                        loading={otpLoading}
+                        className="customer-cart-action customer-cart-action--full"
                       >
-                        {otpLoading ? <RotateCcw className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
-                        <span>Send 6-Digit Verification Code</span>
-                      </button>
+                        <Lock className="w-4 h-4" />
+                        <span>Send verification code</span>
+                      </Button>
                     ) : (
                       <div className="space-y-3 pt-1">
-                        <OtpInputBoxes
-                          value={otpCode}
-                          onChange={setOtpCode}
-                          disabled={otpLoading}
-                        />
-                        <button
+                        <div className={`customer-cart-otp${error ? ' has-error' : ''}`}>
+                          <OtpInputBoxes
+                            value={otpCode}
+                            onChange={setOtpCode}
+                            disabled={otpLoading}
+                          />
+                        </div>
+                        <Button
                           onClick={handleVerifyOTP}
                           disabled={otpLoading || otpCode.length < 6}
-                          className="w-full py-3 bg-[#E85D2A] hover:bg-[#D94E1B] disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm"
+                          loading={otpLoading}
+                          className="customer-cart-action customer-cart-action--full"
                         >
-                          {otpLoading ? 'Verifying...' : 'Verify Code'}
-                        </button>
+                          Verify Code
+                        </Button>
                         <div className="text-right">
                           <button
                             onClick={handleSendOTP}
                             disabled={cooldown > 0 || otpLoading}
-                            className="text-[10px] text-orange-600 hover:underline font-bold disabled:text-gray-400 cursor-pointer"
+                            className="customer-cart-resend"
                           >
-                            {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend Code'}
+                            {cooldown > 0 ? (
+                              <>
+                                <svg className="customer-cart-resend__ring" viewBox="0 0 24 24" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="9" />
+                                  <circle
+                                    className="customer-cart-resend__progress"
+                                    cx="12"
+                                    cy="12"
+                                    r="9"
+                                    style={{ strokeDashoffset: 56.55 * (1 - (cooldown / 30)) }}
+                                  />
+                                </svg>
+                                <span>Resend in 0:{String(cooldown).padStart(2, '0')}</span>
+                              </>
+                            ) : 'Resend OTP'}
                           </button>
                         </div>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-800/40 rounded-xl flex items-center justify-between text-xs">
-                    <div>
-                      <strong className="text-gray-900 dark:text-white font-bold block">{guestName || 'Customer'}</strong>
-                      <span className="text-gray-500 dark:text-gray-400 text-[11px]">{guestEmail}</span>
+                  <div className="customer-cart-verified">
+                    <span className="customer-cart-avatar">{(guestName || 'C').trim().charAt(0).toUpperCase()}</span>
+                    <div className="customer-cart-verified__identity">
+                      <strong>{guestName || 'Customer'}</strong>
+                      <span title={guestEmail}>{guestEmail}</span>
                     </div>
-                    <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-2.5 py-1 rounded-lg">
-                      Ready to Order
-                    </span>
+                    <span className="customer-cart-verified__badge"><Check aria-hidden="true" />Verified</span>
                   </div>
                 )}
               </div>
 
               {/* Payment Method Card */}
-              <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-[24px] sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-gray-400 dark:text-[#A8A29E]">Payment Option</h3>
+              <div className="customer-cart-payment-panel">
+                <h3 className="customer-cart-section-title">Payment method</h3>
 
                 {!paymentSettings.codEnabled && !paymentSettings.onlineEnabled ? (
-                  <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-2xl text-xs font-semibold flex items-center space-x-2.5 shadow-sm">
-                    <AlertCircle className="w-5 h-5 shrink-0 text-rose-500" />
+                  <div className="customer-cart-payment-alert">
+                    <AlertCircle />
                     <div>
                       <strong className="block font-bold">Kitchen Closed</strong>
                       <span>Sorry, we're not accepting orders at the moment. The kitchen is currently closed. Please try again later.</span>
@@ -754,60 +930,52 @@ const CustomerCartPage = ({ user }) => {
                   </div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="customer-cart-payment-options" role="radiogroup" aria-label="Payment method">
                       <button
                         type="button"
+                        role="radio"
+                        aria-checked={paymentMethod === 'COD'}
+                        aria-label="Pay at Counter"
                         disabled={!paymentSettings.codEnabled}
                         onClick={() => { if (paymentSettings.codEnabled) setPaymentMethod('COD'); }}
-                        className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
-                          !paymentSettings.codEnabled
-                            ? 'opacity-50 cursor-not-allowed bg-gray-100 dark:bg-[#262626] border-gray-200 dark:border-[#333]'
-                            : paymentMethod === 'COD'
-                            ? 'border-orange-600 bg-orange-50/50 dark:bg-orange-950/40 ring-2 ring-orange-600/10 cursor-pointer'
-                            : 'border-gray-200 dark:border-[#333] hover:border-gray-300 dark:hover:border-[#404040] cursor-pointer'
-                        }`}
+                        className="customer-cart-payment-card pressable"
                       >
-                        <Banknote className={`w-5 h-5 ${paymentMethod === 'COD' && paymentSettings.codEnabled ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400'}`} />
-                        <div className="mt-3">
-                          <strong className="text-xs font-bold block text-gray-900 dark:text-white">Pay at Counter</strong>
-                          <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                            {paymentSettings.codEnabled ? 'Cash on Delivery' : 'Unavailable'}
-                          </span>
-                        </div>
+                        <span className="customer-cart-payment-icon"><Banknote /></span>
+                        <span className="customer-cart-payment-copy">
+                          <strong>Pay at Counter</strong>
+                        <span>{paymentSettings.codEnabled ? 'Pay with cash at the counter' : 'Unavailable'}</span>
+                        </span>
+                        <span className="customer-cart-radio" aria-hidden="true">{paymentMethod === 'COD' && <Check />}</span>
                       </button>
 
                       <button
                         type="button"
+                        role="radio"
+                        aria-checked={paymentMethod !== 'COD'}
+                        aria-label="Online Payment"
                         disabled={!paymentSettings.onlineEnabled}
                         onClick={() => { if (paymentSettings.onlineEnabled) setPaymentMethod('Easypaisa'); }}
-                        className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
-                          !paymentSettings.onlineEnabled
-                            ? 'opacity-50 cursor-not-allowed bg-gray-100 dark:bg-[#262626] border-gray-200 dark:border-[#333]'
-                            : paymentMethod !== 'COD'
-                            ? 'border-orange-600 bg-orange-50/50 dark:bg-orange-950/40 ring-2 ring-orange-600/10 cursor-pointer'
-                            : 'border-gray-200 dark:border-[#333] hover:border-gray-300 dark:hover:border-[#404040] cursor-pointer'
-                        }`}
+                        className="customer-cart-payment-card pressable"
                       >
-                        <Smartphone className={`w-5 h-5 ${paymentMethod !== 'COD' && paymentSettings.onlineEnabled ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400'}`} />
-                        <div className="mt-3">
-                          <strong className="text-xs font-bold block text-gray-900 dark:text-white">Online Payment</strong>
-                          <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                            {paymentSettings.onlineEnabled ? 'Easypaisa / JazzCash' : 'Unavailable'}
-                          </span>
-                        </div>
+                        <span className="customer-cart-payment-icon"><CreditCard /></span>
+                        <span className="customer-cart-payment-copy">
+                          <strong>Online Payment</strong>
+                          {paymentSettings.onlineEnabled ? <span className="customer-cart-wallet-chips"><i>Easypaisa</i><i>JazzCash</i></span> : <span>Unavailable</span>}
+                        </span>
+                        <span className="customer-cart-radio" aria-hidden="true">{paymentMethod !== 'COD' && <Check />}</span>
                       </button>
                     </div>
 
                     {!paymentSettings.codEnabled && paymentSettings.onlineEnabled && (
-                      <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 rounded-xl text-[11px] font-medium flex items-center space-x-2">
-                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                      <div className="customer-cart-payment-alert">
+                        <AlertCircle />
                         <span>Sorry, Pay at Counter is currently unavailable. Please choose Online Payment to continue.</span>
                       </div>
                     )}
 
                     {paymentSettings.codEnabled && !paymentSettings.onlineEnabled && (
-                      <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 rounded-xl text-[11px] font-medium flex items-center space-x-2">
-                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                      <div className="customer-cart-payment-alert">
+                        <AlertCircle />
                         <span>Sorry, Online Payment is currently unavailable. Please choose Pay at Counter to continue.</span>
                       </div>
                     )}
@@ -816,46 +984,48 @@ const CustomerCartPage = ({ user }) => {
               </div>
 
               {/* Order Summary & Placement Button */}
-              <div className="bg-white dark:bg-[#1F1F1F] border border-[#E7E5E4] dark:border-[#333] rounded-[24px] sm:rounded-3xl p-4 sm:p-6 shadow-sm space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-gray-400 dark:text-[#A8A29E]">Order Summary</h3>
+              <div className="customer-cart-summary">
+                <h3>Order Summary</h3>
 
-                <div className="space-y-2 text-xs text-gray-600 dark:text-gray-300">
-                  <div className="flex justify-between">
-                    <span>Subtotal:</span>
-                    <span>Rs. {getTotal()}</span>
+                <div className="customer-cart-bill">
+                  <div className="customer-cart-summary-lines">
+                    {(showAllCartItems || cartItems.length <= 4 ? cartItems : cartItems.slice(0, 3)).map((item) => (
+                      <div className="customer-cart-summary-line" key={`summary-${item.id}`}>
+                        <span className="customer-cart-summary-line__name">
+                          <strong>{item.quantity} × {item.name}</strong>
+                          {item.unit && item.unit !== 'per portion' && item.unit !== 'Full' && <small>{item.unit}</small>}
+                        </span>
+                        <span className="customer-cart-summary-line__amount">{formatPrice(item.price * item.quantity)}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex justify-between">
-                    <span>Service / GST:</span>
-                    <span>Rs. 0.00</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-black text-gray-900 dark:text-white border-t border-gray-100 dark:border-[#333] pt-3">
-                    <span>Grand Total:</span>
-                    <span className="text-orange-600 dark:text-orange-400 text-base">Rs. {getTotal()}</span>
+                  {cartItems.length > 4 && (
+                    <button type="button" className="customer-cart-show-all" aria-expanded={showAllCartItems} onClick={() => setShowAllCartItems(show => !show)}>
+                      {showAllCartItems ? 'Show fewer items' : `Show all (${cartItems.length})`}
+                    </button>
+                  )}
+                  <div className="customer-cart-bill__total">
+                    <span>Total</span>
+                    <span key={getTotal()} className="customer-cart-total-number">{formatPrice(getTotal())}</span>
                   </div>
                 </div>
 
-                <button
-                  onClick={handlePlaceOrder}
-                  disabled={
-                    placingOrder ||
-                    (!paymentSettings.codEnabled && !paymentSettings.onlineEnabled) ||
-                    (paymentMethod === 'COD' && !paymentSettings.codEnabled) ||
-                    (paymentMethod !== 'COD' && !paymentSettings.onlineEnabled)
-                  }
-                  className="w-full py-4 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-extrabold text-xs rounded-2xl shadow-xl shadow-orange-600/20 transition-all cursor-pointer flex items-center justify-center space-x-2"
-                >
-                  {placingOrder ? (
-                    <>
-                      <RotateCcw className="w-4 h-4 animate-spin" />
-                      <span>Placing Order...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Confirm &amp; Place Order</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
+                <div className="customer-cart-summary__desktop-action">
+                  <Button
+                    onClick={handlePlaceOrder}
+                    disabled={
+                      !tableSessionReady || !sessionCheckComplete || Boolean(tableSessionError) ||
+                      placingOrder ||
+                      (!paymentSettings.codEnabled && !paymentSettings.onlineEnabled) ||
+                      (paymentMethod === 'COD' && !paymentSettings.codEnabled) ||
+                      (paymentMethod !== 'COD' && !paymentSettings.onlineEnabled)
+                    }
+                    loading={placingOrder}
+                    className="customer-cart-action customer-cart-action--place"
+                  >
+                    <span>Place Order</span>
+                  </Button>
+                </div>
               </div>
 
             </div>
@@ -863,86 +1033,122 @@ const CustomerCartPage = ({ user }) => {
         )}
       </main>
 
-      {/* Online Wallet Payment Modal */}
-      {showOnlinePaymentModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#1F1F1F] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-gray-100 dark:border-[#333] space-y-5 animate-in fade-in zoom-in duration-200">
-            <div className="flex justify-between items-center border-b border-gray-100 dark:border-[#333] pb-4">
-              <div>
-                <h3 className="text-base font-black text-gray-900 dark:text-white">Mobile Wallet Payment</h3>
-                <span className="text-[10px] text-gray-400 dark:text-[#A8A29E]">Fast &amp; Instant Authorization</span>
-              </div>
-              <button
-                onClick={() => setShowOnlinePaymentModal(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setWalletProvider('Easypaisa')}
-                  className={`py-3 px-4 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                    walletProvider === 'Easypaisa'
-                      ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-600/20'
-                      : 'border-gray-200 dark:border-[#333] text-gray-600 dark:text-gray-300'
-                  }`}
-                >
-                  Easypaisa
-                </button>
-                <button
-                  onClick={() => setWalletProvider('JazzCash')}
-                  className={`py-3 px-4 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                    walletProvider === 'JazzCash'
-                      ? 'border-red-600 bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 ring-2 ring-red-600/20'
-                      : 'border-gray-200 dark:border-[#333] text-gray-600 dark:text-gray-300'
-                  }`}
-                >
-                  JazzCash
-                </button>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-gray-600 dark:text-gray-300 block mb-1">Registered Account Mobile #</label>
-                <PhoneInput
-                  value={walletPhone}
-                  onChange={setWalletPhone}
-                />
-              </div>
-
-              <div className="p-3.5 bg-gray-50 dark:bg-[#262626] rounded-xl flex justify-between items-center text-xs font-bold">
-                <span className="text-gray-600 dark:text-gray-300">Total Payable:</span>
-                <span className="text-orange-600 dark:text-orange-400 text-sm">Rs. {getTotal()}</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <button
-                onClick={() => setShowOnlinePaymentModal(false)}
-                className="py-3 bg-gray-100 dark:bg-[#333] hover:bg-gray-200 dark:hover:bg-[#404040] text-gray-700 dark:text-gray-200 font-bold text-xs rounded-xl transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleWalletPaymentConfirm}
-                disabled={authorizingPayment}
-                className="py-3 bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center space-x-1.5"
-              >
-                {authorizingPayment ? (
-                  <>
-                    <RotateCcw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Authorizing...</span>
-                  </>
-                ) : (
-                  <span>Pay Now</span>
-                )}
-              </button>
-            </div>
-          </div>
+      {totalQty > 0 && (
+        <div className="customer-cart-mobile-bar glass" role="region" aria-label="Order total and checkout">
+          <div className="customer-cart-mobile-bar__total"><span>Total</span><strong key={getTotal()} className="customer-cart-total-number">{formatPrice(getTotal())}</strong></div>
+          <Button
+            onClick={handlePlaceOrder}
+            disabled={
+              !tableSessionReady || !sessionCheckComplete || Boolean(tableSessionError) ||
+              placingOrder ||
+              (!paymentSettings.codEnabled && !paymentSettings.onlineEnabled) ||
+              (paymentMethod === 'COD' && !paymentSettings.codEnabled) ||
+              (paymentMethod !== 'COD' && !paymentSettings.onlineEnabled)
+            }
+            loading={placingOrder}
+            className="customer-cart-action customer-cart-action--place"
+          >Place Order</Button>
         </div>
       )}
+
+      {/* Online Wallet Payment Modal */}
+      <ModalShell
+        isOpen={showOnlinePaymentModal}
+        onClose={closeWalletModal}
+        labelledBy="customer-wallet-title"
+        closeOnBackdrop={false}
+        closeOnEscape={false}
+        className="customer-cart-wallet-modal"
+      >
+        <header className="customer-cart-wallet-modal__header">
+          <span className="customer-cart-wallet-modal__heading-icon" aria-hidden="true"><Wallet /></span>
+          <div className="customer-cart-wallet-modal__heading-copy">
+            <h3 id="customer-wallet-title">Mobile wallet payment</h3>
+            <p>Pay securely with your mobile account</p>
+          </div>
+          <button
+            type="button"
+            onClick={closeWalletModal}
+            aria-label="Close mobile wallet payment"
+            className="customer-cart-wallet-close icon-btn icon-btn--40"
+          >
+            <X aria-hidden="true" />
+          </button>
+        </header>
+
+        <div className="customer-cart-wallet-modal__body">
+          <div className="customer-cart-wallet-providers" role="radiogroup" aria-label="Choose a mobile wallet">
+            {['Easypaisa', 'JazzCash'].map((provider) => (
+              <label
+                key={provider}
+                className={`customer-cart-wallet-provider${walletProvider === provider ? ' is-selected' : ''}`}
+              >
+                <input
+                  type="radio"
+                  name="customer-wallet-provider"
+                  value={provider}
+                  checked={walletProvider === provider}
+                  onChange={() => setWalletProvider(provider)}
+                />
+                <span className="customer-cart-wallet-provider__icon" aria-hidden="true"><Wallet /></span>
+                <span className="customer-cart-wallet-provider__name">{provider}</span>
+                {walletProvider === provider && <Check className="customer-cart-wallet-provider__check" aria-hidden="true" />}
+              </label>
+            ))}
+          </div>
+
+          <div
+            className={`customer-cart-wallet-phone-field${isWalletPhoneValid ? ' is-valid' : ' is-invalid'}`}
+            data-touched="false"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.dataset.touched = 'true';
+            }}
+          >
+            <label className="customer-cart-field-label">Account mobile number</label>
+            <div className="customer-cart-wallet-phone" aria-invalid={!isWalletPhoneValid}>
+              <PhoneInput
+                value={walletPhone}
+                onChange={setWalletPhone}
+                placeholder="3XX XXXXXXX"
+                className="customer-cart-wallet-phone-input"
+              />
+            </div>
+            <p className="customer-cart-wallet-error" aria-live="polite">Enter a 10-digit mobile number</p>
+          </div>
+
+          <div className="customer-cart-wallet-total">
+            <span>Total payable</span>
+            <span>{formatPrice(getTotal())}</span>
+          </div>
+
+          <p className="customer-cart-wallet-trust"><Lock aria-hidden="true" />Your payment is processed securely.</p>
+        </div>
+
+        <div className="customer-cart-wallet-modal__actions">
+          <button
+            type="button"
+            onClick={handleWalletPaymentConfirm}
+            disabled={authorizingPayment || !isWalletPhoneValid}
+            className="customer-cart-action customer-cart-wallet-confirm"
+          >
+            {authorizingPayment ? (
+              <>
+                <RotateCcw className="customer-cart-wallet-spinner" aria-hidden="true" />
+                <span>Authorizing...</span>
+              </>
+            ) : (
+              <span>Pay {formatPrice(getTotal())}</span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={closeWalletModal}
+            className="customer-cart-wallet-cancel"
+          >
+            Cancel
+          </button>
+        </div>
+      </ModalShell>
     </div>
   );
 };

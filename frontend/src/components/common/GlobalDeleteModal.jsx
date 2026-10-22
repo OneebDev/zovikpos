@@ -1,4 +1,4 @@
-import  { useState, useEffect } from 'react';
+﻿import  { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Trash2, ShieldAlert, X, Loader2 } from 'lucide-react';
 
@@ -40,13 +40,13 @@ const GlobalDeleteModal = ({
   const isConfirmDisabled = loading || (requiresTyping && typedConfirmation.trim().toUpperCase() !== requiredConfirmationText.trim().toUpperCase());
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 glass-overlay animate-fade-in">
       <div
-        className="w-full max-w-lg bg-[#141518] border border-stone-800 rounded-3xl shadow-2xl overflow-hidden transition-all duration-200 transform scale-100 flex flex-col max-h-[90vh]"
+        className="w-full max-w-lg glass-modal overflow-hidden transition-all duration-200 animate-scale-up flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-stone-800/80 bg-stone-900/40">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--glass-border-subtle)] bg-[var(--glass-bg-subtle)]">
           <div className="flex items-center space-x-3">
             <div className={`p-2.5 rounded-2xl border ${
               dangerLevel === 'danger'
@@ -69,7 +69,7 @@ const GlobalDeleteModal = ({
           <button
             onClick={onClose}
             disabled={loading}
-            className="p-1.5 rounded-xl hover:bg-stone-800 text-stone-400 hover:text-stone-200 transition-colors disabled:opacity-50 cursor-pointer"
+            className="p-1.5 rounded-xl hover:bg-[var(--glass-bg)] text-[var(--sb-text-muted)] hover:text-[var(--sb-text-main)] transition-colors disabled:opacity-50 cursor-pointer icon-btn"
           >
             <X className="w-5 h-5" />
           </button>
@@ -78,25 +78,25 @@ const GlobalDeleteModal = ({
         {/* Body */}
         <div className="p-6 space-y-4 overflow-y-auto">
           {/* Main prompt */}
-          <p className="text-sm text-stone-300 leading-relaxed">
+          <p className="text-sm text-[var(--sb-text-main)] leading-relaxed">
             {message}
           </p>
 
           {/* Record name preview if provided */}
           {itemName && (
-            <div className="p-3.5 bg-stone-900/80 rounded-2xl border border-stone-800/90 flex items-center justify-between">
-              <span className="text-xs font-semibold text-stone-400">Target Record:</span>
+            <div className="p-3.5 bg-[var(--glass-bg-subtle)] rounded-2xl border border-[var(--glass-border-subtle)] flex items-center justify-between">
+              <span className="text-xs font-semibold text-[var(--sb-text-muted)]">Target Record:</span>
               <span className="text-xs font-bold text-stone-100 max-w-[280px] truncate">{itemName}</span>
             </div>
           )}
 
           {/* Extra details (key-values) */}
           {itemDetails && (
-            <div className="p-3.5 bg-stone-900/60 rounded-2xl border border-stone-800/70 space-y-1.5 text-xs">
+            <div className="p-3.5 bg-[var(--glass-bg-subtle)] rounded-2xl border border-[var(--glass-border-subtle)] space-y-1.5 text-xs">
               {Object.entries(itemDetails).map(([k, v]) => (
-                <div key={k} className="flex justify-between items-center text-stone-400">
+                <div key={k} className="flex justify-between items-center text-[var(--sb-text-muted)]">
                   <span className="capitalize">{k.replace(/([A-Z])/g, ' $1')}:</span>
-                  <span className="font-semibold text-stone-200 truncate max-w-[200px]">{String(v ?? 'N/A')}</span>
+                  <span className="font-semibold text-[var(--sb-text-main)] truncate max-w-[200px]">{String(v ?? 'N/A')}</span>
                 </div>
               ))}
             </div>
@@ -107,7 +107,7 @@ const GlobalDeleteModal = ({
             <div className="p-3.5 bg-rose-950/20 border border-rose-900/30 rounded-2xl space-y-1">
               {warningNotes.map((note, idx) => (
                 <p key={idx} className="text-xs text-rose-300 flex items-start space-x-1.5">
-                  <span className="text-rose-400 font-bold">•</span>
+                  <span className="text-rose-400 font-bold">â€¢</span>
                   <span>{note}</span>
                 </p>
               ))}
@@ -117,7 +117,7 @@ const GlobalDeleteModal = ({
           {/* Scoped Delete Confirmation Input */}
           {requiresTyping && (
             <div className="pt-2 space-y-2">
-              <label className="block text-xs font-bold text-stone-300">
+              <label className="block text-xs font-bold text-[var(--sb-text-main)]">
                 Type <span className="text-rose-400 font-black tracking-wider px-1.5 py-0.5 bg-rose-500/10 rounded border border-rose-500/30">{requiredConfirmationText}</span> to authorize deletion:
               </label>
               <input
@@ -134,12 +134,12 @@ const GlobalDeleteModal = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-end space-x-3 px-6 py-4 border-t border-stone-800/80 bg-stone-900/30">
+        <div className="flex items-center justify-end space-x-3 px-6 py-4 border-t border-[var(--glass-border-subtle)] bg-[var(--glass-bg-subtle)]">
           <button
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="px-4 py-2.5 rounded-xl border border-stone-800 hover:bg-stone-800/80 text-stone-300 font-bold text-xs transition-colors disabled:opacity-50 cursor-pointer"
+            className="px-4 py-2.5 rounded-xl border border-[var(--glass-border-subtle)] hover:bg-[var(--glass-bg)] text-[var(--sb-text-main)] font-bold text-xs transition-colors disabled:opacity-50 cursor-pointer"
           >
             Cancel
           </button>
@@ -173,3 +173,4 @@ const GlobalDeleteModal = ({
 };
 
 export default GlobalDeleteModal;
+

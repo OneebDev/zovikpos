@@ -9,6 +9,12 @@ const { prisma } = require('../config/db');
  * @param {Array<{menuItemId: number, quantity: number}>} items 
  * @returns {Promise<{estimatedTime: number, estimatedBill: number, kitchenLoad: string, explanation: string, baseEta: number, adjustedEta: number, queueLength: number, isPeakHour: boolean, historicalDelay: number}>}
  */
+// No kitchen-capacity setting exists in the current schema/config. Keep the
+// assumed parallel capacity explicit and environment-overridable.
+const KITCHEN_PARALLEL_CAPACITY = Math.max(1, Number(process.env.ETA_KITCHEN_CAPACITY) || 4);
+const KITCHEN_CAPACITY_WINDOW_MINUTES = 60;
+const MAX_ETA_MINUTES = 120;
+
 const calculateETA = async (items) => {
   try {
     if (!items || items.length === 0) {
@@ -21,12 +27,33 @@ const calculateETA = async (items) => {
         adjustedEta: 0,
         queueLength: 0,
         isPeakHour: false,
-        historicalDelay: 0
+        historicalDelay: 0,
+        orderLoadMinutes: 0,
+        queueLoadMinutes: 0,
+        kitchenCapacity: KITCHEN_PARALLEL_CAPACITY,
+        workloadPercent: 0
       };
     }
 
-    // 1. Fetch items from DB to get their prepTime and price
-    const menuItemIds = items.map(i => i.menuItemId);
+    // Resolve validated cart lines and their configured preparation times.
+    const normalizedItems = items
+      .map((item) => ({
+        menuItemId: Number.parseInt(item?.menuItemId, 10),
+        quantity: Number.parseInt(item?.quantity, 10),
+      }))
+      .filter((item) => Number.isInteger(item.menuItemId) && item.menuItemId > 0 && Number.isInteger(item.quantity) && item.quantity > 0);
+
+    if (!normalizedItems.length) {
+      return {
+        estimatedTime: 0, estimatedBill: 0, kitchenLoad: 'Low',
+        explanation: 'No valid items in the order.', baseEta: 0, adjustedEta: 0,
+        queueLength: 0, isPeakHour: false, historicalDelay: 0,
+        orderLoadMinutes: 0, queueLoadMinutes: 0, kitchenCapacity: KITCHEN_PARALLEL_CAPACITY,
+        workloadPercent: 0,
+      };
+    }
+
+    const menuItemIds = [...new Set(normalizedItems.map(i => i.menuItemId))];
     const dbMenuItems = await prisma.menuItem.findMany({
       where: { id: { in: menuItemIds } }
     });
@@ -36,50 +63,58 @@ const calculateETA = async (items) => {
       menuMap[item.id] = item;
     });
 
-    let totalQuantity = 0;
     let maxPrepTime = 0;
+    let orderLoadMinutes = 0;
     let totalBill = 0;
 
-    items.forEach(item => {
+    normalizedItems.forEach(item => {
       const dbItem = menuMap[item.menuItemId];
       if (dbItem) {
-        totalQuantity += item.quantity;
         totalBill += dbItem.price * item.quantity;
-        
-        // Find max prep time for parallel cooking logic
-        const itemPrepTime = dbItem.prepTime || 5;
-        if (itemPrepTime > maxPrepTime) {
-          maxPrepTime = itemPrepTime;
-        }
+        const itemPrepTime = Math.max(1, Number(dbItem.prepTime) || 5);
+        maxPrepTime = Math.max(maxPrepTime, itemPrepTime);
+        orderLoadMinutes += itemPrepTime * item.quantity;
       }
     });
 
-    // Step 1: Base ETA Formula (Parallel cooking logic with overhead for extra quantity)
-    // Base ETA = max(prepTime) + (totalQuantity - 1) * 1.5 minutes
-    const baseEta = maxPrepTime + Math.max(0, totalQuantity - 1) * 1.5;
-
-    // 2. Fetch live queue length from DB (active orders in queue)
-    const queueLength = await prisma.order.count({
+    // Count active orders and sum their remaining configured kitchen work.
+    const activeOrders = await prisma.order.findMany({
       where: {
         status: { in: ['PENDING', 'PAID', 'PREPARING'] }
-      }
+      },
+      select: {
+        orderItems: {
+          select: {
+            quantity: true,
+            menuItem: { select: { prepTime: true } },
+          },
+        },
+      },
     });
+    const queueLength = activeOrders.length;
+    const queueLoadMinutes = activeOrders.reduce((orderTotal, order) => (
+      orderTotal + (order.orderItems || []).reduce((itemTotal, orderItem) => (
+        itemTotal + Math.max(1, Number(orderItem.menuItem?.prepTime) || 5) * Math.max(0, Number(orderItem.quantity) || 0)
+      ), 0)
+    ), 0);
+
+    // Four parallel kitchen work units over a 60-minute planning window is the
+    // documented default until the project has a configured kitchen capacity.
+    const capacityMinutes = KITCHEN_PARALLEL_CAPACITY * KITCHEN_CAPACITY_WINDOW_MINUTES;
+    const workloadPercent = capacityMinutes > 0
+      ? ((queueLoadMinutes + orderLoadMinutes) / capacityMinutes) * 100
+      : 100;
+    const kitchenLoad = workloadPercent < 40 ? 'Low' : workloadPercent <= 75 ? 'Medium' : 'High';
+
+    // Own work and queued work both consume the same parallel kitchen capacity.
+    const baseEta = Math.max(maxPrepTime, orderLoadMinutes / KITCHEN_PARALLEL_CAPACITY);
 
     // 3. Determine peak hour factor
     const now = new Date();
     const hour = now.getHours();
     const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ...
     const isPeakHour = (hour === 12 || hour === 13 || hour === 18 || hour === 19) ? 1 : 0;
-
-    // 4. Determine Kitchen Load Status
-    let kitchenLoad = 'Low';
-    if (queueLength <= 3) {
-      kitchenLoad = 'Low';
-    } else if (queueLength <= 7) {
-      kitchenLoad = 'Medium';
-    } else {
-      kitchenLoad = 'High';
-    }
+    const peakEtaAdjustment = isPeakHour ? 3.5 : 0;
 
     // 5. Fetch closed-loop historical delay from eTAPrediction
     // (Average error between actualTime and adjustedEta for the last 10 completed orders)
@@ -100,7 +135,7 @@ const calculateETA = async (items) => {
     }
 
     // 6. Predict ETA using AI (FastAPI RandomForestRegressor)
-    let estimatedTime = Math.round(baseEta);
+    let aiAdjustment = 0;
     const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
     try {
@@ -114,14 +149,23 @@ const calculateETA = async (items) => {
         historical_delay: historicalDelay
       }, { timeout: 2000 });
 
-      estimatedTime = Math.round(response.data.estimated_time);
-      console.log(`AI Prediction success. Base ETA: ${baseEta.toFixed(1)}, Predicted ETA: ${estimatedTime} mins.`);
+      const aiEstimate = Number(response.data?.estimated_time);
+      if (Number.isFinite(aiEstimate)) {
+        // Preserve a small AI correction without allowing it to erase the
+        // quantity- and queue-aware deterministic estimate.
+        aiAdjustment = Math.max(-2, Math.min(5, aiEstimate - baseEta));
+      }
+      console.log(`AI Prediction success. Base ETA: ${baseEta.toFixed(1)} mins.`);
     } catch (aiError) {
-      // AI Service fails -> Fallback ETA Formula
-      const fallbackTime = baseEta + (queueLength * 1.2) + (isPeakHour * 3.5) + historicalDelay;
-      estimatedTime = Math.round(fallbackTime);
-      console.warn(`AI prediction failed (${aiError.message}). Using fallback ETA: ${estimatedTime} mins.`);
+      // The deterministic estimate remains available when the model is down.
+      console.warn(`AI prediction unavailable (${aiError.message}); using kitchen load estimate.`);
     }
+
+    const rawEstimatedTime = Math.max(
+      maxPrepTime,
+      (orderLoadMinutes + queueLoadMinutes) / KITCHEN_PARALLEL_CAPACITY + peakEtaAdjustment + historicalDelay + aiAdjustment
+    );
+    const estimatedTime = Math.min(MAX_ETA_MINUTES, Math.max(maxPrepTime, Math.round(rawEstimatedTime / 5) * 5));
 
     // Clean description/explanation
     const queueText = queueLength === 0 
@@ -133,10 +177,10 @@ const calculateETA = async (items) => {
       : 'during standard hours';
       
     const loadText = `Kitchen load is ${kitchenLoad}`;
-    const explanation = `${loadText} with ${queueText} ${peakText}. Base preparation time is ${Math.round(baseEta)} minutes adjusted by AI for active queue delays.`;
+    const explanation = `${loadText} with ${queueText} ${peakText}. Estimate includes this order, the active kitchen queue, and ${KITCHEN_PARALLEL_CAPACITY} parallel kitchen work units.`;
 
     return {
-      estimatedTime: Math.max(2, estimatedTime),
+      estimatedTime,
       estimatedBill: Math.round(totalBill),
       kitchenLoad,
       explanation,
@@ -144,7 +188,11 @@ const calculateETA = async (items) => {
       adjustedEta: estimatedTime,
       queueLength,
       isPeakHour: isPeakHour === 1,
-      historicalDelay
+      historicalDelay,
+      orderLoadMinutes,
+      queueLoadMinutes,
+      kitchenCapacity: KITCHEN_PARALLEL_CAPACITY,
+      workloadPercent: Math.round(workloadPercent),
     };
   } catch (error) {
     console.error('Error in etaService:', error);

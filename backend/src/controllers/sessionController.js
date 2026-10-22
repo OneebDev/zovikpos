@@ -1,12 +1,13 @@
 const crypto = require('crypto');
 const { prisma } = require('../config/db');
 const { verifyTableToken } = require('../services/qrSecurityService');
+const { formatTableLabel, isPhysicalTable } = require('../utils/tableLabel');
 
 /**
  * Start a new dining session from a validated table QR
  */
 const startSession = async (req, res) => {
-  const { qrToken, tableNumber } = req.body;
+  const { qrToken, validateOnly = false } = req.body;
   const customerId = req.user?.id || null;
 
   if (req.user && req.user.role === 'CUSTOMER' && req.user.isActive === false) {
@@ -16,40 +17,45 @@ const startSession = async (req, res) => {
   try {
     let table = null;
 
-    if (qrToken) {
-      const verification = verifyTableToken(qrToken);
-      if (!verification.valid) {
-        return res.status(400).json({ error: verification.error || 'Invalid table QR code.' });
-      }
+    if (!qrToken || typeof qrToken !== 'string') {
+      return res.status(400).json({
+        error: 'Please scan your table QR code',
+        message: 'Please scan your table QR code',
+        code: 'TABLE_QR_REQUIRED',
+      });
+    }
 
-      const searchToken = verification.normalizedToken || qrToken;
-      table = await prisma.table.findFirst({
-        where: {
-          OR: [
-            { qrToken: searchToken },
-            { qrToken: qrToken },
-            { tableNumber: `Table ${verification.tableNumber}` },
-            { tableNumber: String(verification.tableNumber) },
-          ],
-        },
-        include: { branch: true },
-      });
-    } else if (tableNumber) {
-      const cleanNumber = String(tableNumber).toLowerCase().startsWith('table')
-        ? String(tableNumber)
-        : `Table ${tableNumber}`;
-      table = await prisma.table.findFirst({
-        where: { tableNumber: cleanNumber },
-        include: { branch: true },
-      });
+    const verification = verifyTableToken(qrToken);
+    if (!verification.valid) {
+      return res.status(400).json({ error: 'Please scan your table QR code', message: 'Please scan your table QR code', code: 'TABLE_QR_REQUIRED' });
+    }
+
+    const searchToken = verification.normalizedToken || qrToken;
+    table = await prisma.table.findFirst({
+      where: { qrToken: searchToken },
+      include: { branch: true },
+    });
+
+    const tokenTableNumber = String(verification.tableNumber || '').trim().replace(/^table\s*/i, '').toLowerCase();
+    const storedTableNumber = String(table?.tableNumber || '').trim().replace(/^table\s*/i, '').toLowerCase();
+    if (table && (storedTableNumber !== tokenTableNumber || table.branchId !== verification.branchId)) {
+      table = null;
     }
 
     if (!table) {
-      return res.status(404).json({ error: 'Physical dining table not found.' });
+      return res.status(400).json({ error: 'Please scan your table QR code', message: 'Please scan your table QR code', code: 'TABLE_QR_REQUIRED' });
     }
 
-    if (!table.isActive) {
+    if (table && !table.isActive) {
       return res.status(403).json({ error: `Table ${table.tableNumber} is currently deactivated by management.` });
+    }
+
+    if (validateOnly) {
+      return res.json({
+        valid: true,
+        table: { id: table.id, tableNumber: table.tableNumber, branchId: table.branchId },
+        tableLabel: formatTableLabel({ table }),
+      });
     }
 
     // Create a new distinct session UUID for this customer visit
@@ -60,6 +66,7 @@ const startSession = async (req, res) => {
       data: {
         id: sessionId,
         tableId: table.id,
+        tableLabel: formatTableLabel({ table }),
         customerId,
         status: 'ACTIVE',
         expiresAt,
@@ -87,6 +94,8 @@ const startSession = async (req, res) => {
         id: session.id,
         status: session.status,
         table: session.table,
+        tableNumber: session.table?.tableNumber || formatTableLabel(session),
+        tableLabel: formatTableLabel(session),
         customerId: session.customerId,
         expiresAt: session.expiresAt,
         cart: session.cart,
@@ -121,6 +130,7 @@ const getSession = async (req, res) => {
         },
         orders: {
           include: {
+            table: { select: { id: true, tableNumber: true } },
             orderItems: {
               include: { menuItem: true },
             },
@@ -136,27 +146,38 @@ const getSession = async (req, res) => {
       return res.status(404).json({ error: 'Dining session not found.' });
     }
 
+    // Older counter sessions remain stored for history, but are no longer valid
+    // customer ordering sessions. Report them expired without rewriting history.
+    if (!session.tableId || !isPhysicalTable(session.table)) {
+      session.status = 'EXPIRED';
+    }
+
     if (req.user?.role === 'CUSTOMER' && session.customerId && session.customerId !== req.user.id) {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
 
-    // Auto-expire check
-    if (session.status === 'ACTIVE' && new Date() > new Date(session.expiresAt)) {
-      // Check if session has active orders before expiring
+    // Keep sessions alive for verified customers, non-empty server carts, and active orders.
+    // Empty guest sessions still expire after 10 minutes without activity.
+    if (session.status === 'ACTIVE') {
       const activeOrderCount = await prisma.order.count({
         where: {
-          sessionId: sessionId,
+          sessionId,
           status: { in: ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY'] },
         },
       });
+      const hasCartItems = Boolean(session.cart?.items?.some((item) => Number(item.quantity) > 0));
+      const protectedSession = Boolean(
+        session.customerId
+        || (req.user?.role === 'CUSTOMER' && req.user?.id)
+        || hasCartItems
+        || activeOrderCount > 0
+      );
 
-      if (activeOrderCount > 0) {
-        // Extend session - active orders prevent expiry
-        await prisma.session.update({
-          where: { id: sessionId },
-          data: { expiresAt: new Date(Date.now() + 10 * 60 * 1000) },
-        });
-      } else {
+      if (protectedSession) {
+        const renewedExpiry = new Date(Date.now() + 10 * 60 * 1000);
+        await prisma.session.update({ where: { id: sessionId }, data: { expiresAt: renewedExpiry } });
+        session.expiresAt = renewedExpiry;
+      } else if (new Date() > new Date(session.expiresAt)) {
         const updated = await prisma.session.update({
           where: { id: sessionId },
           data: { status: 'EXPIRED' },
@@ -165,7 +186,18 @@ const getSession = async (req, res) => {
       }
     }
 
-    return res.json({ session });
+    return res.json({
+      session: {
+        ...session,
+        tableNumber: session.table?.tableNumber || formatTableLabel(session),
+        tableLabel: formatTableLabel(session),
+        orders: session.orders?.map((order) => ({
+          ...order,
+          tableNumber: formatTableLabel(order),
+          tableLabel: formatTableLabel(order),
+        })),
+      },
+    });
   } catch (error) {
     console.error('Get session error:', error);
     return res.status(500).json({ error: 'Failed to fetch session details.' });
@@ -222,20 +254,18 @@ const transferSessionTable = async (req, res) => {
       if (verification.valid) {
         const searchToken = verification.normalizedToken || qrToken;
         targetTable = await prisma.table.findFirst({
-          where: {
-            OR: [
-              { qrToken: searchToken },
-              { qrToken: qrToken },
-              { tableNumber: `Table ${verification.tableNumber}` },
-              { tableNumber: String(verification.tableNumber) },
-            ],
-          },
+          where: { qrToken: searchToken },
           include: { branch: true },
         });
+        const tokenTableNumber = String(verification.tableNumber || '').trim().replace(/^table\s*/i, '').toLowerCase();
+        const storedTableNumber = String(targetTable?.tableNumber || '').trim().replace(/^table\s*/i, '').toLowerCase();
+        if (targetTable && (storedTableNumber !== tokenTableNumber || targetTable.branchId !== verification.branchId)) {
+          targetTable = null;
+        }
       }
     }
 
-    if (!targetTable && targetTableNumber) {
+    if (req.user?.role !== 'CUSTOMER' && !targetTable && targetTableNumber) {
       const cleanNumber = String(targetTableNumber).toLowerCase().startsWith('table')
         ? String(targetTableNumber)
         : `Table ${targetTableNumber}`;
@@ -246,7 +276,7 @@ const transferSessionTable = async (req, res) => {
     }
 
     if (!targetTable) {
-      return res.status(404).json({ error: 'Target dining table not found.' });
+      return res.status(404).json({ error: 'Target table not found.' });
     }
 
     if (!targetTable.isActive) {
@@ -266,14 +296,27 @@ const transferSessionTable = async (req, res) => {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
 
-    const oldTableDisplay = currentSession.table?.tableNumber || `Table ${currentSession.tableId}`;
-    const newTableDisplay = targetTable.tableNumber;
+    if (req.user?.role === 'CUSTOMER' && (
+      currentSession.status !== 'ACTIVE'
+      || new Date(currentSession.expiresAt) <= new Date()
+      || !currentSession.tableId
+      || !isPhysicalTable(currentSession.table)
+    )) {
+      return res.status(403).json({
+        error: 'Scan a valid table QR code before switching tables.',
+        code: 'TABLE_SESSION_REQUIRED',
+      });
+    }
+
+    const oldTableDisplay = formatTableLabel(currentSession);
+    const newTableDisplay = formatTableLabel({ table: targetTable });
 
     // 1. Update session to point to the new physical table
     const updatedSession = await prisma.session.update({
       where: { id: sessionId },
       data: {
         tableId: targetTable.id,
+        tableLabel: newTableDisplay,
       },
       include: {
         table: {
@@ -306,8 +349,10 @@ const transferSessionTable = async (req, res) => {
         data: {
           tableId: targetTable.id,
           tableNumber: newTableDisplay,
+          tableLabel: newTableDisplay,
         },
         include: {
+          table: { select: { id: true, tableNumber: true } },
           orderItems: { include: { menuItem: true } },
           user: { select: { id: true, name: true, email: true } },
           payment: true,
@@ -345,14 +390,18 @@ const transferSessionTable = async (req, res) => {
 
     return res.json({
       message: `Successfully transferred to ${newTableDisplay}. Kitchen and staff have been notified.`,
-      session: updatedSession,
+      session: {
+        ...updatedSession,
+        tableNumber: updatedSession.table?.tableNumber || formatTableLabel(updatedSession),
+        tableLabel: formatTableLabel(updatedSession),
+      },
       orders: updatedOrders,
       oldTable: oldTableDisplay,
       newTable: newTableDisplay,
     });
   } catch (error) {
     console.error('Transfer session table error:', error);
-    return res.status(500).json({ error: 'Failed to transfer dining table.' });
+    return res.status(500).json({ error: 'Failed to transfer table.' });
   }
 };
 

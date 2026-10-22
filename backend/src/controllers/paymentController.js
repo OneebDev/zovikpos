@@ -4,6 +4,7 @@ const { sendPaymentConfirmedEmail, sendOrderCancellationEmail } = require('../se
 const { logAudit } = require('../middleware/auditMiddleware');
 const { deductInventoryForConfirmedOrder, restoreInventoryForOrder } = require('../services/inventoryDeductionService');
 const { clearDashboardStatsCache } = require('./adminController');
+const { withTableLabel } = require('../utils/tableLabel');
 
 /**
  * Get current Payment Availability Settings (COD & Online)
@@ -116,6 +117,7 @@ const submitTransactionId = async (req, res) => {
     const order = await prisma.order.findUnique({
       where: { id: parseInt(orderId, 10) },
       include: {
+        table: { select: { id: true, tableNumber: true } },
         orderItems: { include: { menuItem: true } },
         user: { select: { id: true, name: true, email: true } },
       },
@@ -160,22 +162,24 @@ const submitTransactionId = async (req, res) => {
         status: 'PAYMENT_PENDING',
       },
       include: {
+        table: { select: { id: true, tableNumber: true } },
         orderItems: { include: { menuItem: true } },
         user: { select: { id: true, name: true, email: true } },
         etaPrediction: true,
       },
     });
 
+    const orderWithTableLabel = withTableLabel(updatedOrder);
     // Notify staff layers about transaction pending verification
-    emitToVendor('payment:verify', updatedOrder);
-    emitToAdmin('payment:verify', updatedOrder);
-    emitToVendor('order:update', updatedOrder);
-    emitToAdmin('order:update', updatedOrder);
-    emitToUser(userId, 'order:update', updatedOrder);
+    emitToVendor('payment:verify', orderWithTableLabel);
+    emitToAdmin('payment:verify', orderWithTableLabel);
+    emitToVendor('order:update', orderWithTableLabel);
+    emitToAdmin('order:update', orderWithTableLabel);
+    emitToUser(userId, 'order:update', orderWithTableLabel);
 
     return res.json({
       message: 'Transaction details submitted successfully. Awaiting staff verification.',
-      order: updatedOrder,
+      order: orderWithTableLabel,
     });
   } catch (error) {
     console.error('Submit payment transaction error:', error);
@@ -202,6 +206,7 @@ const verifyTransaction = async (req, res) => {
     const order = await prisma.order.findUnique({
       where: { id: parseInt(id, 10) },
       include: {
+        table: { select: { id: true, tableNumber: true } },
         orderItems: { include: { menuItem: true } },
         user: { select: { id: true, name: true, email: true } },
         etaPrediction: true,
@@ -216,7 +221,7 @@ const verifyTransaction = async (req, res) => {
     if (approve && order.paymentStatus === 'VERIFIED' && order.status === 'PAID') {
       return res.json({
         message: 'Payment already verified.',
-        order,
+        order: withTableLabel(order),
       });
     }
 
@@ -249,6 +254,7 @@ const verifyTransaction = async (req, res) => {
           status: newStatus,
         },
         include: {
+          table: { select: { id: true, tableNumber: true } },
           orderItems: { include: { menuItem: true } },
           user: { select: { id: true, name: true, email: true } },
           etaPrediction: true,
@@ -256,13 +262,14 @@ const verifyTransaction = async (req, res) => {
       });
     });
 
+    const orderWithTableLabel = withTableLabel(updatedOrder);
     // STEP 2: Immediately emit to all realtime layers (kitchen gets order right away)
-    emitToUser(updatedOrder.userId, 'order:update', updatedOrder);
-    emitToVendor('order:update', updatedOrder);
-    emitToAdmin('order:update', updatedOrder);
+    emitToUser(orderWithTableLabel.userId, 'order:update', orderWithTableLabel);
+    emitToVendor('order:update', orderWithTableLabel);
+    emitToAdmin('order:update', orderWithTableLabel);
 
     if (approve) {
-      emitToKitchen('order:new', updatedOrder);
+      emitToKitchen('order:new', orderWithTableLabel);
     }
 
     // STEP 3: Run heavy inventory deduction + email + audit asynchronously (non-blocking)
@@ -278,11 +285,11 @@ const verifyTransaction = async (req, res) => {
       }
 
       if (approve) {
-        sendPaymentConfirmedEmail(updatedOrder).catch((err) =>
+        sendPaymentConfirmedEmail(orderWithTableLabel).catch((err) =>
           console.error('[Email] Payment confirmed email error:', err.message)
         );
       } else {
-        sendOrderCancellationEmail(updatedOrder, 'PAYMENT_FAILED').catch((err) =>
+        sendOrderCancellationEmail(orderWithTableLabel, 'PAYMENT_FAILED').catch((err) =>
           console.error('[Email] Payment failed email error:', err.message)
         );
       }
@@ -301,7 +308,7 @@ const verifyTransaction = async (req, res) => {
 
     return res.json({
       message: approve ? 'Payment verified and order sent to kitchen.' : 'Payment rejected.',
-      order: updatedOrder,
+      order: orderWithTableLabel,
     });
   } catch (error) {
     console.error('Verify payment error:', error);

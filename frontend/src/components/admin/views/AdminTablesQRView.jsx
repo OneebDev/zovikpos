@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import {
 
   Plus,
@@ -10,9 +10,27 @@ import {
   CheckSquare,
   Square,
   Trash2,
+  Copy,
 } from 'lucide-react';
 import api from '../../../services/api';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+
+const getQrOriginWarning = (tableRows) => {
+  const urls = (tableRows || []).map((table) => table.url).filter(Boolean);
+  const badUrl = urls.find((url) => {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+        || host.endsWith('.local') || /^10\./.test(host) || /^192\.168\./.test(host)
+        || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+    } catch {
+      return true;
+    }
+  });
+  return badUrl
+    ? 'QR links are using localhost or a private network address. Set backend FRONTEND_URL to the public HTTPS customer URL, then reload this page before printing or downloading QR cards.'
+    : '';
+};
 
 const AdminTablesQRView = ({ showToast }) => {
   const [tables, setTables] = useState([]);
@@ -22,6 +40,7 @@ const AdminTablesQRView = ({ showToast }) => {
   const [actionLoading, setActionLoading] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState(null);
   const [selectedTableIds, setSelectedTableIds] = useState([]);
+  const [qrOriginWarning, setQrOriginWarning] = useState('');
 
   // Global Delete State
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -29,21 +48,13 @@ const AdminTablesQRView = ({ showToast }) => {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // Dynamically compute active host from browser location
-  const getActiveBaseUrl = () => {
-    // If Admin is opened on PC (localhost), use network IP so printed/displayed QR scan works on Mobile
-
-
-
-    return (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://192.168.2.109:5173' : window.location.origin;
-  };
-
   const fetchTables = useCallback(async () => {
     setLoading(true);
     try {
-      const currentBaseUrl = getActiveBaseUrl();
-      const res = await api.get(`/tables/qr/batch?baseUrl=${encodeURIComponent(currentBaseUrl)}`);
-      setTables(res.data.tables || []);
+      const res = await api.get('/tables/qr/batch');
+      const qrTables = res.data.tables || [];
+      setTables(qrTables);
+      setQrOriginWarning(getQrOriginWarning(qrTables));
     } catch (err) {
       console.error('Fetch tables QR error:', err);
       try {
@@ -84,9 +95,9 @@ const AdminTablesQRView = ({ showToast }) => {
   const handleRegenerateQR = async (tableId) => {
     setRegeneratingId(tableId);
     try {
-      const currentBaseUrl = getActiveBaseUrl();
-      const res = await api.post(`/tables/${tableId}/regenerate-qr?baseUrl=${encodeURIComponent(currentBaseUrl)}`);
+      const res = await api.post(`/tables/${tableId}/regenerate-qr`);
       const updatedTable = res.data.table;
+      if (updatedTable?.url) setQrOriginWarning(getQrOriginWarning([updatedTable]));
 
       setTables((prev) =>
         prev.map((t) => {
@@ -115,25 +126,25 @@ const AdminTablesQRView = ({ showToast }) => {
     if (selectedTableIds.length === 0) return;
     setActionLoading(true);
     try {
-      const currentBaseUrl = getActiveBaseUrl();
       for (const tableId of selectedTableIds) {
-        const res = await api.post(`/tables/${tableId}/regenerate-qr?baseUrl=${encodeURIComponent(currentBaseUrl)}`);
+        const res = await api.post(`/tables/${tableId}/regenerate-qr`);
         const updatedTable = res.data.table;
         if (updatedTable) {
           setTables((prev) =>
             prev.map((t) =>
               t.id === tableId
                 ? {
-                    ...t,
-                    qrToken: updatedTable.qrToken,
-                    url: updatedTable.url || t.url,
-                    qrDataUrl: updatedTable.qrDataUrl || t.qrDataUrl,
-                  }
+                  ...t,
+                  qrToken: updatedTable.qrToken,
+                  url: updatedTable.url || t.url,
+                  qrDataUrl: updatedTable.qrDataUrl || t.qrDataUrl,
+                }
                 : t
             )
           );
         }
       }
+      setQrOriginWarning(getQrOriginWarning(tables));
       if (showToast) showToast(`Regenerated QR for ${selectedTableIds.length} selected tables!`);
       setSelectedTableIds([]);
     } catch (err) {
@@ -207,6 +218,34 @@ const AdminTablesQRView = ({ showToast }) => {
     document.body.removeChild(link);
   };
 
+  const handleCopyQrUrl = async (table) => {
+    const url = table?.url;
+    if (!url) {
+      if (showToast) showToast('QR URL is unavailable. Check backend FRONTEND_URL.', 'error');
+      return;
+    }
+
+    try {
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = url;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        const copied = document.execCommand('copy');
+        input.remove();
+        if (!copied) throw new Error('Clipboard copy was blocked');
+      }
+      if (showToast) showToast(`Table ${table.tableNumber || table.id} URL copied. Paste it into your desktop browser.`);
+    } catch {
+      if (showToast) showToast('Could not copy the QR URL. You can select the URL shown on the card and copy it.', 'error');
+    }
+  };
+
   const handlePrintQRCard = (tablesToPrint) => {
     const printList = Array.isArray(tablesToPrint) ? tablesToPrint : [tablesToPrint];
     if (printList.length === 0) return;
@@ -214,22 +253,20 @@ const AdminTablesQRView = ({ showToast }) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const currentBaseUrl = getActiveBaseUrl();
-
     const cardsHtml = printList
       .map((table) => {
         const displayNum = table.tableNumber || `Table ${table.id}`;
-        const targetUrl = table.url || `${currentBaseUrl}/customer/table/${table.qrToken}`;
+        const targetUrl = table.url || '';
 
         return `
           <div class="card">
-            <div class="logo">🍽️ ZOVIKPOS</div>
+            <div class="logo">ðŸ½ï¸ ZOVIKPOS</div>
             <div class="subtitle">${table.branchName || 'Main Campus Canteen'}</div>
             <div class="table-num">${displayNum.startsWith('Table') ? displayNum : 'TABLE ' + displayNum}</div>
             <img class="qr-img" src="${table.qrDataUrl}" alt="${displayNum} QR" />
             <div class="url-text">${targetUrl}</div>
-            <div class="instructions">📱 Scan QR Code to View Menu & Order</div>
-            <div class="secured">🔒 Cryptographically HMAC Signed Security</div>
+            <div class="instructions">ðŸ“± Scan QR Code to View Menu & Order</div>
+            <div class="secured">ðŸ”’ Cryptographically HMAC Signed Security</div>
           </div>
         `;
       })
@@ -281,17 +318,17 @@ const AdminTablesQRView = ({ showToast }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 glass-card p-6">
         <div>
           <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">Tables & Cryptographic QR Cards</h2>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5">Manage physical dining tables, HMAC signed QR tokens, status availability, and printable stand cards.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">Manage physical tables, HMAC signed QR tokens, status availability, and printable stand cards.</p>
         </div>
 
         <div className="flex items-center space-x-3">
           {tables.length > 0 && (
             <button
               onClick={toggleSelectAll}
-              className="px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer"
+              className="icon-label icon-label--checkbox px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl text-xs font-bold transition-all cursor-pointer"
             >
               {selectedTableIds.length === tables.length ? (
                 <CheckSquare className="w-4 h-4 text-orange-500" />
@@ -304,13 +341,19 @@ const AdminTablesQRView = ({ showToast }) => {
 
           <button
             onClick={() => setShowAddModal(true)}
-            className="px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center space-x-2 cursor-pointer"
+            className="icon-label px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Add New Table</span>
           </button>
         </div>
       </div>
+
+      {qrOriginWarning && (
+        <div role="alert" className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-700 dark:text-amber-200">
+          {qrOriginWarning}
+        </div>
+      )}
 
       {/* Multi Action Bar (Visible when tables selected) */}
       {selectedTableIds.length > 0 && (
@@ -350,15 +393,13 @@ const AdminTablesQRView = ({ showToast }) => {
             const tableNumStr = table.tableNumber || `Table ${table.id}`;
             const isSelected = selectedTableIds.includes(table.id);
             const isRegeneratingThis = regeneratingId === table.id;
-            const currentBaseUrl = getActiveBaseUrl();
-            const displayUrl = `${currentBaseUrl}/customer/table/${encodeURIComponent(table.qrToken)}`;
+            const displayUrl = table.url || 'QR URL unavailable â€” check backend FRONTEND_URL';
 
             return (
               <div
                 key={table.id}
-                className={`bg-[var(--card-bg)]/40 border rounded-2xl p-5 space-y-4 shadow-lg flex flex-col justify-between transition-all relative ${
-                  isSelected ? 'ring-2 ring-orange-500 border-orange-500' : ''
-                } ${table.isActive !== false ? 'border-[var(--border-color)]' : 'border-rose-500/30 opacity-75'}`}
+                className={`bg-[var(--card-bg)]/40 border rounded-2xl p-5 space-y-4 shadow-lg flex flex-col justify-between transition-all relative ${isSelected ? 'ring-2 ring-orange-500 border-orange-500' : ''
+                  } ${table.isActive !== false ? 'border-[var(--border-color)]' : 'border-rose-500/30 opacity-75'}`}
               >
                 {/* Selection Checkbox */}
                 <button
@@ -385,11 +426,10 @@ const AdminTablesQRView = ({ showToast }) => {
                     <button
                       onClick={() => handleToggleTableStatus(table)}
                       disabled={actionLoading}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase transition-all cursor-pointer border flex items-center space-x-1 ${
-                        table.isActive !== false
+                      className={`table-status-badge rounded-lg text-[10px] font-extrabold uppercase transition-all cursor-pointer border ${table.isActive !== false
                           ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
                           : 'bg-rose-500/20 text-rose-400 border-rose-500/30 hover:bg-rose-500/30'
-                      }`}
+                        }`}
                       title={table.isActive !== false ? 'Click to Disable Table' : 'Click to Enable Table'}
                     >
                       <Power className="w-3 h-3" />
@@ -398,9 +438,9 @@ const AdminTablesQRView = ({ showToast }) => {
                   </div>
 
                   {/* QR Code Image Preview */}
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col items-center justify-center space-y-2 relative">
+                  <div className="bg-[var(--glass-bg-strong)] p-3 rounded-xl border border-slate-200 flex flex-col items-center justify-center space-y-2 relative">
                     {isRegeneratingThis && (
-                      <div className="absolute inset-0 bg-white/80 rounded-xl flex items-center justify-center z-10">
+                      <div className="absolute inset-0 bg-[var(--glass-bg-strong)]/80 rounded-xl flex items-center justify-center z-10">
                         <RefreshCw className="w-6 h-6 text-orange-500 animate-spin" />
                       </div>
                     )}
@@ -418,6 +458,16 @@ const AdminTablesQRView = ({ showToast }) => {
                     <span className="text-[9px] text-slate-500 font-mono text-center break-all px-1">
                       {displayUrl}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyQrUrl(table)}
+                      disabled={!table.url}
+                      className="inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)] px-3 text-xs font-bold text-[var(--text-main)] transition-colors hover:border-orange-500/50 hover:text-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={`Copy ${tableNumStr} QR URL`}
+                    >
+                      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Copy URL</span>
+                    </button>
                   </div>
 
                   <div className="text-[10px] text-[var(--text-muted)] font-mono truncate" title={table.qrToken}>
@@ -427,28 +477,28 @@ const AdminTablesQRView = ({ showToast }) => {
 
                 {/* Action Buttons */}
                 <div className="space-y-2 pt-2 border-t border-[var(--border-color)]">
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="qr-card-actions">
                     <button
                       onClick={() => handlePrintQRCard(table)}
-                      className="py-2 bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                      className="qr-card-actions__button bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
                     >
                       <Printer className="w-3.5 h-3.5" />
                       <span>Print Card</span>
                     </button>
                     <button
                       onClick={() => handleDownloadQR(table)}
-                      className="py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                      className="qr-card-actions__button bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5" />
                       <span>Download</span>
                     </button>
                   </div>
 
-                  <div className="flex items-center space-x-2">
+                  <div className="qr-card-actions__row">
                     <button
                       onClick={() => handleRegenerateQR(table.id)}
                       disabled={isRegeneratingThis || actionLoading}
-                      className="flex-1 py-1.5 bg-[var(--bg-color)] hover:bg-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] font-bold text-[11px] rounded-xl border border-[var(--border-color)] transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                      className="qr-card-actions__button qr-card-actions__regenerate py-1.5 bg-[var(--bg-color)] hover:bg-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] font-bold text-[11px] rounded-xl border border-[var(--border-color)] transition-all cursor-pointer"
                     >
                       <RefreshCw className={`w-3 h-3 ${isRegeneratingThis ? 'animate-spin' : ''}`} />
                       <span>Regenerate Token</span>
@@ -460,7 +510,7 @@ const AdminTablesQRView = ({ showToast }) => {
                         setDeleteModalOpen(true);
                       }}
                       title="Delete / Archive Table"
-                      className="p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-rose-500/20 transition-all cursor-pointer"
+                      className="p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-rose-500/20 transition-all cursor-pointer icon-btn icon-btn--40 qr-card-actions__delete"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -501,13 +551,13 @@ const AdminTablesQRView = ({ showToast }) => {
 
       {/* Add Table Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[var(--glass-bg-subtle)] backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-6 shadow-2xl animate-scale-up">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-4">
-              <h3 className="text-base font-extrabold text-[var(--text-main)] font-display">Add New Dining Table</h3>
+              <h3 className="text-base font-extrabold text-[var(--text-main)] font-display">Add New Table</h3>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -527,7 +577,7 @@ const AdminTablesQRView = ({ showToast }) => {
               </div>
 
               <div className="p-3 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] text-[11px] text-[var(--text-muted)]">
-                🔒 A cryptographic HMAC-SHA256 token will automatically be generated and assigned to this table.
+                ðŸ”’ A cryptographic HMAC-SHA256 token will automatically be generated and assigned to this table.
               </div>
 
               <div className="flex justify-end space-x-3 pt-4 border-t border-[var(--border-color)]">
@@ -555,3 +605,5 @@ const AdminTablesQRView = ({ showToast }) => {
 };
 
 export default AdminTablesQRView;
+
+

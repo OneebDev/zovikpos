@@ -1,6 +1,21 @@
 import axios from 'axios';
 
 const PRODUCTION_BACKEND_URL = 'https://sparkling-miracle-production-d21c.up.railway.app';
+let warnedAboutLoopbackBackend = false;
+
+const getPageHostInfo = () => {
+  const host = typeof window !== 'undefined' ? window.location?.hostname || '' : '';
+  const isLoopback = ['localhost', '127.0.0.1', '::1'].includes(host);
+  const isLan = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.endsWith('.local');
+  return { host, isLoopback, isLan };
+};
+
+const warnForUnreachableLoopback = (url, pageHost) => {
+  if (!warnedAboutLoopbackBackend && pageHost && !['localhost', '127.0.0.1', '::1'].includes(pageHost) && /localhost|127\.0\.0\.1/i.test(url)) {
+    warnedAboutLoopbackBackend = true;
+    console.warn('[ZOVIKPOS] Backend URL points to localhost while this page is open on another host. Set VITE_API_BASE_URL and VITE_SOCKET_URL to a backend URL reachable from this device.');
+  }
+};
 
 /**
  * Resolves the root backend server URL (without /api suffix).
@@ -12,41 +27,66 @@ export const resolveBackendUrl = () => {
       (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL)) ||
     '';
 
-  // If running on a local LAN IP (e.g. 192.168.x.x) or localhost, dynamic hostname matching ensures
-  // mobile devices accessing Vite dev server over LAN automatically hit the backend on the same machine IP.
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const host = window.location.hostname;
-    const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(host);
-    const isLocalIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || host.endsWith('.local');
+  const { host: pageHost, isLoopback: pageIsLoopback, isLan: pageIsLanHost } = getPageHostInfo();
 
-    if (isLocalHost || isLocalIp) {
-      return `http://${host}:5001`;
+  // Honor an explicit backend URL, except a loopback URL when the page is open
+  // from a LAN hostname. On a phone, "localhost" refers to the phone itself.
+  if (envVal && typeof envVal === 'string' && envVal.trim() !== '') {
+    const trimmed = envVal.trim().replace(/\/+$/, '').replace(/\/api$/, '');
+    let envPointsToLoopback = false;
+    let envUrlIsValid = false;
+    try {
+      const parsedEnvUrl = new URL(trimmed);
+      envUrlIsValid = ['http:', 'https:'].includes(parsedEnvUrl.protocol);
+      envPointsToLoopback = ['localhost', '127.0.0.1', '::1'].includes(parsedEnvUrl.hostname);
+    } catch {
+      // An invalid explicit URL is ignored and the host-based fallback below is used.
+    }
+    if (envPointsToLoopback) warnForUnreachableLoopback(trimmed, pageHost);
+    if (envUrlIsValid && (!envPointsToLoopback || pageIsLoopback)) return trimmed;
+    if (envUrlIsValid && envPointsToLoopback && pageIsLanHost) {
+      return `${window.location.protocol}//${pageHost}:5001`;
     }
   }
 
-  if (envVal && typeof envVal === 'string' && envVal.trim() !== '') {
-    const trimmed = envVal.trim().replace(/\/+$/, '');
-    return trimmed.replace(/\/api$/, '');
+  // When using a local LAN IP (e.g. 192.168.x.x) or localhost, matching the
+  // page hostname lets phones reach the backend running on the same computer.
+  if (pageHost) {
+    if (pageIsLoopback || pageIsLanHost) {
+      return `${window.location.protocol}//${pageHost}:5001`;
+    }
   }
 
   // If in production or running on a remote host (such as Vercel), do NOT fall back to localhost
-  const isLocalHost =
-    typeof window !== 'undefined' &&
-    window.location &&
-    ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-
   const isProd = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.PROD);
 
-  if (!isLocalHost && (isProd || (typeof window !== 'undefined' && window.location?.hostname?.endsWith('.vercel.app')))) {
+  if (!pageIsLoopback && (isProd || (pageHost && !pageIsLanHost))) {
     return PRODUCTION_BACKEND_URL;
   }
 
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const host = window.location.hostname;
-    return `http://${host}:5001`;
-  }
+  return PRODUCTION_BACKEND_URL;
+};
 
-  return 'http://localhost:5001';
+export const resolveSocketUrl = () => {
+  const socketEnv = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_SOCKET_URL : '';
+  if (!socketEnv || typeof socketEnv !== 'string' || !socketEnv.trim()) return resolveBackendUrl();
+
+  const trimmed = socketEnv.trim().replace(/\/+$/, '').replace(/\/api$/, '');
+  const { host: pageHost, isLoopback: pageIsLoopback, isLan: pageIsLanHost } = getPageHostInfo();
+  try {
+    const parsed = new URL(trimmed);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return resolveBackendUrl();
+    const socketIsLoopback = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
+    if (socketIsLoopback && !pageIsLoopback) {
+      warnForUnreachableLoopback(trimmed, pageHost);
+      if (pageIsLanHost) return `${window.location.protocol}//${pageHost}:5001`;
+      return resolveBackendUrl();
+    }
+    return trimmed;
+  } catch {
+    console.warn('[ZOVIKPOS] VITE_SOCKET_URL is invalid; using the configured API backend URL.');
+    return resolveBackendUrl();
+  }
 };
 
 /**

@@ -16,6 +16,7 @@ const { logAudit } = require('../middleware/auditMiddleware');
 const { deductInventoryForConfirmedOrder, restoreInventoryForOrder } = require('../services/inventoryDeductionService');
 const { clearDashboardStatsCache } = require('./adminController');
 const { validateStudentEmail } = require('./authController');
+const { COUNTER_TABLE_LABEL, formatTableLabel, withTableLabel, isPhysicalTable } = require('../utils/tableLabel');
 
 /**
  * Generate human-friendly unique order number (e.g. ORD-2026-8941)
@@ -32,7 +33,6 @@ const generateOrderNumber = () => {
 const createOrder = async (req, res) => {
   const {
     items,
-    tableId,
     sessionId,
     paymentMethod = 'COD',
     paymentStatus = 'UNPAID',
@@ -95,75 +95,59 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ error: "Sorry, Online Payment is currently unavailable. Please choose Pay at Counter to continue." });
     }
 
-    let resolvedSessionId = null;
-    let resolvedTableId = null;
-    let resolvedTableNumber = 'Takeaway';
-    let resolvedBranchId = null;
-
-    // Verify dining session and physical table with auto-healing fallback
-    let existingSession = null;
-    if (sessionId) {
-      existingSession = await prisma.session.findUnique({
-        where: { id: sessionId },
-        include: { table: true },
-      });
-
-      if (req.user.role === 'CUSTOMER' && existingSession?.customerId && existingSession.customerId !== userId) {
-        return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+    if (!sessionId || typeof sessionId !== 'string') {
+      console.warn('[OrderTable] Rejected order without a session ID.', { userId });
+      if (userRole === 'CUSTOMER') {
+        return res.status(403).json({ error: 'Scan the QR code attached to your table before placing an order.', message: 'Scan the QR code attached to your table before placing an order.', code: 'TABLE_SESSION_REQUIRED' });
       }
+      return res.status(400).json({ error: 'Your dining session is missing. Please refresh the menu and try again.' });
     }
 
-    if (existingSession && existingSession.status === 'ACTIVE') {
-      resolvedSessionId = existingSession.id;
-      resolvedTableId = existingSession.tableId;
-      resolvedTableNumber = existingSession.table?.tableNumber || `Table ${existingSession.tableId}`;
-      resolvedBranchId = existingSession.table?.branchId || null;
-    } else {
-      // Session missing or inactive -> resolve physical table and create/obtain active session
-      const targetTableSearch = tableId || (existingSession?.tableId ? String(existingSession.tableId) : 'Table 4');
-      const table = await prisma.table.findFirst({
-        where: {
-          OR: [
-            { id: parseInt(targetTableSearch, 10) || -1 },
-            { tableNumber: String(targetTableSearch) },
-            { tableNumber: `Table ${String(targetTableSearch).replace(/[^0-9]/g, '')}` },
-          ],
-        },
-        include: { branch: true },
-      });
+    const existingSession = await prisma.session.findUnique({
+      where: { id: sessionId },
+      include: { table: { include: { branch: true } } },
+    });
 
-      if (table) {
-        if (!table.isActive) {
-          return res.status(403).json({ error: `Table ${table.tableNumber} is currently inactive.` });
-        }
-        resolvedTableId = table.id;
-        resolvedTableNumber = table.tableNumber;
-        resolvedBranchId = table.branchId || 1;
-
-        let activeSession = await prisma.session.findFirst({
-          where: {
-            tableId: table.id,
-            status: 'ACTIVE',
-            expiresAt: { gt: new Date() },
-          },
-        });
-
-        if (!activeSession) {
-          const crypto = require('crypto');
-          activeSession = await prisma.session.create({
-            data: {
-              id: crypto.randomUUID(),
-              tableId: table.id,
-              customerId: userId || null,
-              status: 'ACTIVE',
-              expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000),
-              cart: { create: {} },
-            },
-          });
-        }
-        resolvedSessionId = activeSession.id;
+    if (!existingSession || existingSession.status !== 'ACTIVE' || new Date(existingSession.expiresAt) <= new Date()) {
+      console.warn('[OrderTable] Rejected order with an invalid or expired session.', { userId, sessionId });
+      if (userRole === 'CUSTOMER') {
+        return res.status(403).json({ error: 'Your table session has expired. Scan the table QR code again.', message: 'Your table session has expired. Scan the table QR code again.', code: 'TABLE_SESSION_REQUIRED' });
       }
+      return res.status(400).json({ error: 'Your dining session has expired. Please scan your table QR again.' });
     }
+
+    if (req.user.role === 'CUSTOMER' && existingSession.customerId && existingSession.customerId !== userId) {
+      return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+    }
+
+    if (userRole === 'CUSTOMER' && (!existingSession.tableId || !isPhysicalTable(existingSession.table))) {
+      console.warn('[OrderTable] Rejected customer order without an active physical table session.', { userId, sessionId });
+      return res.status(403).json({
+        error: 'Scan the QR code attached to your table before placing an order.',
+        message: 'Scan the QR code attached to your table before placing an order.',
+        code: 'TABLE_SESSION_REQUIRED',
+      });
+    }
+
+    if (existingSession.tableId && (!existingSession.table || !existingSession.table.isActive)) {
+      console.warn('[OrderTable] Rejected order whose session references an unavailable table.', { sessionId });
+      return res.status(400).json({ error: 'The table linked to this session is unavailable. Please scan its QR again.' });
+    }
+
+    // Keep legacy staff counter orders readable/usable while customer orders are
+    // blocked above unless the session points to a signed physical QR table.
+    const hasExplicitCounterSession = /^(counter|takeaway|takeout|takeaway \/ counter|dining table)$/i
+      .test(String(existingSession.tableLabel || '').trim());
+    if (!existingSession.tableId && !hasExplicitCounterSession) {
+      console.warn('[OrderTable] Rejected order whose session has no valid table or counter label.', { sessionId });
+      return res.status(400).json({ error: 'Your dining session has no valid table. Please restart your session.' });
+    }
+
+    const resolvedSessionId = existingSession.id;
+    const resolvedTableId = existingSession.tableId || null;
+    const resolvedTableLabel = formatTableLabel(existingSession);
+    const resolvedTableNumber = existingSession.table?.tableNumber || COUNTER_TABLE_LABEL;
+    const resolvedBranchId = existingSession.table?.branchId || null;
 
     // AI ETA Prediction calculation (performed before DB transaction to prevent holding locks during HTTP calls)
     let etaResult = { baseEta: 5.0, adjustedEta: 5.0, queueLength: 0, kitchenLoad: 'Low', isPeakHour: false, historicalDelay: 0.0 };
@@ -239,6 +223,7 @@ const createOrder = async (req, res) => {
           sessionId: resolvedSessionId,
           tableId: resolvedTableId,
           tableNumber: resolvedTableNumber,
+          tableLabel: resolvedTableLabel,
           branchId: resolvedBranchId,
           customerEmail: customerEmail || req.user.email,
           trackingToken: null,
@@ -268,6 +253,7 @@ const createOrder = async (req, res) => {
         where: { id: newOrder.id },
         data: { trackingToken },
         include: {
+          table: { select: { id: true, tableNumber: true } },
           orderItems: { include: { menuItem: true } },
           user: { select: { id: true, name: true, email: true } },
         },
@@ -305,10 +291,10 @@ const createOrder = async (req, res) => {
         }
       }
 
-      return {
+      return withTableLabel({
         ...updatedWithTracking,
         etaPrediction: etaSaved,
-      };
+      });
     }, { maxWait: 15000, timeout: 30000 });
 
     // Realtime Socket.IO broadcasts
@@ -364,6 +350,7 @@ const updateOrderStatus = async (req, res) => {
     const order = await prisma.order.findUnique({
       where: { id: parseInt(id, 10) },
       include: {
+        table: { select: { id: true, tableNumber: true } },
         orderItems: { include: { menuItem: true } },
       },
     });
@@ -382,7 +369,7 @@ const updateOrderStatus = async (req, res) => {
     if (status === previousStatus) {
       return res.json({
         message: `Order is already in ${status} status.`,
-        order,
+        order: withTableLabel(order),
       });
     }
 
@@ -423,6 +410,7 @@ const updateOrderStatus = async (req, res) => {
         where: { id: order.id },
         data: updatePayload,
         include: {
+          table: { select: { id: true, tableNumber: true } },
           orderItems: { include: { menuItem: true } },
           user: { select: { id: true, name: true, email: true } },
           payment: true,
@@ -440,7 +428,7 @@ const updateOrderStatus = async (req, res) => {
         },
       });
 
-      return updated;
+      return withTableLabel(updated);
     });
 
     // STEP 2: Background — inventory, ETA, emails, audit (non-blocking)
@@ -469,23 +457,24 @@ const updateOrderStatus = async (req, res) => {
     });
 
     // STEP 3: Broadcast Realtime Socket Events immediately
-    emitToUser(updatedOrder.userId, 'order:update', updatedOrder);
-    emitToVendor('order:update', updatedOrder);
-    emitToAdmin('order:update', updatedOrder);
+    const orderWithTableLabel = withTableLabel(updatedOrder);
+    emitToUser(orderWithTableLabel.userId, 'order:update', orderWithTableLabel);
+    emitToVendor('order:update', orderWithTableLabel);
+    emitToAdmin('order:update', orderWithTableLabel);
 
     if (status === 'PAID') {
-      emitToKitchen('order:new', updatedOrder);
-      sendPaymentConfirmedEmail(updatedOrder).catch(err => console.error('[Email] Payment email error:', err.message));
+      emitToKitchen('order:new', orderWithTableLabel);
+      sendPaymentConfirmedEmail(orderWithTableLabel).catch(err => console.error('[Email] Payment email error:', err.message));
     } else {
-      emitToKitchen('order:update', updatedOrder);
+      emitToKitchen('order:update', orderWithTableLabel);
     }
 
     if (status === 'READY') {
-      sendOrderReadyEmail(updatedOrder).catch(err => console.error('[Email] Ready email error:', err.message));
+      sendOrderReadyEmail(orderWithTableLabel).catch(err => console.error('[Email] Ready email error:', err.message));
     } else if (status === 'COMPLETED') {
-      sendOrderCompletionEmail(updatedOrder).catch(err => console.error('[Email] Completion email error:', err.message));
+      sendOrderCompletionEmail(orderWithTableLabel).catch(err => console.error('[Email] Completion email error:', err.message));
     } else if (['CANCELLED', 'REFUNDED', 'PAYMENT_FAILED'].includes(status)) {
-      sendOrderCancellationEmail(updatedOrder, status).catch(err => console.error('[Email] Cancel email error:', err.message));
+      sendOrderCancellationEmail(orderWithTableLabel, status).catch(err => console.error('[Email] Cancel email error:', err.message));
     }
 
     logAudit({
@@ -502,7 +491,7 @@ const updateOrderStatus = async (req, res) => {
 
     return res.json({
       message: `Order status updated to ${status}.`,
-      order: updatedOrder,
+      order: orderWithTableLabel,
     });
   } catch (error) {
     console.error('Update order status error:', error);
@@ -514,12 +503,13 @@ const updateOrderStatus = async (req, res) => {
  * Get all orders with role-filtered scope
  */
 const getAllOrders = async (req, res) => {
-  const { status, sessionId } = req.query;
+  const { status, sessionId, page: pageParam, pageSize: pageSizeParam, search, paymentMethod, from, toExclusive, branchId, exportAll } = req.query;
   const userRole = (req.user.role || '').toUpperCase();
   const userId = req.user.id;
 
   try {
     const whereClause = {};
+    const paginatedAdminRequest = userRole === 'ADMIN' && (pageParam !== undefined || pageSizeParam !== undefined || exportAll === 'true');
 
     // Customer sees orders belonging to their active dining session OR their customer user ID
     if (userRole === 'CUSTOMER') {
@@ -542,20 +532,134 @@ const getAllOrders = async (req, res) => {
       whereClause.status = status;
     }
 
-    const orders = await prisma.order.findMany({
-      where: whereClause,
-      include: {
-        orderItems: { include: { menuItem: true } },
-        user: { select: { id: true, name: true, email: true } },
-        payment: true,
-        etaPrediction: true,
-        statusHistory: { orderBy: { createdAt: 'asc' } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
+    // Admin-only list filters are additive; existing callers keep their original response behavior.
+    if (userRole === 'ADMIN') {
+      if (branchId && branchId !== 'all') {
+        const parsedBranchId = Number(branchId);
+        if (!Number.isInteger(parsedBranchId) || parsedBranchId <= 0) {
+          return res.status(400).json({ error: 'Invalid branchId.' });
+        }
+        whereClause.branchId = parsedBranchId;
+      }
 
-    return res.json({ orders });
+      if (search && String(search).trim()) {
+        const term = String(search).trim().slice(0, 120);
+        const searchTerms = [
+          { orderNumber: { contains: term, mode: 'insensitive' } },
+          { tableNumber: { contains: term, mode: 'insensitive' } },
+          { tableLabel: { contains: term, mode: 'insensitive' } },
+          { customerEmail: { contains: term, mode: 'insensitive' } },
+          { user: { is: { name: { contains: term, mode: 'insensitive' } } } },
+          { user: { is: { email: { contains: term, mode: 'insensitive' } } } },
+        ];
+        const numericTerm = Number.parseInt(term, 10);
+        if (Number.isInteger(numericTerm) && String(numericTerm) === term) searchTerms.push({ tableId: numericTerm });
+        whereClause.AND = [...(whereClause.AND || []), { OR: searchTerms }];
+      }
+
+      if (paymentMethod && paymentMethod !== 'ALL') {
+        const normalizedMethod = String(paymentMethod).trim().toUpperCase();
+        if (normalizedMethod === 'EASYPAISA') {
+          whereClause.paymentMethod = { in: ['EASYPAISA', 'Easypaisa', 'NAYAPAY', 'NayaPay'] };
+        } else if (normalizedMethod === 'JAZZCASH') {
+          whereClause.paymentMethod = { in: ['JAZZCASH', 'JazzCash'] };
+        } else if (normalizedMethod === 'COD') {
+          whereClause.paymentMethod = { in: ['COD', 'CASH', 'Cash'] };
+        } else {
+          return res.status(400).json({ error: 'Invalid payment method filter.' });
+        }
+      }
+
+      if (from || toExclusive) {
+        const dateFilter = {};
+        if (from) {
+          const start = new Date(from);
+          if (Number.isNaN(start.getTime())) return res.status(400).json({ error: 'Invalid start date.' });
+          dateFilter.gte = start;
+        }
+        if (toExclusive) {
+          const end = new Date(toExclusive);
+          if (Number.isNaN(end.getTime())) return res.status(400).json({ error: 'Invalid end date.' });
+          dateFilter.lt = end;
+        }
+        if (dateFilter.gte && dateFilter.lt && dateFilter.gte >= dateFilter.lt) {
+          return res.status(400).json({ error: 'The start date must be before the end date.' });
+        }
+        whereClause.createdAt = dateFilter;
+      }
+    }
+
+    let pagination = null;
+    let take = 100;
+    let skip = 0;
+    const allowedStatuses = new Set([
+      'PENDING', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY',
+      'COMPLETED', 'CANCELLED', 'PAYMENT_FAILED', 'REFUNDED',
+    ]);
+    if (status && userRole === 'ADMIN' && !allowedStatuses.has(String(status).toUpperCase())) {
+      return res.status(400).json({ error: 'Invalid order status filter.' });
+    }
+    if (paginatedAdminRequest && exportAll !== 'true') {
+      const page = pageParam === undefined ? 1 : Number(pageParam);
+      const requestedPageSize = pageSizeParam === undefined ? 25 : Number(pageSizeParam);
+      if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(requestedPageSize) || requestedPageSize < 1) {
+        return res.status(400).json({ error: 'Page and pageSize must be positive integers.' });
+      }
+      take = Math.min(requestedPageSize, 100);
+      skip = (page - 1) * take;
+      if (!Number.isSafeInteger(skip)) return res.status(400).json({ error: 'Page is out of range.' });
+      pagination = { page, pageSize: take };
+    } else if (paginatedAdminRequest && exportAll === 'true') {
+      take = 10000;
+    }
+
+    const include = {
+      table: { select: { id: true, tableNumber: true } },
+      orderItems: { include: { menuItem: true } },
+      user: { select: { id: true, name: true, email: true } },
+      payment: true,
+      etaPrediction: true,
+      statusHistory: { orderBy: { createdAt: 'asc' } },
+    };
+    const exportSelect = {
+      id: true,
+      orderNumber: true,
+      tableId: true,
+      tableNumber: true,
+      tableLabel: true,
+      total: true,
+      paymentMethod: true,
+      paymentStatus: true,
+      status: true,
+      createdAt: true,
+      user: { select: { id: true, name: true, email: true } },
+      table: { select: { id: true, tableNumber: true } },
+    };
+    const isAdminExport = paginatedAdminRequest && exportAll === 'true';
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where: whereClause,
+        ...(isAdminExport ? { select: exportSelect } : { include }),
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take,
+        skip,
+      }),
+      paginatedAdminRequest ? prisma.order.count({ where: whereClause }) : Promise.resolve(null),
+    ]);
+
+    const response = { orders: orders.map(withTableLabel) };
+    if (paginatedAdminRequest && exportAll !== 'true') {
+      response.pagination = {
+        ...pagination,
+        total,
+        totalPages: Math.ceil(total / pagination.pageSize),
+      };
+    }
+    if (paginatedAdminRequest && exportAll === 'true') {
+      response.exportTruncated = total > take;
+      response.total = total;
+    }
+    return res.json(response);
   } catch (error) {
     console.error('Get orders error:', error);
     return res.status(500).json({ error: 'Failed to retrieve orders.' });
@@ -574,6 +678,7 @@ const getOrderById = async (req, res) => {
     const order = await prisma.order.findUnique({
       where: { id: parseInt(id, 10) },
       include: {
+        table: { select: { id: true, tableNumber: true } },
         orderItems: { include: { menuItem: true } },
         user: { select: { id: true, name: true, email: true } },
         payment: true,
@@ -590,7 +695,7 @@ const getOrderById = async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized access to this order.' });
     }
 
-    return res.json({ order });
+    return res.json({ order: withTableLabel(order) });
   } catch (error) {
     console.error('Get order by ID error:', error);
     return res.status(500).json({ error: 'Failed to retrieve order.' });
@@ -607,6 +712,7 @@ const getOrderByTrackingToken = async (req, res) => {
     const order = await prisma.order.findUnique({
       where: { trackingToken: token },
       include: {
+        table: { select: { id: true, tableNumber: true } },
         orderItems: { include: { menuItem: true } },
         etaPrediction: true,
         payment: true,
@@ -618,7 +724,7 @@ const getOrderByTrackingToken = async (req, res) => {
       return res.status(404).json({ error: 'Order tracking record not found.' });
     }
 
-    return res.json({ order });
+    return res.json({ order: withTableLabel(order) });
   } catch (error) {
     console.error('Tracking error:', error);
     return res.status(500).json({ error: 'Failed to retrieve tracking info.' });
@@ -637,7 +743,10 @@ const transferSingleOrderTable = async (req, res) => {
   try {
     const order = await prisma.order.findUnique({
       where: { id: parseInt(id, 10) },
-      include: { orderItems: { include: { menuItem: true } } },
+      include: {
+        table: { select: { id: true, tableNumber: true } },
+        orderItems: { include: { menuItem: true } },
+      },
     });
 
     if (!order) {
@@ -681,15 +790,15 @@ const transferSingleOrderTable = async (req, res) => {
     }
 
     if (!targetTable) {
-      return res.status(404).json({ error: 'Target dining table not found.' });
+      return res.status(404).json({ error: 'Target table not found.' });
     }
 
     if (!targetTable.isActive) {
       return res.status(403).json({ error: `${targetTable.tableNumber} is currently deactivated.` });
     }
 
-    const oldTableDisplay = order.tableNumber || (order.tableId ? `Table ${order.tableId}` : 'Takeaway');
-    const newTableDisplay = targetTable.tableNumber;
+    const oldTableDisplay = formatTableLabel(order);
+    const newTableDisplay = formatTableLabel({ table: targetTable });
 
     const isUrgentReroute = order.status === 'READY';
     const noteText = isUrgentReroute
@@ -701,8 +810,10 @@ const transferSingleOrderTable = async (req, res) => {
       data: {
         tableId: targetTable.id,
         tableNumber: newTableDisplay,
+        tableLabel: newTableDisplay,
       },
       include: {
+        table: { select: { id: true, tableNumber: true } },
         orderItems: { include: { menuItem: true } },
         user: { select: { id: true, name: true, email: true } },
         payment: true,
@@ -722,14 +833,15 @@ const transferSingleOrderTable = async (req, res) => {
     });
 
     // Realtime notifications
-    emitToKitchen('order:update', updatedOrder);
-    emitToVendor('order:update', updatedOrder);
-    emitToAdmin('order:update', updatedOrder);
-    emitToUser(updatedOrder.userId, 'order:update', updatedOrder);
+    const orderWithTableLabel = withTableLabel(updatedOrder);
+    emitToKitchen('order:update', orderWithTableLabel);
+    emitToVendor('order:update', orderWithTableLabel);
+    emitToAdmin('order:update', orderWithTableLabel);
+    emitToUser(orderWithTableLabel.userId, 'order:update', orderWithTableLabel);
 
     emitToKitchen('table:shift', {
-      orderId: updatedOrder.id,
-      orderNumber: updatedOrder.orderNumber,
+      orderId: orderWithTableLabel.id,
+      orderNumber: orderWithTableLabel.orderNumber,
       oldTable: oldTableDisplay,
       newTable: newTableDisplay,
       isUrgent: isUrgentReroute,
@@ -737,7 +849,7 @@ const transferSingleOrderTable = async (req, res) => {
 
     return res.json({
       message: `Order #${updatedOrder.orderNumber} successfully transferred to ${newTableDisplay}.`,
-      order: updatedOrder,
+      order: orderWithTableLabel,
       oldTable: oldTableDisplay,
       newTable: newTableDisplay,
     });

@@ -27,6 +27,9 @@ export const exportToCSV = (filename, data, headers) => {
         let val = item[h.key];
         if (val === null || val === undefined) val = '';
         else if (typeof val === 'object') val = JSON.stringify(val);
+        // Spreadsheet apps may execute cells that begin with formula operators.
+        // Prefix user-controlled text only; keep numeric values numeric.
+        if (typeof val === 'string' && /^\s*[=+@-]/.test(val)) val = `'${val}`;
         return `"${String(val).replace(/"/g, '""')}"`;
       })
       .join(',');

@@ -1,4 +1,4 @@
-import ThemedSelect from '../../common/ThemedSelect';
+﻿import ThemedSelect from '../../common/ThemedSelect';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../services/api';
@@ -262,10 +262,10 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
     <div className="space-y-6">
 
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-3xl shadow-xl">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 glass-card p-5 sm:p-6">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
-            <span className="p-2 rounded-2xl bg-amber-500/10 text-amber-400">💰</span>
+            <span className="p-2 rounded-2xl bg-amber-500/10 text-amber-400">ðŸ’°</span>
             Costs & Margins
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -308,13 +308,13 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
         <div className="bg-[var(--card-bg)]/60 border border-[var(--border-color)] p-4 rounded-2xl space-y-1">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] block">Average Food Cost</span>
           <div className="text-2xl font-black text-amber-400 font-mono">{summary.avgFoodCost}%</div>
-          <div className="text-[10px] text-[var(--text-muted)]">Target benchmark: 30%–35%</div>
+          <div className="text-[10px] text-[var(--text-muted)]">Target benchmark: 30%â€“35%</div>
         </div>
 
         <div className="bg-[var(--card-bg)]/60 border border-[var(--border-color)] p-4 rounded-2xl space-y-1">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] block">Best Margin</span>
           <div className="text-base font-black text-emerald-400 truncate">
-            {summary.bestMarginItem ? `${summary.bestMarginItem.name}` : '—'}
+            {summary.bestMarginItem ? `${summary.bestMarginItem.name}` : 'â€”'}
           </div>
           <div className="text-[10px] text-emerald-400 font-mono font-bold">
             {summary.bestMarginItem ? `${summary.bestMarginItem.marginPct.toFixed(1)}% Gross Margin` : 'No recipe yet'}
@@ -324,7 +324,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
         <div className="bg-[var(--card-bg)]/60 border border-[var(--border-color)] p-4 rounded-2xl space-y-1">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] block">Highest Cost Item</span>
           <div className="text-base font-black text-rose-400 truncate">
-            {summary.highestCostItem ? `${summary.highestCostItem.name}` : '—'}
+            {summary.highestCostItem ? `${summary.highestCostItem.name}` : 'â€”'}
           </div>
           <div className="text-[10px] text-rose-400 font-mono font-bold">
             {summary.highestCostItem ? `Rs. ${summary.highestCostItem.recipeCost.toFixed(2)} Recipe Cost` : 'No recipe yet'}
@@ -380,7 +380,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
       </div>
 
       {/* Main Table */}
-      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-3xl overflow-hidden shadow-xl">
+      <div className="glass-table overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-[var(--text-muted)] text-xs space-y-2">
             <RefreshCw className="w-6 h-6 animate-spin mx-auto text-orange-400" />
@@ -430,7 +430,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 shrink-0">
-                            🍔
+                            ðŸ”
                           </div>
                           <div>
                             <strong className="text-[var(--text-main)] block">{item.name}</strong>
@@ -444,7 +444,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
                       </td>
 
                       <td className="py-3 px-4 font-mono font-bold text-amber-400">
-                        {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.recipeCost.toFixed(2)}` : '—'}
+                        {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.recipeCost.toFixed(2)}` : 'â€”'}
                       </td>
 
                       <td className="py-3 px-4 font-mono font-bold">
@@ -453,12 +453,12 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
                             {item.foodCostPct.toFixed(1)}%
                           </span>
                         ) : (
-                          '—'
+                          'â€”'
                         )}
                       </td>
 
                       <td className="py-3 px-4 font-mono font-bold text-emerald-400">
-                        {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.grossMargin.toFixed(2)}` : '—'}
+                        {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.grossMargin.toFixed(2)}` : 'â€”'}
                       </td>
 
                       <td className="py-3 px-4">
@@ -496,7 +496,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
                             <button
                               onClick={() => handleOpenSingleDelete(item)}
                               title="Clear recipe ingredients and cost"
-                              className="p-1.5 rounded-lg bg-[var(--bg-color)] hover:bg-rose-500/10 text-[var(--text-muted)] hover:text-rose-400 border border-[var(--border-color)] hover:border-rose-500/30 transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg bg-[var(--bg-color)] hover:bg-rose-500/10 text-[var(--text-muted)] hover:text-rose-400 border border-[var(--border-color)] hover:border-rose-500/30 transition-colors cursor-pointer icon-btn"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -532,14 +532,14 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
 
       {/* Item Cost Breakdown Modal via Portal */}
       {selectedItemDetails && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <div>
                 <h3 className="text-base font-black text-[var(--text-main)]">{selectedItemDetails.name}</h3>
                 <span className="text-[10px] text-orange-400 font-bold uppercase">{selectedItemDetails.category || 'General'}</span>
               </div>
-              <button onClick={() => setSelectedItemDetails(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)]">
+              <button onClick={() => setSelectedItemDetails(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] icon-btn">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -547,7 +547,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
             <div className="grid grid-cols-2 gap-3 bg-[var(--bg-color)] p-4 rounded-2xl text-xs font-mono font-bold">
               <div>Selling Price: <strong className="text-[var(--text-main)]">Rs. {selectedItemDetails.price}</strong></div>
               <div>Current Recipe Cost: <strong className="text-amber-400">Rs. {selectedItemDetails.recipeCost.toFixed(2)}</strong></div>
-              <div>Food Cost %: <strong className="text-emerald-400">{selectedItemDetails.foodCostPct > 0 ? `${selectedItemDetails.foodCostPct.toFixed(1)}%` : '—'}</strong></div>
+              <div>Food Cost %: <strong className="text-emerald-400">{selectedItemDetails.foodCostPct > 0 ? `${selectedItemDetails.foodCostPct.toFixed(1)}%` : 'â€”'}</strong></div>
               <div>Gross Margin: <strong className="text-emerald-400">Rs. {selectedItemDetails.grossMargin.toFixed(2)}</strong></div>
             </div>
 
@@ -603,3 +603,5 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
 };
 
 export default AdminCostsMarginsView;
+
+

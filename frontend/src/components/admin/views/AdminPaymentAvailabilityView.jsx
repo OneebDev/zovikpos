@@ -1,4 +1,4 @@
-import  { useState, useEffect, useCallback } from 'react';
+﻿import  { useState, useEffect, useCallback } from 'react';
 import {
   Banknote,
   CreditCard,
@@ -67,7 +67,7 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
+      <div className="glass-card p-6">
         <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">Payment Availability Controls</h2>
         <p className="text-xs text-[var(--text-muted)] mt-0.5">Control whether Cash on Delivery (Pay at Counter) and Online Wallet payments are currently accepted by the canteen.</p>
       </div>
@@ -76,11 +76,11 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
       {loading ? (
         <div className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)]/40 text-xs font-semibold text-[var(--text-muted)]">
           <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
-          <span>Loading payment settings…</span>
+          <span>Loading payment settingsâ€¦</span>
         </div>
       ) : <div className="grid md:grid-cols-2 gap-6">
         {/* COD Toggle Card */}
-        <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-6">
+        <div className="glass-card p-6 space-y-6">
           <div className="flex justify-between items-start">
             <div className="flex items-center space-x-3">
               <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
@@ -119,7 +119,7 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
         </div>
 
         {/* Online Payment Toggle Card */}
-        <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-6">
+        <div className="glass-card p-6 space-y-6">
           <div className="flex justify-between items-start">
             <div className="flex items-center space-x-3">
               <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center">
@@ -162,3 +162,4 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
 };
 
 export default AdminPaymentAvailabilityView;
+

@@ -1,5 +1,5 @@
-import ThemedSelect from '../../common/ThemedSelect';
-import  { useState, useMemo } from 'react';
+﻿import ThemedSelect from '../../common/ThemedSelect';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   Search,
   Download,
@@ -13,8 +13,11 @@ import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
 import DateRangeFilterBar, { getPresetRange } from '../../common/DateRangeFilterBar';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
 import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
-import { paymentMethodKey, paymentMethodLabel } from '../../../utils/paymentMethods';
+import { paymentMethodLabel } from '../../../utils/paymentMethods';
+import { resolveTableLabel } from '../../../utils/customerTableLabel';
+import { formatPrice } from '../../../utils/formatPrice';
 import api from '../../../services/api';
+import { getSocket } from '../../../services/socket';
 
 const statusBadges = {
   PENDING: { label: 'PENDING', bg: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
@@ -29,18 +32,33 @@ const statusBadges = {
 };
 
 const lifecycleSteps = ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY', 'COMPLETED'];
-
-// Date range quick-filter helper (local)
-const toDateStr = (d) => {
-  if (!d) return '';
-  const dt = new Date(d);
-  return dt.toISOString().split('T')[0];
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+}[character]));
+const localDayBoundaryIso = (dateValue, isExclusiveEnd = false) => {
+  if (!dateValue) return '';
+  const [year, month, day] = dateValue.split('-').map(Number);
+  if (![year, month, day].every(Number.isInteger)) return '';
+  return new Date(year, month - 1, day + (isExclusiveEnd ? 1 : 0)).toISOString();
 };
 
-const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
+const AdminOrdersView = ({ selectedBranchId = 'all', onRefresh, showToast }) => {
   const [activeTab, setActiveTab] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('ALL');
+  const [pageOrders, setPageOrders] = useState([]);
+  const [pageInfo, setPageInfo] = useState({ page: 1, pageSize: 25, total: 0, totalPages: 0 });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState('');
+  const [exportLoading, setExportLoading] = useState(false);
+  const ordersAbortRef = useRef(null);
+  const ordersRequestRef = useRef(0);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
@@ -66,60 +84,154 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
     return getPresetRange(datePreset);
   }, [datePreset, customFrom, customTo]);
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
-      const matchesTab = activeTab === 'ALL' || order.status === activeTab;
-      const matchesSearch =
-        order.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        String(order.tableId).includes(searchTerm);
-      const matchesMethod = paymentMethodFilter === 'ALL' || paymentMethodKey(order.paymentMethod) === paymentMethodKey(paymentMethodFilter);
+  const requestFilters = useMemo(() => ({
+    page: currentPage,
+    pageSize: 25,
+    ...(activeTab !== 'ALL' ? { status: activeTab } : {}),
+    ...(debouncedSearchTerm ? { search: debouncedSearchTerm } : {}),
+    ...(paymentMethodFilter !== 'ALL' ? { paymentMethod: paymentMethodFilter } : {}),
+    ...(selectedBranchId && selectedBranchId !== 'all' ? { branchId: selectedBranchId } : {}),
+    ...(activeDateRange?.from ? { from: localDayBoundaryIso(activeDateRange.from) } : {}),
+    ...(activeDateRange?.to ? { toExclusive: localDayBoundaryIso(activeDateRange.to, true) } : {}),
+  }), [activeDateRange, activeTab, currentPage, debouncedSearchTerm, paymentMethodFilter, selectedBranchId]);
 
-      // Date range filter
-      let matchesDate = true;
-      if (activeDateRange) {
-        const orderDate = toDateStr(new Date(order.createdAt));
-        if (activeDateRange.from && activeDateRange.to) {
-          matchesDate = orderDate >= activeDateRange.from && orderDate <= activeDateRange.to;
-        } else if (activeDateRange.from) {
-          matchesDate = orderDate >= activeDateRange.from;
-        } else if (activeDateRange.to) {
-          matchesDate = orderDate <= activeDateRange.to;
-        }
+  const fetchOrdersPage = useCallback(async () => {
+    ordersAbortRef.current?.abort();
+    const controller = new AbortController();
+    ordersAbortRef.current = controller;
+    const requestId = ++ordersRequestRef.current;
+    setOrdersLoading(true);
+    setOrdersError('');
+    try {
+      const response = await api.get('/orders', { params: requestFilters, signal: controller.signal, timeout: 8000 });
+      if (requestId !== ordersRequestRef.current) return;
+      setPageOrders(Array.isArray(response.data?.orders) ? response.data.orders : []);
+      const nextPageInfo = response.data?.pagination || { page: 1, pageSize: 25, total: 0, totalPages: 0 };
+      setPageInfo(nextPageInfo);
+      if (currentPage > (nextPageInfo.totalPages || 1)) {
+        setCurrentPage(nextPageInfo.totalPages || 1);
+      }
+    } catch (error) {
+      if (requestId !== ordersRequestRef.current || controller.signal.aborted) return;
+      console.error('Fetch paginated orders error:', error);
+      setOrdersError(error.response?.data?.message || error.response?.data?.error || error.message || 'Could not load orders.');
+    } finally {
+      if (requestId === ordersRequestRef.current) setOrdersLoading(false);
+    }
+  }, [currentPage, requestFilters]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm.trim());
+      setCurrentPage(1);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    fetchOrdersPage();
+    return () => {
+      ordersAbortRef.current?.abort();
+    };
+  }, [fetchOrdersPage]);
+
+  useEffect(() => () => {
+    ordersRequestRef.current += 1;
+    ordersAbortRef.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+    let timer;
+    let safetyPoll;
+    let wasDisconnected = !socket.connected;
+    const refreshOnOrderEvent = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(fetchOrdersPage, 300);
+    };
+    const clearSafetyPoll = () => {
+      if (safetyPoll) window.clearInterval(safetyPoll);
+      safetyPoll = undefined;
+    };
+    const handleDisconnect = () => {
+      wasDisconnected = true;
+      clearSafetyPoll();
+      safetyPoll = window.setInterval(fetchOrdersPage, 30000);
+    };
+    const handleConnect = () => {
+      clearSafetyPoll();
+      if (wasDisconnected) {
+        wasDisconnected = false;
+        fetchOrdersPage();
+      }
+    };
+    socket.on('order:new', refreshOnOrderEvent);
+    socket.on('order:update', refreshOnOrderEvent);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect', handleConnect);
+    if (wasDisconnected) handleDisconnect();
+    return () => {
+      window.clearTimeout(timer);
+      clearSafetyPoll();
+      socket.off('order:new', refreshOnOrderEvent);
+      socket.off('order:update', refreshOnOrderEvent);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect', handleConnect);
+    };
+  }, [fetchOrdersPage]);
+
+  const filteredOrders = pageOrders;
+  const isOrdersLoading = ordersLoading;
+  const displayedOrdersError = ordersError;
+  const pageCount = Math.max(1, pageInfo.totalPages || 1);
+
+  const fetchOrdersForExport = useCallback(async () => {
+    const filters = { ...requestFilters };
+    delete filters.page;
+    delete filters.pageSize;
+    const response = await api.get('/orders', {
+      params: { ...filters, exportAll: 'true' },
+      timeout: 20000,
+    });
+    if (response.data?.exportTruncated) showToast?.('Export contains the first 10,000 matching orders.', 'warning');
+    return Array.isArray(response.data?.orders) ? response.data.orders : [];
+  }, [requestFilters, showToast]);
+
+  const runExport = async (format) => {
+    setExportLoading(true);
+    try {
+      const exportOrders = await fetchOrdersForExport();
+      if (!exportOrders.length) {
+        showToast?.('No orders match the current filters.', 'warning');
+        return;
+      }
+      if (format === 'csv') {
+        const csvData = exportOrders.map((o) => ({
+          OrderNumber: o.orderNumber,
+          Customer: o.user?.name || o.user?.email || 'Guest',
+          Email: o.user?.email || 'N/A',
+          TableNumber: resolveTableLabel(o),
+          TotalAmount: Number(o.total || 0),
+          PaymentMethod: paymentMethodLabel(o.paymentMethod),
+          PaymentStatus: o.paymentStatus,
+          OrderStatus: o.status,
+          CreatedAt: new Date(o.createdAt).toLocaleString(),
+        }));
+        exportToCSV(`orders_export_${Date.now()}.csv`, csvData, [
+          { key: 'OrderNumber', label: 'Order Number' },
+          { key: 'Customer', label: 'Customer' },
+          { key: 'Email', label: 'Email' },
+          { key: 'TableNumber', label: 'Table' },
+          { key: 'TotalAmount', label: 'Total (Rs.)' },
+          { key: 'PaymentMethod', label: 'Method' },
+          { key: 'PaymentStatus', label: 'Payment Status' },
+          { key: 'OrderStatus', label: 'Order Status' },
+          { key: 'CreatedAt', label: 'Date Time' },
+        ]);
+        return;
       }
 
-      return matchesTab && matchesSearch && matchesMethod && matchesDate;
-    });
-  }, [orders, activeTab, searchTerm, paymentMethodFilter, activeDateRange]);
-
-  const handleExportCSV = () => {
-    const csvData = filteredOrders.map((o) => ({
-      OrderNumber: o.orderNumber,
-      Customer: o.user?.name || o.user?.email || 'Guest',
-      Email: o.user?.email || 'N/A',
-      TableNumber: o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway'),
-      TotalAmount: o.total,
-      PaymentMethod: paymentMethodLabel(o.paymentMethod),
-      PaymentStatus: o.paymentStatus,
-      OrderStatus: o.status,
-      CreatedAt: new Date(o.createdAt).toLocaleString(),
-    }));
-
-    exportToCSV(`orders_export_${Date.now()}.csv`, csvData, [
-      { key: 'OrderNumber', label: 'Order Number' },
-      { key: 'Customer', label: 'Customer' },
-      { key: 'Email', label: 'Email' },
-      { key: 'TableNumber', label: 'Table' },
-      { key: 'TotalAmount', label: 'Total (Rs.)' },
-      { key: 'PaymentMethod', label: 'Method' },
-      { key: 'PaymentStatus', label: 'Payment Status' },
-      { key: 'OrderStatus', label: 'Order Status' },
-      { key: 'CreatedAt', label: 'Date Time' },
-    ]);
-  };
-
-  const handleExportPDF = () => {
     const tableHtml = `
       <table>
         <thead>
@@ -134,17 +246,17 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
           </tr>
         </thead>
         <tbody>
-          ${filteredOrders
+          ${exportOrders
             .map(
               (o) => `
             <tr>
-              <td><strong>${o.orderNumber}</strong></td>
-              <td>${o.user?.name || o.user?.email || 'Guest'}</td>
-              <td>${o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway')}</td>
-              <td>Rs. ${Number(o.total || 0).toFixed(2)}</td>
-              <td>${paymentMethodLabel(o.paymentMethod)}</td>
-              <td><span class="badge badge-success">${o.status}</span></td>
-              <td>${new Date(o.createdAt).toLocaleString()}</td>
+              <td><strong>${escapeHtml(o.orderNumber)}</strong></td>
+              <td>${escapeHtml(o.user?.name || o.user?.email || 'Guest')}</td>
+              <td>${escapeHtml(resolveTableLabel(o))}</td>
+              <td>${escapeHtml(formatPrice(o.total))}</td>
+              <td>${escapeHtml(paymentMethodLabel(o.paymentMethod))}</td>
+              <td><span class="badge badge-success">${escapeHtml(o.status)}</span></td>
+              <td>${escapeHtml(new Date(o.createdAt).toLocaleString())}</td>
             </tr>
           `
             )
@@ -153,6 +265,12 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
       </table>
     `;
     printPDFReport('Orders & Transactions Report', tableHtml);
+    } catch (error) {
+      console.error(`Export ${format.toUpperCase()} orders error:`, error);
+      showToast?.(error.response?.data?.message || error.response?.data?.error || `Could not export orders: ${error.message}`, 'error');
+    } finally {
+      setExportLoading(false);
+    }
   };
 
 
@@ -162,12 +280,12 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
     if (!orderToDelete) return;
     setDeleteLoading(true);
     try {
-      const res = await api.delete(`/orders/${orderToDelete.id}`);
+      const res = await api.delete(`/orders/${orderToDelete.id}`, { timeout: 8000 });
       if (showToast) showToast(res.data?.message || 'Order deleted successfully.');
       setDeleteModalOpen(false);
       setOrderToDelete(null);
       if (selectedOrder?.id === orderToDelete.id) setSelectedOrder(null);
-      if (onRefresh) onRefresh();
+      await Promise.all([fetchOrdersPage(), onRefresh?.({ includeOrders: false })]);
     } catch (err) {
       console.error('Delete order error:', err);
       if (showToast) showToast(err.response?.data?.error || 'Failed to delete order', 'error');
@@ -184,13 +302,14 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
       const res = await api.delete('/orders/bulk', {
         data: selectedIds.length
           ? { ids: selectedIds }
-          : { scope: activeTab === 'CANCELLED' ? 'CANCELLED' : 'PAYMENT_FAILED' }
+          : { scope: activeTab === 'CANCELLED' ? 'CANCELLED' : 'PAYMENT_FAILED' },
+        timeout: 8000,
       });
       if (showToast) showToast(res.data?.message || 'Orders deleted successfully.');
       setDeleteModalOpen(false);
       setIsBulkDeleting(false);
       setSelectedOrderIds(new Set());
-      if (onRefresh) onRefresh();
+      await Promise.all([fetchOrdersPage(), onRefresh?.({ includeOrders: false })]);
     } catch (err) {
       console.error('Bulk delete orders error:', err);
       if (showToast) showToast(err.response?.data?.error || 'Failed to bulk delete orders', 'error');
@@ -198,11 +317,6 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
       setDeleteLoading(false);
     }
   };
-
-  const cancellableOrFailedCount = useMemo(
-    () => orders.filter((order) => order.status === 'CANCELLED' || order.status === 'PAYMENT_FAILED').length,
-    [orders]
-  );
 
   const selectableOrders = filteredOrders;
   const allSelectableOrdersSelected = selectableOrders.length > 0 && selectableOrders.every((order) => selectedOrderIds.has(order.id));
@@ -222,7 +336,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 glass-card p-4 sm:p-6">
         <div className="min-w-0 flex-1">
           <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">Orders Management</h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">Filter, inspect, calendar timeline, and export complete dining order lifecycles.</p>
@@ -240,15 +354,19 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
             </button>
           )}
           <button
-            onClick={handleExportCSV}
-            className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-emerald-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-emerald-500 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs"
+            type="button"
+            onClick={() => runExport('csv')}
+            disabled={exportLoading}
+            className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-emerald-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-emerald-500 cursor-pointer disabled:cursor-wait disabled:opacity-60 sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs"
           >
             <Download className="h-3.5 w-3.5 shrink-0" />
             <span><span className="sm:hidden">CSV</span><span className="hidden sm:inline">Export CSV</span></span>
           </button>
           <button
-            onClick={handleExportPDF}
-            className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-orange-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-orange-500 cursor-pointer sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs"
+            type="button"
+            onClick={() => runExport('pdf')}
+            disabled={exportLoading}
+            className="mobile-action-third flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-orange-600 px-1 text-[10px] font-bold text-white shadow-md transition-all hover:bg-orange-500 cursor-pointer disabled:cursor-wait disabled:opacity-60 sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3.5 sm:py-2 sm:text-xs"
           >
             <Printer className="h-3.5 w-3.5 shrink-0" />
             <span><span className="sm:hidden">PDF</span><span className="hidden sm:inline">Export PDF</span></span>
@@ -261,7 +379,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
       )}
 
       {/* Filter Tabs */}
-      <div className="flex items-center overflow-x-auto p-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl gap-1 custom-scrollbar">
+      <div role="tablist" aria-label="Order status filters" className="flex min-w-0 items-center overflow-x-auto p-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl gap-1 scrollbar-none">
         {[
           'ALL',
           'PENDING',
@@ -271,12 +389,16 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
           'READY',
           'COMPLETED',
           'CANCELLED',
+          'PAYMENT_FAILED',
           'REFUNDED',
         ].map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
+            className={`flex-none px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
               activeTab === tab
                 ? 'bg-orange-600 text-white shadow-md'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-color)]'
@@ -289,12 +411,13 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
       {/* Date Quick-Filter Bar with Dual-Click Interactive Range Popover */}
       <DateRangeFilterBar
         preset={datePreset}
-        onPresetChange={setDatePreset}
+            onPresetChange={(preset) => { setDatePreset(preset); setCurrentPage(1); }}
         customFrom={customFrom}
         customTo={customTo}
         onCustomRangeChange={(from, to) => {
           setCustomFrom(from);
           setCustomTo(to);
+            setCurrentPage(1);
         }}
       />
 
@@ -305,7 +428,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
             placeholder="Search by Order #, Customer Email, Name, or Table..."
             className="w-full pl-10 pr-4 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] placeholder-[var(--text-muted)] focus:outline-none focus:border-orange-500 transition-colors"
           />
@@ -314,7 +437,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
         <div className="sm:col-span-4">
           <ThemedSelect
             value={paymentMethodFilter}
-            onChange={(e) => setPaymentMethodFilter(e.target.value)}
+            onChange={(e) => { setPaymentMethodFilter(e.target.value); setCurrentPage(1); }}
             className="w-full px-4 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 transition-colors cursor-pointer"
           >
             <option value="ALL">All Payment Methods</option>
@@ -328,24 +451,30 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
       {/* Result Count Info */}
       <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] font-medium">
         <span>
-          Showing <strong className="text-[var(--text-main)]">{filteredOrders.length}</strong> of <strong className="text-[var(--text-main)]">{orders.length}</strong> orders
+          Showing <strong className="text-[var(--text-main)]">{pageInfo.total ? (currentPage - 1) * pageInfo.pageSize + 1 : 0}â€“{Math.min(currentPage * pageInfo.pageSize, pageInfo.total)}</strong> of <strong className="text-[var(--text-main)]">{pageInfo.total}</strong> orders
           {activeDateRange && (
             <span className="ml-2 text-orange-400 font-bold">
-              • {datePreset === 'TODAY' ? 'Today' : datePreset === 'YESTERDAY' ? 'Yesterday' : datePreset === 'LAST_7' ? 'Last 7 Days' : datePreset === 'THIS_MONTH' ? 'This Month' : datePreset === 'LAST_MONTH' ? 'Last Month' : 'Custom Range'}
+              â€¢ {datePreset === 'TODAY' ? 'Today' : datePreset === 'YESTERDAY' ? 'Yesterday' : datePreset === 'LAST_7' ? 'Last 7 Days' : datePreset === 'THIS_MONTH' ? 'This Month' : datePreset === 'LAST_MONTH' ? 'Last Month' : 'Custom Range'}
             </span>
           )}
         </span>
         <span className="font-mono font-bold text-emerald-400">
-          Total: Rs. {filteredOrders.reduce((s, o) => s + (o.total || 0), 0).toFixed(2)}
+          Page total: {formatPrice(filteredOrders.reduce((s, o) => s + Number(o.total || 0), 0))}
         </span>
       </div>
 
       {/* Orders Data Table */}
       <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-xs font-bold text-[var(--text-muted)]">
-              <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
-              <span>Loading Orders...</span>
+          {isOrdersLoading ? (
+            <div role="status" aria-label="Loading orders" className="space-y-3 p-5">
+              <div className="flex items-center gap-3 text-xs font-bold text-[var(--text-muted)]"><Loader2 className="h-5 w-5 animate-spin text-orange-500" /><span>Loading ordersâ€¦</span></div>
+              {Array.from({ length: 5 }, (_, index) => <div key={index} className="h-12 animate-pulse rounded-xl bg-[var(--surface-2)]" />)}
+            </div>
+          ) : displayedOrdersError && pageOrders.length === 0 ? (
+            <div role="alert" className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+              <p className="font-bold text-[var(--text-main)]">Could not load orders</p>
+              <p className="max-w-xl text-xs text-[var(--text-muted)]">{displayedOrdersError}</p>
+              <button type="button" onClick={fetchOrdersPage} className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-xs font-bold text-orange-500">Retry</button>
             </div>
           ) : filteredOrders.length === 0 ? (
             <div className="py-16 text-center text-xs font-bold text-[var(--text-muted)]">
@@ -404,10 +533,10 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
                           <span className="text-[10px] text-[var(--text-muted)] block">{order.user?.email || 'N/A'}</span>
                         </td>
                         <td className="p-4 font-bold text-[var(--text-main)]">
-                          {order.tableNumber || (order.tableId ? `Table ${order.tableId}` : 'Takeaway')}
+                          {resolveTableLabel(order)}
                         </td>
                         <td className="p-4 font-mono font-extrabold text-emerald-400">
-                          Rs. {order.total?.toFixed(2)}
+                          {formatPrice(order.total)}
                         </td>
                         <td className="p-4">
                           <span className="px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)]">
@@ -438,7 +567,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
                                 setDeleteModalOpen(true);
                               }}
                               title="Delete Order Record"
-                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer"
+                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer icon-btn"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -451,11 +580,20 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
               </table>
             </div>
           )}
+          {!isOrdersLoading && displayedOrdersError && pageOrders.length > 0 && <div role="alert" className="flex items-center justify-between gap-3 border-t border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-[var(--text-main)]"><span>Could not refresh orders: {displayedOrdersError}. Showing the last loaded data.</span><button type="button" onClick={fetchOrdersPage} className="shrink-0 font-bold text-orange-500">Retry</button></div>}
+        </div>
+
+        <div className="flex items-center justify-between gap-3" aria-label="Order result pages">
+          <span className="text-xs text-[var(--text-muted)]">Page {currentPage} of {pageCount}</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} disabled={currentPage <= 1 || isOrdersLoading} className="min-h-10 rounded-xl border border-[var(--border-color)] px-3 text-xs font-bold text-[var(--text-main)] disabled:opacity-50">Previous</button>
+            <button type="button" onClick={() => setCurrentPage((value) => Math.min(pageCount, value + 1))} disabled={currentPage >= pageCount || isOrdersLoading} className="min-h-10 rounded-xl border border-[var(--border-color)] px-3 text-xs font-bold text-[var(--text-main)] disabled:opacity-50">Next</button>
+          </div>
         </div>
 
       {/* Order Detail Modal */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[var(--glass-bg-subtle)] backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto custom-scrollbar">
             {/* Modal Header */}
             <div className="flex justify-between items-start border-b border-[var(--border-color)] pb-4">
@@ -468,7 +606,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
               </div>
               <button
                 onClick={() => setSelectedOrder(null)}
-                className="p-2 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                className="p-2 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -512,7 +650,7 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
               </div>
               <div className="p-3 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)]">
                 <span className="text-[10px] text-[var(--text-muted)] font-bold block uppercase">Table & Session</span>
-                <strong className="text-[var(--text-main)] block font-extrabold">{selectedOrder.tableNumber || (selectedOrder.tableId ? `Table #${selectedOrder.tableId}` : 'Takeaway')}</strong>
+                <strong className="text-[var(--text-main)] block font-extrabold">{resolveTableLabel(selectedOrder)}</strong>
                 <span className="text-[10px] text-[var(--text-muted)] font-mono">Session ID: {selectedOrder.sessionId}</span>
               </div>
             </div>
@@ -525,9 +663,9 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
                   <div key={item.id} className="p-3 flex justify-between items-center text-xs">
                     <div>
                       <strong className="text-[var(--text-main)] block font-bold">{item.nameSnapshot || item.menuItem?.name}</strong>
-                      <span className="text-[10px] text-[var(--text-muted)]">Qty: {item.quantity} × Rs. {item.priceSnapshot?.toFixed(2)}</span>
+                      <span className="text-[10px] text-[var(--text-muted)]">Qty: {item.quantity} Ã— {formatPrice(item.priceSnapshot)}</span>
                     </div>
-                    <span className="font-mono font-extrabold text-orange-400">Rs. {(item.quantity * item.priceSnapshot).toFixed(2)}</span>
+                    <span className="font-mono font-extrabold text-orange-400">{formatPrice(Number(item.quantity || 0) * Number(item.priceSnapshot || 0))}</span>
                   </div>
                 ))}
               </div>
@@ -537,15 +675,13 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
             <div className="p-4 bg-[var(--bg-color)] rounded-2xl border border-[var(--border-color)] space-y-1.5 text-xs">
               <div className="flex justify-between text-[var(--text-muted)]">
                 <span>Subtotal:</span>
-                <span className="font-mono font-bold">Rs. {selectedOrder.total?.toFixed(2)}</span>
+                <span className="font-mono font-bold">{formatPrice(selectedOrder.subtotal ?? selectedOrder.total)}</span>
               </div>
-              <div className="flex justify-between text-[var(--text-muted)]">
-                <span>Taxes & Service:</span>
-                <span className="font-mono font-bold">Rs. 0.00</span>
-              </div>
+              {Number(selectedOrder.discount || 0) > 0 && <div className="flex justify-between text-[var(--text-muted)]"><span>Discount:</span><span className="font-mono font-bold">âˆ’{formatPrice(selectedOrder.discount)}</span></div>}
+              <div className="flex justify-between text-[var(--text-muted)]"><span>Tax & service:</span><span className="font-mono font-bold">{formatPrice(selectedOrder.tax)}</span></div>
               <div className="flex justify-between text-base font-extrabold text-[var(--text-main)] pt-2 border-t border-[var(--border-color)]">
                 <span>Grand Total:</span>
-                <span className="font-mono text-emerald-400">Rs. {selectedOrder.total?.toFixed(2)}</span>
+                <span className="font-mono text-emerald-400">{formatPrice(selectedOrder.total)}</span>
               </div>
             </div>
 
@@ -603,16 +739,16 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
           isBulkDeleting
             ? (selectedOrderIds.size
               ? `Permanently delete ${selectedOrderIds.size} selected orders, including completed and verified orders, with their associated records?`
-              : `Are you sure you want to permanently delete all ${cancellableOrFailedCount} CANCELLED & PAYMENT_FAILED orders? This will permanently clean these invalid records from database.`)
+              : 'Are you sure you want to permanently delete all CANCELLED & PAYMENT_FAILED orders? This permanently removes those records and their associated data.')
             : `Permanently delete order #${orderToDelete?.orderNumber} and its associated order and payment records?`
         }
-        itemCount={isBulkDeleting ? (selectedOrderIds.size || cancellableOrFailedCount) : 1}
+        itemCount={isBulkDeleting ? selectedOrderIds.size : 1}
         itemName={selectedOrderIds.size
           ? `${selectedOrderIds.size} selected orders`
-          : (orderToDelete ? `Order #${orderToDelete.orderNumber} (Rs. ${orderToDelete.total?.toFixed(2)})` : '')}
+          : (orderToDelete ? `Order #${orderToDelete.orderNumber} (${formatPrice(orderToDelete.total)})` : '')}
         isScopeAll={isBulkDeleting}
         requiredConfirmationText={isBulkDeleting ? 'DELETE' : ''}
-        confirmButtonText={isBulkDeleting ? `Delete ${selectedOrderIds.size || cancellableOrFailedCount} Orders` : 'Delete Order'}
+        confirmButtonText={isBulkDeleting ? (selectedOrderIds.size ? `Delete ${selectedOrderIds.size} Orders` : 'Delete Matching Orders') : 'Delete Order'}
         loading={deleteLoading}
         warningNotes={[
           'Permanent deletion removes the order, payment, item snapshots, status history, and ETA records from the database.',
@@ -624,3 +760,5 @@ const AdminOrdersView = ({ orders = [], loading, onRefresh, showToast }) => {
 };
 
 export default AdminOrdersView;
+
+

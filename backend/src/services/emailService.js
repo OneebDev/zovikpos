@@ -2,6 +2,7 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { formatTableLabel } = require('../utils/tableLabel');
 
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
   '&': '&amp;',
@@ -183,37 +184,81 @@ const buildItemsHtml = (orderItems = []) => {
  */
 const sendOTPEmail = async (email, name, otp) => {
   const customerName = typeof name === 'string' && name !== 'Customer' && !name.startsWith('Table') ? name : 'Valued Guest';
-  const safeCustomerName = escapeHtml(customerName);
-  const subject = `Your Verification Code: ${otp} - ZovikPOS`;
-  const textContent = `Hi ${customerName},\n\nYour OTP for verification is: ${otp}\n\nThis code expires in 5 minutes.\n\nBest regards,\nZovikPOS Team`;
+  const firstName = customerName.trim().split(/\s+/)[0] || 'there';
+  const safeFirstName = escapeHtml(firstName);
+  const safeOtp = escapeHtml(otp);
+  const subject = `${otp} is your ZOVIKPOS verification code`;
+  const frontendUrl = (process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://zovik-pos.vercel.app' : 'http://localhost:5173')).trim().replace(/\/+$/, '');
+  const appUrl = `${frontendUrl}/customer?otp=${encodeURIComponent(otp)}&e=${encodeURIComponent(email)}`;
+  const safeAppUrl = escapeHtml(appUrl);
+  const textContent = `Hi ${firstName},\n\nUse this code to verify your email and continue ordering.\n\n${otp}\n\nValid for 5 minutes.\n\nCopy & Open App: ${appUrl}\nCode fills in automatically.\n\nSecurity: If you did not request this code, you can safely ignore this email.\n\nZOVIKPOS`;
 
-  const contentHtml = `
-    <p style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600; color: #0f172a;">
-      Hello ${safeCustomerName},
-    </p>
-    <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #475569;">
-      Use the One-Time Password (OTP) below to authenticate your dining session and access the digital menu:
-    </p>
+  const htmlContent = `
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#FAF9F7;color:#292524;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;-webkit-text-size-adjust:100%;">
+  <div style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all;">Your ZOVIKPOS verification code is ${safeOtp}. Valid for 5 minutes.</div>
+  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#FAF9F7" style="width:100%;border-collapse:collapse;background-color:#FAF9F7;">
+    <tr>
+      <td align="center" style="padding:28px 12px;">
+        <table role="presentation" width="480" border="0" cellspacing="0" cellpadding="0" bgcolor="#FFFFFF" style="width:100%;max-width:480px;border:1px solid #E7E5E4;border-radius:20px;border-collapse:separate;background-color:#FFFFFF;">
+          <tr>
+            <td height="4" bgcolor="#E85D2A" style="height:4px;line-height:4px;font-size:0;background-color:#E85D2A;border-radius:20px 20px 0 0;">&nbsp;</td>
+          </tr>
+          <tr>
+            <td style="padding:20px 24px;border-bottom:1px solid #E7E5E4;">
+              <span style="color:#E85D2A;font-size:16px;font-weight:800;letter-spacing:.08em;">ZOVIKPOS</span>
+              <span style="padding-left:8px;color:#78716C;font-size:10px;font-weight:600;letter-spacing:.1em;">SMART DINING</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px 24px 24px;">
+              <p style="margin:0 0 10px;color:#1C1917;font-size:18px;line-height:1.4;font-weight:700;">Hi ${safeFirstName},</p>
+              <p style="margin:0 0 22px;color:#57534E;font-size:14px;line-height:1.6;">Use this code to verify your email and continue ordering.</p>
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;">
+                <tr>
+                  <td align="center" style="padding:2px 0 10px;">
+                    <div style="display:inline-block;max-width:100%;box-sizing:border-box;padding:16px 18px;border:1.5px solid #E85D2A;border-radius:16px;background-color:#FFF8F2;color:#E85D2A;font-family:'Courier New',Courier,monospace;font-size:36px;font-weight:700;line-height:1.2;letter-spacing:.3em;text-align:center;white-space:nowrap;user-select:all;-webkit-user-select:all;">${safeOtp}</div>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:4px 0 0;color:#78716C;font-size:12px;line-height:1.6;text-align:center;">Valid for 5 minutes</p>
+              <table role="presentation" border="0" cellspacing="0" cellpadding="0" align="center" style="margin:24px auto 0;border-collapse:separate;">
+                <tr>
+                  <td align="center" valign="middle" height="48" bgcolor="#E85D2A" style="height:48px;border-radius:12px;background-color:#E85D2A;">
+                    <a href="${safeAppUrl}" style="display:block;padding:0 22px;border-radius:12px;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:700;line-height:48px;text-align:center;text-decoration:none;white-space:nowrap;">Copy &amp; Open App</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:8px 0 0;color:#78716C;font-size:12px;line-height:1.6;text-align:center;">Code fills in automatically</p>
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin-top:24px;">
+                <tr>
+                  <td bgcolor="#FFF8F2" style="padding:14px 16px;border-left:3px solid #FB923C;border-radius:0 10px 10px 0;background-color:#FFF8F2;color:#57534E;font-size:12px;line-height:1.6;">
+                    Security note: If you did not request this code, you can safely ignore this email.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 20px;border-top:1px solid #E7E5E4;color:#78716C;font-size:11px;line-height:1.6;">
+              ZOVIKPOS · Smart Dining<br>Automated message — please do not reply.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 
-    <div style="text-align: center; margin: 28px 0;">
-      <div style="display: inline-block; background: #FFF8F2; border: 2px dashed #E85D2A; border-radius: 16px; padding: 18px 36px;">
-        <span style="font-family: 'Courier New', Courier, monospace, monospace; font-size: 36px; font-weight: 900; letter-spacing: 10px; color: #E85D2A; display: block; margin-left: 10px;">
-          ${otp}
-        </span>
-      </div>
-      <div style="margin-top: 12px; font-size: 12px; font-weight: 600; color: #ef4444;">
-        ⏱️ Code valid for 5 minutes only
-      </div>
-    </div>
-
-    <div style="background-color: #FFF8F2; border-left: 4px solid #E85D2A; padding: 14px 18px; border-radius: 0 12px 12px 0; margin-top: 24px;">
-      <p style="margin: 0; font-size: 12px; color: #78716C; line-height: 1.5;">
-        <strong>Security Notice:</strong> If you did not initiate this request, someone may have entered your email by mistake. You can safely disregard this email.
-      </p>
-    </div>
-  `;
-
-  const htmlContent = emailWrapper('Email Verification', 'Secure Dining Session Authentication', contentHtml);
   await sendMailGeneric(email, subject, textContent, htmlContent);
 };
 
@@ -226,7 +271,8 @@ const sendOrderPlacementEmail = async (order) => {
   const orderNum = order.orderNumber || `#000${order.id}`;
   const htmlUserName = escapeHtml(userName);
   const htmlOrderNum = escapeHtml(orderNum);
-  const htmlTableNumber = escapeHtml(order.tableNumber || 'Takeaway');
+  const tableLabel = formatTableLabel(order);
+  const htmlTableNumber = escapeHtml(tableLabel);
   const isCOD = (order.paymentMethod || '').toUpperCase() === 'COD';
   const htmlPaymentMethod = isCOD ? 'Cash on Delivery (Pay at Counter)' : escapeHtml(order.paymentMethod || 'Online');
   const htmlPaymentStatus = isCOD ? 'Unpaid (Due at Pickup)' : escapeHtml(order.paymentStatus);
@@ -258,7 +304,7 @@ const sendOrderPlacementEmail = async (order) => {
 
 Thank you for your order!
 Order Number: ${orderNum}
-Table: ${order.tableNumber || 'Takeaway'}
+Table: ${tableLabel}
 Estimated Ready Time: ~${etaMins}
 Payment Method: ${isCOD ? 'Cash on Delivery (Pay at Counter)' : order.paymentMethod || 'Online'}
 Payment Status: ${isCOD ? 'Payment Due at Pickup / Counter' : order.paymentStatus}
@@ -300,7 +346,7 @@ ZovikPOS Team`;
           <td style="text-align: right; font-weight: 800; color: #E85D2A; font-size: 14px;">${htmlOrderNum}</td>
         </tr>
         <tr>
-          <td style="color: #78716C; font-weight: 500;">Dining Table / Location:</td>
+          <td style="color: #78716C; font-weight: 500;">Table / Location:</td>
           <td style="text-align: right; font-weight: 700; color: #171717;">${htmlTableNumber}</td>
         </tr>
         <tr>
@@ -408,7 +454,7 @@ const sendOrderReadyEmail = async (order) => {
   const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
   const orderNum = order.orderNumber || `#000${order.id}`;
   const htmlOrderNum = escapeHtml(orderNum);
-  const htmlTableNumber = escapeHtml(order.tableNumber || 'Main Counter');
+  const htmlTableNumber = escapeHtml(formatTableLabel(order));
   const isCOD = (order.paymentMethod || '').toUpperCase() === 'COD';
   const isUnpaid = isCOD && order.paymentStatus !== 'PAID' && order.paymentStatus !== 'VERIFIED';
 

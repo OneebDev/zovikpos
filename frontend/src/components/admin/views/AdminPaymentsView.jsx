@@ -1,4 +1,4 @@
-import  { useState, useMemo } from 'react';
+﻿import  { useState, useMemo } from 'react';
 import {
   Search,
   Download,
@@ -12,6 +12,7 @@ import GlobalDeleteModal from '../../common/GlobalDeleteModal';
 import api from '../../../services/api';
 import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 import { paymentMethodLabel } from '../../../utils/paymentMethods';
+import { resolveTableLabel } from '../../../utils/customerTableLabel';
 
 const toDateStr = (d) => {
   if (!d) return '';
@@ -25,7 +26,7 @@ const toDateStr = (d) => {
 const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
   const [methodTab, setMethodTab] = useState('ALL');
   const [statusTab] = useState('ALL');
-  const [viewMode] = useState('TABLE'); // TABLE only – calendar removed
+  const [viewMode] = useState('TABLE'); // TABLE only â€“ calendar removed
   const [searchTerm, setSearchTerm] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -48,8 +49,8 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
       orderNumber: o.orderNumber,
       customerName: o.user?.name || 'Guest Customer',
       customerEmail: o.user?.email || 'N/A',
-      tableId: o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway'),
-      tableNumber: o.tableNumber || (o.tableId ? `Table ${o.tableId}` : 'Takeaway'),
+      tableId: resolveTableLabel(o),
+      tableNumber: resolveTableLabel(o),
       amount: o.total,
       method: paymentMethodLabel(o.paymentMethod),
       orderStatus: o.status,
@@ -218,7 +219,7 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl shadow-xl">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 glass-card p-6">
         <div>
           <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">Payments Monitoring & Audit</h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">Audit COD cash collections and verify online wallet transactions.</p>
@@ -437,7 +438,7 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
                             }}
                             title="Delete payment order and its linked records"
                             aria-label={`Delete payment order ${p.orderNumber}`}
-                            className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg border border-transparent hover:border-rose-500/20 transition-all cursor-pointer"
+                            className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg border border-transparent hover:border-rose-500/20 transition-all cursor-pointer icon-btn"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -480,3 +481,4 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
 };
 
 export default AdminPaymentsView;
+

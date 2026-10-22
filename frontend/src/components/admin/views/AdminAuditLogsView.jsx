@@ -1,4 +1,4 @@
-import ThemedSelect from '../../common/ThemedSelect';
+﻿import ThemedSelect from '../../common/ThemedSelect';
 import  { useState, useMemo } from 'react';
 import {
   ShieldCheck,
@@ -180,7 +180,7 @@ const AdminAuditLogsView = ({ logs = [], loading, onRefresh, showToast }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col items-stretch gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl lg:flex-row lg:justify-between lg:items-start">
+      <div className="flex flex-col items-stretch gap-4 glass-card p-4 sm:p-6 lg:flex-row lg:justify-between lg:items-start">
         <div className="min-w-0 flex items-start gap-2">
           <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/10 text-orange-400">
             <ShieldCheck className="h-5 w-5" />
@@ -348,7 +348,7 @@ const AdminAuditLogsView = ({ logs = [], loading, onRefresh, showToast }) => {
                             setDeleteModalOpen(true);
                           }}
                           title="Delete Audit Log Record"
-                          className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer inline-flex items-center"
+                          className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer inline-flex items-center icon-btn"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -392,3 +392,4 @@ const AdminAuditLogsView = ({ logs = [], loading, onRefresh, showToast }) => {
 };
 
 export default AdminAuditLogsView;
+

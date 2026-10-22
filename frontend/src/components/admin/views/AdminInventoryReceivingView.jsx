@@ -1,4 +1,4 @@
-import ThemedSelect from '../../common/ThemedSelect';
+﻿import ThemedSelect from '../../common/ThemedSelect';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -36,281 +36,281 @@ import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 // Common local Urdu / Roman Urdu / Urdu script search aliases map for inventory lookup
 const ITEM_ALIASES = {
   // Vegetables & Fresh Produce
-  'aloo': ['potatoes', 'potato', 'fresh potatoes', 'alu', 'allu', 'آلو'],
-  'alu': ['potatoes', 'potato', 'aloo', 'آلو'],
-  'آلو': ['potatoes', 'potato', 'aloo'],
-  'pyaz': ['onions', 'onion', 'pyaaz', 'piyaz', 'red onions', 'پیاز'],
-  'pyaaz': ['onions', 'onion', 'pyaz', 'پیاز'],
-  'piyaz': ['onions', 'onion', 'pyaz', 'پیاز'],
-  'پیاز': ['onions', 'onion', 'pyaz'],
-  'tamatar': ['tomatoes', 'tomato', 'tamaatar', 'ٹماٹر'],
-  'tamaatar': ['tomatoes', 'tomato', 'tamatar', 'ٹماٹر'],
-  'ٹماٹر': ['tomatoes', 'tomato', 'tamatar'],
-  'adrak': ['ginger', 'fresh ginger', 'ادرک'],
-  'ادرک': ['ginger', 'adrak'],
-  'lehsan': ['garlic', 'lahsan', 'garlic paste', 'لہسن'],
-  'lahsan': ['garlic', 'lehsan', 'لہسن'],
-  'لہسن': ['garlic', 'lehsan'],
-  'hari mirch': ['green chillies', 'green chili', 'green chilli', 'sabz mirch', 'ہری مرچ'],
-  'sabz mirch': ['green chillies', 'green chili', 'hari mirch', 'ہری مرچ'],
-  'ہری مرچ': ['green chillies', 'hari mirch'],
-  'dhania': ['coriander', 'fresh coriander', 'hara dhania', 'dhanya', 'cilantro', 'دھنیا'],
-  'hara dhania': ['coriander', 'fresh coriander', 'dhania', 'دھنیا'],
-  'دھنیا': ['coriander', 'dhania'],
-  'pudina': ['mint', 'fresh mint', 'podina', 'پودینہ'],
-  'podina': ['mint', 'pudina', 'پودینہ'],
-  'پودینہ': ['mint', 'pudina'],
-  'kheera': ['cucumber', 'khira', 'کھیرا'],
-  'کھیرا': ['cucumber', 'kheera'],
-  'band gobi': ['cabbage', 'patta gobi', 'بند گوبھی'],
-  'patta gobi': ['cabbage', 'band gobi', 'بند گوبھی'],
-  'بند گوبھی': ['cabbage', 'band gobi'],
-  'phool gobi': ['cauliflower', 'gobi', 'پھول گوبھی'],
-  'پھول گوبھی': ['cauliflower', 'phool gobi'],
-  'shimla mirch': ['capsicum', 'bell pepper', 'shimla', 'شملہ مرچ'],
-  'شملہ مرچ': ['capsicum', 'shimla mirch'],
-  'gajar': ['carrots', 'carrot', 'گاجر'],
-  'گاجر': ['carrots', 'gajar'],
-  'lemon': ['lemons', 'nimbu', 'lemo', 'لیموں'],
-  'nimbu': ['lemon', 'lemons', 'لیموں'],
-  'لیموں': ['lemon', 'nimbu'],
-  'matar': ['peas', 'green peas', 'مٹر'],
-  'مٹر': ['peas', 'matar'],
-  'palak': ['spinach', 'پالک'],
-  'پالک': ['spinach', 'palak'],
-  'bhindi': ['okra', 'ladyfinger', 'بھنڈی'],
-  'بھنڈی': ['okra', 'bhindi'],
-  'baingan': ['eggplant', 'brinjal', 'بینگن'],
-  'بینگن': ['eggplant', 'baingan'],
+  'aloo': ['potatoes', 'potato', 'fresh potatoes', 'alu', 'allu', 'Ø¢Ù„Ùˆ'],
+  'alu': ['potatoes', 'potato', 'aloo', 'Ø¢Ù„Ùˆ'],
+  'Ø¢Ù„Ùˆ': ['potatoes', 'potato', 'aloo'],
+  'pyaz': ['onions', 'onion', 'pyaaz', 'piyaz', 'red onions', 'Ù¾ÛŒØ§Ø²'],
+  'pyaaz': ['onions', 'onion', 'pyaz', 'Ù¾ÛŒØ§Ø²'],
+  'piyaz': ['onions', 'onion', 'pyaz', 'Ù¾ÛŒØ§Ø²'],
+  'Ù¾ÛŒØ§Ø²': ['onions', 'onion', 'pyaz'],
+  'tamatar': ['tomatoes', 'tomato', 'tamaatar', 'Ù¹Ù…Ø§Ù¹Ø±'],
+  'tamaatar': ['tomatoes', 'tomato', 'tamatar', 'Ù¹Ù…Ø§Ù¹Ø±'],
+  'Ù¹Ù…Ø§Ù¹Ø±': ['tomatoes', 'tomato', 'tamatar'],
+  'adrak': ['ginger', 'fresh ginger', 'Ø§Ø¯Ø±Ú©'],
+  'Ø§Ø¯Ø±Ú©': ['ginger', 'adrak'],
+  'lehsan': ['garlic', 'lahsan', 'garlic paste', 'Ù„ÛØ³Ù†'],
+  'lahsan': ['garlic', 'lehsan', 'Ù„ÛØ³Ù†'],
+  'Ù„ÛØ³Ù†': ['garlic', 'lehsan'],
+  'hari mirch': ['green chillies', 'green chili', 'green chilli', 'sabz mirch', 'ÛØ±ÛŒ Ù…Ø±Ú†'],
+  'sabz mirch': ['green chillies', 'green chili', 'hari mirch', 'ÛØ±ÛŒ Ù…Ø±Ú†'],
+  'ÛØ±ÛŒ Ù…Ø±Ú†': ['green chillies', 'hari mirch'],
+  'dhania': ['coriander', 'fresh coriander', 'hara dhania', 'dhanya', 'cilantro', 'Ø¯Ú¾Ù†ÛŒØ§'],
+  'hara dhania': ['coriander', 'fresh coriander', 'dhania', 'Ø¯Ú¾Ù†ÛŒØ§'],
+  'Ø¯Ú¾Ù†ÛŒØ§': ['coriander', 'dhania'],
+  'pudina': ['mint', 'fresh mint', 'podina', 'Ù¾ÙˆØ¯ÛŒÙ†Û'],
+  'podina': ['mint', 'pudina', 'Ù¾ÙˆØ¯ÛŒÙ†Û'],
+  'Ù¾ÙˆØ¯ÛŒÙ†Û': ['mint', 'pudina'],
+  'kheera': ['cucumber', 'khira', 'Ú©Ú¾ÛŒØ±Ø§'],
+  'Ú©Ú¾ÛŒØ±Ø§': ['cucumber', 'kheera'],
+  'band gobi': ['cabbage', 'patta gobi', 'Ø¨Ù†Ø¯ Ú¯ÙˆØ¨Ú¾ÛŒ'],
+  'patta gobi': ['cabbage', 'band gobi', 'Ø¨Ù†Ø¯ Ú¯ÙˆØ¨Ú¾ÛŒ'],
+  'Ø¨Ù†Ø¯ Ú¯ÙˆØ¨Ú¾ÛŒ': ['cabbage', 'band gobi'],
+  'phool gobi': ['cauliflower', 'gobi', 'Ù¾Ú¾ÙˆÙ„ Ú¯ÙˆØ¨Ú¾ÛŒ'],
+  'Ù¾Ú¾ÙˆÙ„ Ú¯ÙˆØ¨Ú¾ÛŒ': ['cauliflower', 'phool gobi'],
+  'shimla mirch': ['capsicum', 'bell pepper', 'shimla', 'Ø´Ù…Ù„Û Ù…Ø±Ú†'],
+  'Ø´Ù…Ù„Û Ù…Ø±Ú†': ['capsicum', 'shimla mirch'],
+  'gajar': ['carrots', 'carrot', 'Ú¯Ø§Ø¬Ø±'],
+  'Ú¯Ø§Ø¬Ø±': ['carrots', 'gajar'],
+  'lemon': ['lemons', 'nimbu', 'lemo', 'Ù„ÛŒÙ…ÙˆÚº'],
+  'nimbu': ['lemon', 'lemons', 'Ù„ÛŒÙ…ÙˆÚº'],
+  'Ù„ÛŒÙ…ÙˆÚº': ['lemon', 'nimbu'],
+  'matar': ['peas', 'green peas', 'Ù…Ù¹Ø±'],
+  'Ù…Ù¹Ø±': ['peas', 'matar'],
+  'palak': ['spinach', 'Ù¾Ø§Ù„Ú©'],
+  'Ù¾Ø§Ù„Ú©': ['spinach', 'palak'],
+  'bhindi': ['okra', 'ladyfinger', 'Ø¨Ú¾Ù†ÚˆÛŒ'],
+  'Ø¨Ú¾Ù†ÚˆÛŒ': ['okra', 'bhindi'],
+  'baingan': ['eggplant', 'brinjal', 'Ø¨ÛŒÙ†Ú¯Ù†'],
+  'Ø¨ÛŒÙ†Ú¯Ù†': ['eggplant', 'baingan'],
 
   // Poultry & Meats
-  'murghi': ['chicken', 'murgi', 'whole chicken', 'مرغی'],
-  'murgi': ['chicken', 'murghi', 'مرغی'],
-  'مرغی': ['chicken', 'murghi'],
-  'chicken': ['murghi', 'murgi', 'مرغی'],
-  'murghi seena': ['chicken breast', 'chicken boneless', 'breast fillet', 'مرغی سینہ'],
-  'chicken breast': ['murghi seena', 'chicken boneless', 'مرغی سینہ'],
-  'مرغی سینہ': ['chicken breast', 'murghi seena'],
-  'chicken boneless': ['boneless chicken', 'chicken breast', 'boti', 'مرغی بون لیس'],
-  'boneless chicken': ['chicken boneless', 'chicken breast', 'مرغی بون لیس'],
-  'chicken wings': ['wings', 'murghi wings', 'مرغی ونگز'],
-  'wings': ['chicken wings', 'مرغی ونگز'],
-  'مرغی ونگز': ['chicken wings', 'wings'],
-  'chicken leg': ['chicken drumstick', 'drumstick', 'مرغی لیگ'],
-  'drumstick': ['chicken leg', 'chicken drumstick', 'مرغی لیگ'],
-  'chicken mince': ['chicken keema', 'chicken qeema', 'مرغی قیمہ'],
-  'chicken keema': ['chicken mince', 'مرغی قیمہ'],
-  'مرغی قیمہ': ['chicken mince', 'chicken keema'],
-  'gosht': ['mutton', 'beef', 'meat', 'گوشت'],
-  'گوشت': ['mutton', 'beef', 'meat'],
-  'beef': ['bara gosht', 'bada gosht', 'بیف', 'گائے کا گوشت'],
-  'bara gosht': ['beef', 'بیف'],
-  'بیف': ['beef', 'bara gosht'],
-  'keema': ['beef mince', 'beef keema', 'mince', 'قیمہ'],
-  'qeema': ['beef mince', 'mince', 'keema', 'قیمہ'],
-  'qima': ['beef mince', 'mince', 'keema', 'قیمہ'],
-  'mince': ['keema', 'qeema', 'beef mince', 'chicken mince', 'قیمہ'],
-  'beef mince': ['keema', 'qeema', 'قیمہ'],
-  'قیمہ': ['keema', 'qeema', 'mince'],
-  'mutton': ['chota gosht', 'bakra gosht', 'lamb', 'مٹن'],
-  'chota gosht': ['mutton', 'مٹن'],
-  'مٹن': ['mutton', 'chota gosht'],
-  'machli': ['fish', 'machhli', 'مچھلی'],
-  'fish': ['machli', 'مچھلی'],
-  'مچھلی': ['fish', 'machli'],
-  'jheenga': ['prawns', 'prawn', 'shrimp', 'جھینگا'],
-  'جھینگا': ['prawns', 'jheenga'],
+  'murghi': ['chicken', 'murgi', 'whole chicken', 'Ù…Ø±ØºÛŒ'],
+  'murgi': ['chicken', 'murghi', 'Ù…Ø±ØºÛŒ'],
+  'Ù…Ø±ØºÛŒ': ['chicken', 'murghi'],
+  'chicken': ['murghi', 'murgi', 'Ù…Ø±ØºÛŒ'],
+  'murghi seena': ['chicken breast', 'chicken boneless', 'breast fillet', 'Ù…Ø±ØºÛŒ Ø³ÛŒÙ†Û'],
+  'chicken breast': ['murghi seena', 'chicken boneless', 'Ù…Ø±ØºÛŒ Ø³ÛŒÙ†Û'],
+  'Ù…Ø±ØºÛŒ Ø³ÛŒÙ†Û': ['chicken breast', 'murghi seena'],
+  'chicken boneless': ['boneless chicken', 'chicken breast', 'boti', 'Ù…Ø±ØºÛŒ Ø¨ÙˆÙ† Ù„ÛŒØ³'],
+  'boneless chicken': ['chicken boneless', 'chicken breast', 'Ù…Ø±ØºÛŒ Ø¨ÙˆÙ† Ù„ÛŒØ³'],
+  'chicken wings': ['wings', 'murghi wings', 'Ù…Ø±ØºÛŒ ÙˆÙ†Ú¯Ø²'],
+  'wings': ['chicken wings', 'Ù…Ø±ØºÛŒ ÙˆÙ†Ú¯Ø²'],
+  'Ù…Ø±ØºÛŒ ÙˆÙ†Ú¯Ø²': ['chicken wings', 'wings'],
+  'chicken leg': ['chicken drumstick', 'drumstick', 'Ù…Ø±ØºÛŒ Ù„ÛŒÚ¯'],
+  'drumstick': ['chicken leg', 'chicken drumstick', 'Ù…Ø±ØºÛŒ Ù„ÛŒÚ¯'],
+  'chicken mince': ['chicken keema', 'chicken qeema', 'Ù…Ø±ØºÛŒ Ù‚ÛŒÙ…Û'],
+  'chicken keema': ['chicken mince', 'Ù…Ø±ØºÛŒ Ù‚ÛŒÙ…Û'],
+  'Ù…Ø±ØºÛŒ Ù‚ÛŒÙ…Û': ['chicken mince', 'chicken keema'],
+  'gosht': ['mutton', 'beef', 'meat', 'Ú¯ÙˆØ´Øª'],
+  'Ú¯ÙˆØ´Øª': ['mutton', 'beef', 'meat'],
+  'beef': ['bara gosht', 'bada gosht', 'Ø¨ÛŒÙ', 'Ú¯Ø§Ø¦Û’ Ú©Ø§ Ú¯ÙˆØ´Øª'],
+  'bara gosht': ['beef', 'Ø¨ÛŒÙ'],
+  'Ø¨ÛŒÙ': ['beef', 'bara gosht'],
+  'keema': ['beef mince', 'beef keema', 'mince', 'Ù‚ÛŒÙ…Û'],
+  'qeema': ['beef mince', 'mince', 'keema', 'Ù‚ÛŒÙ…Û'],
+  'qima': ['beef mince', 'mince', 'keema', 'Ù‚ÛŒÙ…Û'],
+  'mince': ['keema', 'qeema', 'beef mince', 'chicken mince', 'Ù‚ÛŒÙ…Û'],
+  'beef mince': ['keema', 'qeema', 'Ù‚ÛŒÙ…Û'],
+  'Ù‚ÛŒÙ…Û': ['keema', 'qeema', 'mince'],
+  'mutton': ['chota gosht', 'bakra gosht', 'lamb', 'Ù…Ù¹Ù†'],
+  'chota gosht': ['mutton', 'Ù…Ù¹Ù†'],
+  'Ù…Ù¹Ù†': ['mutton', 'chota gosht'],
+  'machli': ['fish', 'machhli', 'Ù…Ú†Ú¾Ù„ÛŒ'],
+  'fish': ['machli', 'Ù…Ú†Ú¾Ù„ÛŒ'],
+  'Ù…Ú†Ú¾Ù„ÛŒ': ['fish', 'machli'],
+  'jheenga': ['prawns', 'prawn', 'shrimp', 'Ø¬Ú¾ÛŒÙ†Ú¯Ø§'],
+  'Ø¬Ú¾ÛŒÙ†Ú¯Ø§': ['prawns', 'jheenga'],
 
   // Dairy & Eggs
-  'doodh': ['milk', 'fresh milk', 'dodh', 'cow milk', 'دودھ'],
-  'dodh': ['milk', 'fresh milk', 'doodh', 'دودھ'],
-  'دودھ': ['milk', 'fresh milk', 'doodh'],
-  'milk': ['doodh', 'fresh milk', 'دودھ'],
-  'fresh milk': ['doodh', 'milk', 'دودھ'],
-  'dahi': ['yogurt', 'curd', 'دہی'],
-  'یوگرٹ': ['yogurt', 'dahi', 'دہی'],
-  'دہی': ['yogurt', 'dahi'],
-  'yogurt': ['dahi', 'دہی'],
-  'makhan': ['butter', 'makkhan', 'مکھن'],
-  'مکھن': ['butter', 'makhan'],
-  'butter': ['makhan', 'مکھن'],
-  'ghee': ['desi ghee', 'banaspati', 'گھی'],
-  'desi ghee': ['ghee', 'دیسی گھی'],
-  'گھی': ['ghee', 'desi ghee'],
-  'paneer': ['cheese', 'cottage cheese', 'پنیر'],
-  'cheese': ['paneer', 'mozzarella', 'cheddar', 'پنیر', 'چیز'],
-  'پنیر': ['cheese', 'paneer'],
-  'چیز': ['cheese', 'mozzarella', 'cheddar'],
-  'cream': ['heavy cream', 'fresh cream', 'malai', 'ملائی', 'کریم'],
-  'malai': ['cream', 'fresh cream', 'ملائی'],
-  'ملائی': ['cream', 'malai'],
-  'anda': ['eggs', 'egg', 'anday', 'ande', 'انڈے', 'انڈا'],
-  'anday': ['eggs', 'egg', 'anda', 'انڈے'],
-  'ande': ['eggs', 'egg', 'anda', 'انڈے'],
-  'eggs': ['anda', 'anday', 'egg', 'انڈے'],
-  'egg': ['eggs', 'anda', 'anday', 'انڈے'],
-  'انڈے': ['eggs', 'egg', 'anda'],
-  'انڈا': ['egg', 'anda'],
+  'doodh': ['milk', 'fresh milk', 'dodh', 'cow milk', 'Ø¯ÙˆØ¯Ú¾'],
+  'dodh': ['milk', 'fresh milk', 'doodh', 'Ø¯ÙˆØ¯Ú¾'],
+  'Ø¯ÙˆØ¯Ú¾': ['milk', 'fresh milk', 'doodh'],
+  'milk': ['doodh', 'fresh milk', 'Ø¯ÙˆØ¯Ú¾'],
+  'fresh milk': ['doodh', 'milk', 'Ø¯ÙˆØ¯Ú¾'],
+  'dahi': ['yogurt', 'curd', 'Ø¯ÛÛŒ'],
+  'ÛŒÙˆÚ¯Ø±Ù¹': ['yogurt', 'dahi', 'Ø¯ÛÛŒ'],
+  'Ø¯ÛÛŒ': ['yogurt', 'dahi'],
+  'yogurt': ['dahi', 'Ø¯ÛÛŒ'],
+  'makhan': ['butter', 'makkhan', 'Ù…Ú©Ú¾Ù†'],
+  'Ù…Ú©Ú¾Ù†': ['butter', 'makhan'],
+  'butter': ['makhan', 'Ù…Ú©Ú¾Ù†'],
+  'ghee': ['desi ghee', 'banaspati', 'Ú¯Ú¾ÛŒ'],
+  'desi ghee': ['ghee', 'Ø¯ÛŒØ³ÛŒ Ú¯Ú¾ÛŒ'],
+  'Ú¯Ú¾ÛŒ': ['ghee', 'desi ghee'],
+  'paneer': ['cheese', 'cottage cheese', 'Ù¾Ù†ÛŒØ±'],
+  'cheese': ['paneer', 'mozzarella', 'cheddar', 'Ù¾Ù†ÛŒØ±', 'Ú†ÛŒØ²'],
+  'Ù¾Ù†ÛŒØ±': ['cheese', 'paneer'],
+  'Ú†ÛŒØ²': ['cheese', 'mozzarella', 'cheddar'],
+  'cream': ['heavy cream', 'fresh cream', 'malai', 'Ù…Ù„Ø§Ø¦ÛŒ', 'Ú©Ø±ÛŒÙ…'],
+  'malai': ['cream', 'fresh cream', 'Ù…Ù„Ø§Ø¦ÛŒ'],
+  'Ù…Ù„Ø§Ø¦ÛŒ': ['cream', 'malai'],
+  'anda': ['eggs', 'egg', 'anday', 'ande', 'Ø§Ù†ÚˆÛ’', 'Ø§Ù†ÚˆØ§'],
+  'anday': ['eggs', 'egg', 'anda', 'Ø§Ù†ÚˆÛ’'],
+  'ande': ['eggs', 'egg', 'anda', 'Ø§Ù†ÚˆÛ’'],
+  'eggs': ['anda', 'anday', 'egg', 'Ø§Ù†ÚˆÛ’'],
+  'egg': ['eggs', 'anda', 'anday', 'Ø§Ù†ÚˆÛ’'],
+  'Ø§Ù†ÚˆÛ’': ['eggs', 'egg', 'anda'],
+  'Ø§Ù†ÚˆØ§': ['egg', 'anda'],
 
   // Flours, Grains & Staples
-  'aata': ['wheat flour', 'flour', 'atta', 'chakki aata', 'آٹا'],
-  'atta': ['wheat flour', 'flour', 'aata', 'آٹا'],
-  'wheat flour': ['aata', 'atta', 'flour', 'آٹا'],
-  'آٹا': ['wheat flour', 'flour', 'aata'],
-  'maida': ['refined flour', 'all purpose flour', 'white flour', 'میدہ'],
-  'refined flour': ['maida', 'میدہ'],
-  'میدہ': ['maida', 'refined flour'],
-  'besan': ['gram flour', 'chana powder', 'بیسن'],
-  'gram flour': ['besan', 'بیسن'],
-  'بیسن': ['besan', 'gram flour'],
-  'cornflour': ['corn flour', 'corn starch', 'کارن فلور'],
-  'corn flour': ['cornflour', 'کارن فلور'],
-  'کارن فلور': ['cornflour', 'corn flour'],
-  'chawal': ['rice', 'basmati rice', 'چاول'],
-  'rice': ['chawal', 'basmati rice', 'چاول'],
-  'basmati rice': ['chawal', 'rice', 'چاول'],
-  'چاول': ['rice', 'chawal'],
-  'bun': ['burger bun', 'buns', 'برگر بن'],
-  'buns': ['burger bun', 'bun', 'برگر بن'],
-  'burger bun': ['bun', 'buns', 'برگر بن'],
-  'برگر بن': ['burger bun', 'buns', 'bun'],
-  'bread': ['white bread', 'sliced bread', 'double roti', 'ڈبل روٹی'],
-  'double roti': ['bread', 'ڈبل روٹی'],
-  'ڈبل روٹی': ['bread', 'double roti'],
-  'pita': ['pita bread', 'shawarma bread', 'پیٹا بریڈ'],
-  'pita bread': ['pita', 'shawarma bread', 'پیٹا بریڈ'],
-  'پیٹا بریڈ': ['pita', 'pita bread'],
+  'aata': ['wheat flour', 'flour', 'atta', 'chakki aata', 'Ø¢Ù¹Ø§'],
+  'atta': ['wheat flour', 'flour', 'aata', 'Ø¢Ù¹Ø§'],
+  'wheat flour': ['aata', 'atta', 'flour', 'Ø¢Ù¹Ø§'],
+  'Ø¢Ù¹Ø§': ['wheat flour', 'flour', 'aata'],
+  'maida': ['refined flour', 'all purpose flour', 'white flour', 'Ù…ÛŒØ¯Û'],
+  'refined flour': ['maida', 'Ù…ÛŒØ¯Û'],
+  'Ù…ÛŒØ¯Û': ['maida', 'refined flour'],
+  'besan': ['gram flour', 'chana powder', 'Ø¨ÛŒØ³Ù†'],
+  'gram flour': ['besan', 'Ø¨ÛŒØ³Ù†'],
+  'Ø¨ÛŒØ³Ù†': ['besan', 'gram flour'],
+  'cornflour': ['corn flour', 'corn starch', 'Ú©Ø§Ø±Ù† ÙÙ„ÙˆØ±'],
+  'corn flour': ['cornflour', 'Ú©Ø§Ø±Ù† ÙÙ„ÙˆØ±'],
+  'Ú©Ø§Ø±Ù† ÙÙ„ÙˆØ±': ['cornflour', 'corn flour'],
+  'chawal': ['rice', 'basmati rice', 'Ú†Ø§ÙˆÙ„'],
+  'rice': ['chawal', 'basmati rice', 'Ú†Ø§ÙˆÙ„'],
+  'basmati rice': ['chawal', 'rice', 'Ú†Ø§ÙˆÙ„'],
+  'Ú†Ø§ÙˆÙ„': ['rice', 'chawal'],
+  'bun': ['burger bun', 'buns', 'Ø¨Ø±Ú¯Ø± Ø¨Ù†'],
+  'buns': ['burger bun', 'bun', 'Ø¨Ø±Ú¯Ø± Ø¨Ù†'],
+  'burger bun': ['bun', 'buns', 'Ø¨Ø±Ú¯Ø± Ø¨Ù†'],
+  'Ø¨Ø±Ú¯Ø± Ø¨Ù†': ['burger bun', 'buns', 'bun'],
+  'bread': ['white bread', 'sliced bread', 'double roti', 'ÚˆØ¨Ù„ Ø±ÙˆÙ¹ÛŒ'],
+  'double roti': ['bread', 'ÚˆØ¨Ù„ Ø±ÙˆÙ¹ÛŒ'],
+  'ÚˆØ¨Ù„ Ø±ÙˆÙ¹ÛŒ': ['bread', 'double roti'],
+  'pita': ['pita bread', 'shawarma bread', 'Ù¾ÛŒÙ¹Ø§ Ø¨Ø±ÛŒÚˆ'],
+  'pita bread': ['pita', 'shawarma bread', 'Ù¾ÛŒÙ¹Ø§ Ø¨Ø±ÛŒÚˆ'],
+  'Ù¾ÛŒÙ¹Ø§ Ø¨Ø±ÛŒÚˆ': ['pita', 'pita bread'],
 
   // Oil, Sugar, Salt
-  'tel': ['cooking oil', 'oil', 'tail', 'canola oil', 'تیل', 'کوکنگ آئل'],
-  'tail': ['cooking oil', 'oil', 'tel', 'تیل'],
-  'cooking oil': ['oil', 'tel', 'tail', 'تیل'],
-  'oil': ['cooking oil', 'tel', 'تیل'],
-  'تیل': ['cooking oil', 'oil', 'tel'],
-  'کوکنگ آئل': ['cooking oil', 'oil', 'tel'],
-  'cheeni': ['sugar', 'chini', 'shakar', 'چینی'],
-  'chini': ['sugar', 'cheeni', 'shakar', 'چینی'],
-  'shakar': ['sugar', 'cheeni', 'چینی', 'شکر'],
-  'sugar': ['cheeni', 'chini', 'shakar', 'چینی'],
-  'چینی': ['sugar', 'cheeni'],
-  'شکر': ['sugar', 'shakar'],
-  'namak': ['salt', 'نمک'],
-  'salt': ['namak', 'نمک'],
-  'نمک': ['salt', 'namak'],
+  'tel': ['cooking oil', 'oil', 'tail', 'canola oil', 'ØªÛŒÙ„', 'Ú©ÙˆÚ©Ù†Ú¯ Ø¢Ø¦Ù„'],
+  'tail': ['cooking oil', 'oil', 'tel', 'ØªÛŒÙ„'],
+  'cooking oil': ['oil', 'tel', 'tail', 'ØªÛŒÙ„'],
+  'oil': ['cooking oil', 'tel', 'ØªÛŒÙ„'],
+  'ØªÛŒÙ„': ['cooking oil', 'oil', 'tel'],
+  'Ú©ÙˆÚ©Ù†Ú¯ Ø¢Ø¦Ù„': ['cooking oil', 'oil', 'tel'],
+  'cheeni': ['sugar', 'chini', 'shakar', 'Ú†ÛŒÙ†ÛŒ'],
+  'chini': ['sugar', 'cheeni', 'shakar', 'Ú†ÛŒÙ†ÛŒ'],
+  'shakar': ['sugar', 'cheeni', 'Ú†ÛŒÙ†ÛŒ', 'Ø´Ú©Ø±'],
+  'sugar': ['cheeni', 'chini', 'shakar', 'Ú†ÛŒÙ†ÛŒ'],
+  'Ú†ÛŒÙ†ÛŒ': ['sugar', 'cheeni'],
+  'Ø´Ú©Ø±': ['sugar', 'shakar'],
+  'namak': ['salt', 'Ù†Ù…Ú©'],
+  'salt': ['namak', 'Ù†Ù…Ú©'],
+  'Ù†Ù…Ú©': ['salt', 'namak'],
 
   // Spices
-  'haldi': ['turmeric powder', 'turmeric', 'ہلدی'],
-  'turmeric': ['haldi', 'turmeric powder', 'ہلدی'],
-  'turmeric powder': ['haldi', 'turmeric', 'ہلدی'],
-  'ہلدی': ['turmeric', 'haldi'],
-  'lal mirch': ['red chilli powder', 'red chili', 'red chilli', 'لال مرچ'],
-  'laal mirch': ['red chilli powder', 'red chili', 'لال مرچ'],
-  'red chilli powder': ['lal mirch', 'لال مرچ'],
-  'لال مرچ': ['red chilli powder', 'lal mirch'],
-  'chilli flakes': ['crushed chilli', 'kuti lal mirch', 'dara mirch', 'کوٹی لال مرچ'],
-  'kuti lal mirch': ['chilli flakes', 'دڑا مرچ'],
-  'dara mirch': ['chilli flakes', 'دڑا مرچ'],
-  'کوٹی لال مرچ': ['chilli flakes', 'kuti lal mirch'],
-  'kali mirch': ['black pepper', 'کالی مرچ'],
-  'black pepper': ['kali mirch', 'کالی مرچ'],
-  'کالی مرچ': ['black pepper', 'kali mirch'],
-  'safed mirch': ['white pepper', 'سفید مرچ'],
-  'white pepper': ['safed mirch', 'سفید مرچ'],
-  'سفید مرچ': ['white pepper', 'safed mirch'],
-  'zeera': ['cumin seeds', 'cumin', 'jeera', 'زیرہ'],
-  'jeera': ['cumin seeds', 'cumin', 'zeera', 'زیرہ'],
-  'cumin': ['zeera', 'cumin seeds', 'زیرہ'],
-  'cumin seeds': ['zeera', 'cumin', 'زیرہ'],
-  'زیرہ': ['cumin seeds', 'zeera'],
-  'dhania powder': ['coriander powder', 'پسا دھنیا', 'دھنیا پاؤڈر'],
-  'coriander powder': ['dhania powder', 'دھنیا پاؤڈر'],
-  'دھنیا پاؤڈر': ['coriander powder', 'dhania powder'],
-  'garam masala': ['garam masala powder', 'گرم مصالحہ'],
-  'گرم مصالحہ': ['garam masala'],
-  'chaat masala': ['chat masala', 'چاٹ مصالحہ'],
-  'chat masala': ['chaat masala', 'چاٹ مصالحہ'],
-  'چاٹ مصالحہ': ['chaat masala'],
-  'biryani masala': ['بریانی مصالحہ'],
-  'بریانی مصالحہ': ['biryani masala'],
-  'tikka masala': ['تکہ مصالحہ'],
-  'تکہ مصالحہ': ['tikka masala'],
-  'elaichi': ['cardamom', 'الائچی'],
-  'cardamom': ['elaichi', 'الائچی'],
-  'الائچی': ['cardamom', 'elaichi'],
-  'laung': ['cloves', 'لونگ'],
-  'cloves': ['laung', 'لونگ'],
-  'لونگ': ['cloves', 'laung'],
-  'darcheeni': ['cinnamon', 'دار چینی'],
-  'cinnamon': ['darcheeni', 'دار چینی'],
-  'دار چینی': ['cinnamon', 'darcheeni'],
-  'tez patta': ['bay leaf', 'تیز پتہ'],
-  'bay leaf': ['tez patta', 'تیز پتہ'],
-  'تیز پتہ': ['bay leaf', 'tez patta'],
-  'saunf': ['fennel seeds', 'fennel', 'سونف'],
-  'fennel seeds': ['saunf', 'سونف'],
-  'سونف': ['fennel seeds', 'saunf'],
-  'methi': ['fenugreek', 'kasuri methi', 'میتھی'],
-  'kasuri methi': ['fenugreek', 'methi', 'قصوری میتھی'],
-  'قصوری میتھی': ['kasuri methi', 'methi'],
-  'ajwain': ['carom seeds', 'اجوائن'],
-  'carom seeds': ['ajwain', 'اجوائن'],
-  'اجوائن': ['carom seeds', 'ajwain'],
+  'haldi': ['turmeric powder', 'turmeric', 'ÛÙ„Ø¯ÛŒ'],
+  'turmeric': ['haldi', 'turmeric powder', 'ÛÙ„Ø¯ÛŒ'],
+  'turmeric powder': ['haldi', 'turmeric', 'ÛÙ„Ø¯ÛŒ'],
+  'ÛÙ„Ø¯ÛŒ': ['turmeric', 'haldi'],
+  'lal mirch': ['red chilli powder', 'red chili', 'red chilli', 'Ù„Ø§Ù„ Ù…Ø±Ú†'],
+  'laal mirch': ['red chilli powder', 'red chili', 'Ù„Ø§Ù„ Ù…Ø±Ú†'],
+  'red chilli powder': ['lal mirch', 'Ù„Ø§Ù„ Ù…Ø±Ú†'],
+  'Ù„Ø§Ù„ Ù…Ø±Ú†': ['red chilli powder', 'lal mirch'],
+  'chilli flakes': ['crushed chilli', 'kuti lal mirch', 'dara mirch', 'Ú©ÙˆÙ¹ÛŒ Ù„Ø§Ù„ Ù…Ø±Ú†'],
+  'kuti lal mirch': ['chilli flakes', 'Ø¯Ú‘Ø§ Ù…Ø±Ú†'],
+  'dara mirch': ['chilli flakes', 'Ø¯Ú‘Ø§ Ù…Ø±Ú†'],
+  'Ú©ÙˆÙ¹ÛŒ Ù„Ø§Ù„ Ù…Ø±Ú†': ['chilli flakes', 'kuti lal mirch'],
+  'kali mirch': ['black pepper', 'Ú©Ø§Ù„ÛŒ Ù…Ø±Ú†'],
+  'black pepper': ['kali mirch', 'Ú©Ø§Ù„ÛŒ Ù…Ø±Ú†'],
+  'Ú©Ø§Ù„ÛŒ Ù…Ø±Ú†': ['black pepper', 'kali mirch'],
+  'safed mirch': ['white pepper', 'Ø³ÙÛŒØ¯ Ù…Ø±Ú†'],
+  'white pepper': ['safed mirch', 'Ø³ÙÛŒØ¯ Ù…Ø±Ú†'],
+  'Ø³ÙÛŒØ¯ Ù…Ø±Ú†': ['white pepper', 'safed mirch'],
+  'zeera': ['cumin seeds', 'cumin', 'jeera', 'Ø²ÛŒØ±Û'],
+  'jeera': ['cumin seeds', 'cumin', 'zeera', 'Ø²ÛŒØ±Û'],
+  'cumin': ['zeera', 'cumin seeds', 'Ø²ÛŒØ±Û'],
+  'cumin seeds': ['zeera', 'cumin', 'Ø²ÛŒØ±Û'],
+  'Ø²ÛŒØ±Û': ['cumin seeds', 'zeera'],
+  'dhania powder': ['coriander powder', 'Ù¾Ø³Ø§ Ø¯Ú¾Ù†ÛŒØ§', 'Ø¯Ú¾Ù†ÛŒØ§ Ù¾Ø§Ø¤ÚˆØ±'],
+  'coriander powder': ['dhania powder', 'Ø¯Ú¾Ù†ÛŒØ§ Ù¾Ø§Ø¤ÚˆØ±'],
+  'Ø¯Ú¾Ù†ÛŒØ§ Ù¾Ø§Ø¤ÚˆØ±': ['coriander powder', 'dhania powder'],
+  'garam masala': ['garam masala powder', 'Ú¯Ø±Ù… Ù…ØµØ§Ù„Ø­Û'],
+  'Ú¯Ø±Ù… Ù…ØµØ§Ù„Ø­Û': ['garam masala'],
+  'chaat masala': ['chat masala', 'Ú†Ø§Ù¹ Ù…ØµØ§Ù„Ø­Û'],
+  'chat masala': ['chaat masala', 'Ú†Ø§Ù¹ Ù…ØµØ§Ù„Ø­Û'],
+  'Ú†Ø§Ù¹ Ù…ØµØ§Ù„Ø­Û': ['chaat masala'],
+  'biryani masala': ['Ø¨Ø±ÛŒØ§Ù†ÛŒ Ù…ØµØ§Ù„Ø­Û'],
+  'Ø¨Ø±ÛŒØ§Ù†ÛŒ Ù…ØµØ§Ù„Ø­Û': ['biryani masala'],
+  'tikka masala': ['ØªÚ©Û Ù…ØµØ§Ù„Ø­Û'],
+  'ØªÚ©Û Ù…ØµØ§Ù„Ø­Û': ['tikka masala'],
+  'elaichi': ['cardamom', 'Ø§Ù„Ø§Ø¦Ú†ÛŒ'],
+  'cardamom': ['elaichi', 'Ø§Ù„Ø§Ø¦Ú†ÛŒ'],
+  'Ø§Ù„Ø§Ø¦Ú†ÛŒ': ['cardamom', 'elaichi'],
+  'laung': ['cloves', 'Ù„ÙˆÙ†Ú¯'],
+  'cloves': ['laung', 'Ù„ÙˆÙ†Ú¯'],
+  'Ù„ÙˆÙ†Ú¯': ['cloves', 'laung'],
+  'darcheeni': ['cinnamon', 'Ø¯Ø§Ø± Ú†ÛŒÙ†ÛŒ'],
+  'cinnamon': ['darcheeni', 'Ø¯Ø§Ø± Ú†ÛŒÙ†ÛŒ'],
+  'Ø¯Ø§Ø± Ú†ÛŒÙ†ÛŒ': ['cinnamon', 'darcheeni'],
+  'tez patta': ['bay leaf', 'ØªÛŒØ² Ù¾ØªÛ'],
+  'bay leaf': ['tez patta', 'ØªÛŒØ² Ù¾ØªÛ'],
+  'ØªÛŒØ² Ù¾ØªÛ': ['bay leaf', 'tez patta'],
+  'saunf': ['fennel seeds', 'fennel', 'Ø³ÙˆÙ†Ù'],
+  'fennel seeds': ['saunf', 'Ø³ÙˆÙ†Ù'],
+  'Ø³ÙˆÙ†Ù': ['fennel seeds', 'saunf'],
+  'methi': ['fenugreek', 'kasuri methi', 'Ù…ÛŒØªÚ¾ÛŒ'],
+  'kasuri methi': ['fenugreek', 'methi', 'Ù‚ØµÙˆØ±ÛŒ Ù…ÛŒØªÚ¾ÛŒ'],
+  'Ù‚ØµÙˆØ±ÛŒ Ù…ÛŒØªÚ¾ÛŒ': ['kasuri methi', 'methi'],
+  'ajwain': ['carom seeds', 'Ø§Ø¬ÙˆØ§Ø¦Ù†'],
+  'carom seeds': ['ajwain', 'Ø§Ø¬ÙˆØ§Ø¦Ù†'],
+  'Ø§Ø¬ÙˆØ§Ø¦Ù†': ['carom seeds', 'ajwain'],
 
   // Sauces & Condiments
-  'ketchup': ['tomato ketchup', 'tomato sauce', 'کیچپ'],
-  'tomato ketchup': ['ketchup', 'کیچپ'],
-  'کیچپ': ['ketchup', 'tomato ketchup'],
-  'mayo': ['mayonnaise', 'garlic mayo', 'میونیز'],
-  'mayonnaise': ['mayo', 'میونیز'],
-  'میونیز': ['mayonnaise', 'mayo'],
-  'chilli garlic': ['chilli garlic sauce', 'chili garlic', 'hot sauce', 'چلی گارلک'],
-  'چلی گارلک': ['chilli garlic sauce', 'chilli garlic'],
-  'soy sauce': ['soya sauce', 'سویا ساس'],
-  'soya sauce': ['soy sauce', 'سویا ساس'],
-  'سویا ساس': ['soy sauce', 'soya sauce'],
-  'sirka': ['vinegar', 'white vinegar', 'سِرکہ', 'سرکہ'],
-  'vinegar': ['sirka', 'سرکہ'],
-  'سرکہ': ['vinegar', 'sirka'],
-  'سِرکہ': ['vinegar', 'sirka'],
-  'mustard': ['mustard paste', 'mustard sauce', 'مسٹرڈ'],
-  'mustard paste': ['mustard', 'مسٹرڈ'],
-  'مسٹرڈ': ['mustard', 'mustard paste'],
-  'bbq sauce': ['barbecue sauce', 'باربی کیو ساس'],
-  'باربی کیو ساس': ['bbq sauce'],
+  'ketchup': ['tomato ketchup', 'tomato sauce', 'Ú©ÛŒÚ†Ù¾'],
+  'tomato ketchup': ['ketchup', 'Ú©ÛŒÚ†Ù¾'],
+  'Ú©ÛŒÚ†Ù¾': ['ketchup', 'tomato ketchup'],
+  'mayo': ['mayonnaise', 'garlic mayo', 'Ù…ÛŒÙˆÙ†ÛŒØ²'],
+  'mayonnaise': ['mayo', 'Ù…ÛŒÙˆÙ†ÛŒØ²'],
+  'Ù…ÛŒÙˆÙ†ÛŒØ²': ['mayonnaise', 'mayo'],
+  'chilli garlic': ['chilli garlic sauce', 'chili garlic', 'hot sauce', 'Ú†Ù„ÛŒ Ú¯Ø§Ø±Ù„Ú©'],
+  'Ú†Ù„ÛŒ Ú¯Ø§Ø±Ù„Ú©': ['chilli garlic sauce', 'chilli garlic'],
+  'soy sauce': ['soya sauce', 'Ø³ÙˆÛŒØ§ Ø³Ø§Ø³'],
+  'soya sauce': ['soy sauce', 'Ø³ÙˆÛŒØ§ Ø³Ø§Ø³'],
+  'Ø³ÙˆÛŒØ§ Ø³Ø§Ø³': ['soy sauce', 'soya sauce'],
+  'sirka': ['vinegar', 'white vinegar', 'Ø³ÙØ±Ú©Û', 'Ø³Ø±Ú©Û'],
+  'vinegar': ['sirka', 'Ø³Ø±Ú©Û'],
+  'Ø³Ø±Ú©Û': ['vinegar', 'sirka'],
+  'Ø³ÙØ±Ú©Û': ['vinegar', 'sirka'],
+  'mustard': ['mustard paste', 'mustard sauce', 'Ù…Ø³Ù¹Ø±Úˆ'],
+  'mustard paste': ['mustard', 'Ù…Ø³Ù¹Ø±Úˆ'],
+  'Ù…Ø³Ù¹Ø±Úˆ': ['mustard', 'mustard paste'],
+  'bbq sauce': ['barbecue sauce', 'Ø¨Ø§Ø±Ø¨ÛŒ Ú©ÛŒÙˆ Ø³Ø§Ø³'],
+  'Ø¨Ø§Ø±Ø¨ÛŒ Ú©ÛŒÙˆ Ø³Ø§Ø³': ['bbq sauce'],
 
   // Beverages & Tea
-  'chai patti': ['tea leaves', 'tea', 'patti', 'چائے پتی'],
-  'tea leaves': ['chai patti', 'tea', 'چائے پتی'],
-  'tea': ['chai patti', 'tea leaves', 'chai', 'چائے'],
-  'chai': ['tea', 'tea leaves', 'chai patti', 'چائے'],
-  'چائے پتی': ['tea leaves', 'chai patti'],
-  'پتی': ['tea leaves', 'chai patti'],
-  'green tea': ['sabz chai', 'qehwa', 'قہوہ'],
-  'qehwa': ['green tea', 'قہوہ'],
-  'قہوہ': ['green tea', 'qehwa'],
-  'coffee': ['nescafe', 'instant coffee', 'کافی'],
-  'کافی': ['coffee', 'nescafe'],
-  'mineral water': ['water bottle', 'paani', 'پانی'],
-  'paani': ['mineral water', 'water bottle', 'پانی'],
-  'پانی': ['mineral water', 'paani'],
+  'chai patti': ['tea leaves', 'tea', 'patti', 'Ú†Ø§Ø¦Û’ Ù¾ØªÛŒ'],
+  'tea leaves': ['chai patti', 'tea', 'Ú†Ø§Ø¦Û’ Ù¾ØªÛŒ'],
+  'tea': ['chai patti', 'tea leaves', 'chai', 'Ú†Ø§Ø¦Û’'],
+  'chai': ['tea', 'tea leaves', 'chai patti', 'Ú†Ø§Ø¦Û’'],
+  'Ú†Ø§Ø¦Û’ Ù¾ØªÛŒ': ['tea leaves', 'chai patti'],
+  'Ù¾ØªÛŒ': ['tea leaves', 'chai patti'],
+  'green tea': ['sabz chai', 'qehwa', 'Ù‚ÛÙˆÛ'],
+  'qehwa': ['green tea', 'Ù‚ÛÙˆÛ'],
+  'Ù‚ÛÙˆÛ': ['green tea', 'qehwa'],
+  'coffee': ['nescafe', 'instant coffee', 'Ú©Ø§ÙÛŒ'],
+  'Ú©Ø§ÙÛŒ': ['coffee', 'nescafe'],
+  'mineral water': ['water bottle', 'paani', 'Ù¾Ø§Ù†ÛŒ'],
+  'paani': ['mineral water', 'water bottle', 'Ù¾Ø§Ù†ÛŒ'],
+  'Ù¾Ø§Ù†ÛŒ': ['mineral water', 'paani'],
 
   // Packaging
-  'shopper': ['plastic bag', 'plastic bags', 'polythene bag', 'شاپر'],
-  'plastic bag': ['shopper', 'plastic bags', 'شاپر'],
-  'شاپر': ['shopper', 'plastic bag'],
-  'butter paper': ['baking paper', 'wrapping paper', 'بٹر پیپر'],
-  'بٹر پیپر': ['butter paper'],
-  'aluminum foil': ['silver foil', 'foil', 'سلور فوائل'],
-  'silver foil': ['aluminum foil', 'foil', 'سلور فوائل'],
-  'سلور فوائل': ['aluminum foil', 'silver foil'],
-  'disposable cup': ['cups', 'paper cup', 'chai cup', 'ڈسپوزیبل کپ'],
-  'paper cup': ['disposable cup', 'ڈسپوزیبل کپ'],
-  'ڈسپوزیبل کپ': ['disposable cup', 'paper cup'],
-  'burger box': ['burger boxes', 'packing box', 'food box', 'برگر باکس'],
-  'برگر باکس': ['burger box'],
-  'tissue': ['tissues', 'tissue paper', 'napkins', 'ٹشو'],
-  'tissue paper': ['tissue', 'tissues', 'napkins', 'ٹشو'],
-  'ٹشو': ['tissue', 'tissue paper', 'napkins']
+  'shopper': ['plastic bag', 'plastic bags', 'polythene bag', 'Ø´Ø§Ù¾Ø±'],
+  'plastic bag': ['shopper', 'plastic bags', 'Ø´Ø§Ù¾Ø±'],
+  'Ø´Ø§Ù¾Ø±': ['shopper', 'plastic bag'],
+  'butter paper': ['baking paper', 'wrapping paper', 'Ø¨Ù¹Ø± Ù¾ÛŒÙ¾Ø±'],
+  'Ø¨Ù¹Ø± Ù¾ÛŒÙ¾Ø±': ['butter paper'],
+  'aluminum foil': ['silver foil', 'foil', 'Ø³Ù„ÙˆØ± ÙÙˆØ§Ø¦Ù„'],
+  'silver foil': ['aluminum foil', 'foil', 'Ø³Ù„ÙˆØ± ÙÙˆØ§Ø¦Ù„'],
+  'Ø³Ù„ÙˆØ± ÙÙˆØ§Ø¦Ù„': ['aluminum foil', 'silver foil'],
+  'disposable cup': ['cups', 'paper cup', 'chai cup', 'ÚˆØ³Ù¾ÙˆØ²ÛŒØ¨Ù„ Ú©Ù¾'],
+  'paper cup': ['disposable cup', 'ÚˆØ³Ù¾ÙˆØ²ÛŒØ¨Ù„ Ú©Ù¾'],
+  'ÚˆØ³Ù¾ÙˆØ²ÛŒØ¨Ù„ Ú©Ù¾': ['disposable cup', 'paper cup'],
+  'burger box': ['burger boxes', 'packing box', 'food box', 'Ø¨Ø±Ú¯Ø± Ø¨Ø§Ú©Ø³'],
+  'Ø¨Ø±Ú¯Ø± Ø¨Ø§Ú©Ø³': ['burger box'],
+  'tissue': ['tissues', 'tissue paper', 'napkins', 'Ù¹Ø´Ùˆ'],
+  'tissue paper': ['tissue', 'tissues', 'napkins', 'Ù¹Ø´Ùˆ'],
+  'Ù¹Ø´Ùˆ': ['tissue', 'tissue paper', 'napkins']
 };
 
 
@@ -369,10 +369,47 @@ const getTodayCompactDate = (d = new Date()) => {
 const getStoredDraft = () => {
   try {
     const raw = sessionStorage.getItem(DRAFT_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    const activeDraftId = localStorage.getItem('zovikpos_active_draft_id');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (activeDraftId && String(parsed?.activeDraftId || '') !== String(activeDraftId)) {
+        return { activeDraftId, savedAt: 0 };
+      }
+      return { ...parsed, activeDraftId: activeDraftId || null };
+    }
+    if (activeDraftId) return { activeDraftId, savedAt: 0 };
   } catch (e) {
     console.warn('Failed to parse draft from sessionStorage:', e);
   }
+  return null;
+};
+
+const previewConvertedQuantity = (amount, fromUnit, toUnit) => {
+  const canonical = (unit = '') => {
+    const value = String(unit).trim().toUpperCase();
+    if (['KILOGRAM', 'KILOGRAMS'].includes(value)) return 'KG';
+    if (['G', 'GM', 'GRAM', 'GRAMS'].includes(value)) return 'G';
+    if (['MILLIGRAM', 'MILLIGRAMS'].includes(value)) return 'MG';
+    if (['LTR', 'LITER', 'LITERS', 'LITRE', 'LITRES'].includes(value)) return 'L';
+    if (['ML', 'MILLILITER', 'MILLILITERS', 'MILLILITRE', 'MILLILITRES'].includes(value)) return 'ML';
+    if (['CL', 'CENTILITER', 'CENTILITERS'].includes(value)) return 'CL';
+    if (['PC', 'PIECE', 'PIECES', 'UNIT', 'UNITS', 'NO', 'NOS'].includes(value)) return 'PCS';
+    if (['DOZENS', 'DZ'].includes(value)) return 'DOZEN';
+    if (['POUND', 'POUNDS', 'LBS'].includes(value)) return 'LB';
+    if (['OUNCE', 'OUNCES'].includes(value)) return 'OZ';
+    return value;
+  };
+  const source = canonical(fromUnit);
+  const target = canonical(toUnit);
+  const qty = Number(amount);
+  if (!Number.isFinite(qty)) return null;
+  if (source === target) return qty;
+  const weightToGrams = { KG: 1000, G: 1, MG: 0.001, LB: 453.59237, OZ: 28.34952 };
+  const volumeToMl = { L: 1000, ML: 1, CL: 10 };
+  if (weightToGrams[source] && weightToGrams[target]) return qty * weightToGrams[source] / weightToGrams[target];
+  if (volumeToMl[source] && volumeToMl[target]) return qty * volumeToMl[source] / volumeToMl[target];
+  if (source === 'DOZEN' && target === 'PCS') return qty * 12;
+  if (source === 'PCS' && target === 'DOZEN') return qty / 12;
   return null;
 };
 
@@ -398,9 +435,18 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   const [historySelectionMode, setHistorySelectionMode] = useState(false);
   const [selectedReceivingIds, setSelectedReceivingIds] = useState(new Set());
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
-  const [editingDraftId, setEditingDraftId] = useState(null);
+  const [editingDraftId, setEditingDraftId] = useState(initialDraft?.activeDraftId || null);
   const [pendingResumeDraft, setPendingResumeDraft] = useState(null);
   const [resumeDraftSaving, setResumeDraftSaving] = useState(false);
+  const [confirmBatchOpen, setConfirmBatchOpen] = useState(false);
+  const [confirmBatchLoading, setConfirmBatchLoading] = useState(false);
+  const [confirmBatchError, setConfirmBatchError] = useState('');
+  const [confirmBatchSummary, setConfirmBatchSummary] = useState([]);
+  const [confirmBatchDraftCount, setConfirmBatchDraftCount] = useState(0);
+  const [confirmBatchTotal, setConfirmBatchTotal] = useState(0);
+  const confirmBatchRequestRef = useRef(null);
+  const confirmDraftAttemptKeys = useRef(new Map());
+  const confirmEntryAttemptKeys = useRef(new Map());
 
   // Header Form State
   // Internal Reference starts BLANK -- user must click icon to generate
@@ -540,7 +586,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     0
   );
 
-  // ── Save draft to sessionStorage whenever key state changes ──
+  // â”€â”€ Save draft to sessionStorage whenever key state changes â”€â”€
   useEffect(() => {
     try {
       // Avoid storing massive base64 image data (>1MB) to prevent sessionStorage quota errors
@@ -559,13 +605,15 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         discountAmount,
         discountMode,
         receivingRows,
-        additionalCards: additionalCards.map(c => ({ ...c, uploadedInvoiceDataUrl: null }))
+        additionalCards: additionalCards.map(c => ({ ...c, uploadedInvoiceDataUrl: null })),
+        activeDraftId: editingDraftId || null,
+        savedAt: Date.now(),
       };
       sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftPayload));
     } catch (e) {
       console.warn('[StockIn] Draft save to sessionStorage failed:', e?.message);
     }
-  }, [receivingRows, receivingRef, supplierId, supplierInvoiceNumber, batchNumber, branchId, receivingDate, notes, aiDetectedSupplier, aiDetectedInvoiceNumber, discountAmount, discountMode, subTab, receivingMethod, additionalCards]);
+  }, [receivingRows, receivingRef, supplierId, supplierInvoiceNumber, batchNumber, branchId, receivingDate, notes, aiDetectedSupplier, aiDetectedInvoiceNumber, discountAmount, discountMode, subTab, receivingMethod, additionalCards, editingDraftId]);
 
   // Generate unique Internal Reference -- instant date + unique sequence generator
   const generateAutoRef = () => {
@@ -608,6 +656,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   }, [historyStatusFilter, historySearch, showToast]);
 
   const eligibleReceivingIds = receivingsList.map(record => record.id);
+  const savedDraftsPreview = receivingsList.filter(record => record.status === 'DRAFT');
   const allEligibleReceivingsSelected = eligibleReceivingIds.length > 0 && eligibleReceivingIds.every(id => selectedReceivingIds.has(id));
 
   const handleBulkDeleteReceivings = async () => {
@@ -762,7 +811,10 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         if (activeDraftId) {
           const res = await api.get(`/inventory/receivings/${activeDraftId}`);
           if (res.data?.receiving && res.data.receiving.status === 'DRAFT') {
-            loadDraftIntoForm(res.data.receiving);
+            const databaseUpdatedAt = new Date(res.data.receiving.updatedAt || 0).getTime();
+            const recoveredSessionIsNewer = String(initialDraft?.activeDraftId || '') === String(activeDraftId)
+              && Number(initialDraft?.savedAt || 0) > databaseUpdatedAt;
+            if (!recoveredSessionIsNewer) loadDraftIntoForm(res.data.receiving);
           } else {
             localStorage.removeItem('zovikpos_active_draft_id');
           }
@@ -774,7 +826,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       }
     };
     checkPersistedDraft();
-  }, []);
+  }, [initialDraft?.activeDraftId, initialDraft?.savedAt]);
 
   useEffect(() => {
     const fetchBranches = async () => {
@@ -782,20 +834,24 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         const res = await api.get('/admin/branches');
         if (res.data?.branches && res.data.branches.length > 0) {
           setBranchesList(res.data.branches);
-          setBranchId(String(res.data.branches[0].id));
+          if (!initialDraft?.branchId) setBranchId(String(res.data.branches[0].id));
         }
       } catch {
         // Fallback handled smoothly
       }
     };
     fetchBranches();
-  }, []);
+  }, [initialDraft?.branchId]);
 
   useEffect(() => {
     if (subTab === 'HISTORY') {
       fetchReceivings();
     }
   }, [subTab, fetchReceivings]);
+
+  useEffect(() => {
+    fetchReceivings({ silent: true });
+  }, [fetchReceivings]);
 
   // Download Comprehensive Stock Excel Template (All item columns included; Ref & Invoice # excluded)
   const handleDownloadEasyExcelTemplate = () => {
@@ -1481,7 +1537,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   : '';
                 if (showToast) {
                   const msg = unmatchedCount > 0
-                    ? `Imported ${newRows.length} items: ${matchedCount} matched ✓, ${unmatchedCount} need manual selection.${supplierHint}`
+                    ? `Imported ${newRows.length} items: ${matchedCount} matched âœ“, ${unmatchedCount} need manual selection.${supplierHint}`
                     : `All ${newRows.length} items matched and imported!${supplierHint}`;
                   showToast(msg, unmatchedCount > 0 ? 'warning' : 'success');
                 }
@@ -1652,7 +1708,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             const newCount = res.data.summary?.newItemsCount ?? rawUnmatched.length;
 
             if (showToast) {
-              const msg = `AI extracted ${newRows.length} items: ${matchedCount} matched ✓, ${newCount} new items${reviewCount > 0 ? `, ${reviewCount} need review ⚠️` : ''}.`;
+              const msg = `AI extracted ${newRows.length} items: ${matchedCount} matched âœ“, ${newCount} new items${reviewCount > 0 ? `, ${reviewCount} need review âš ï¸` : ''}.`;
               showToast(msg, reviewCount > 0 ? 'warning' : 'success');
             }
           }
@@ -1724,7 +1780,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       return;
     }
 
-    // For RECEIVED (Confirm & Receive Stock) — all items must be catalog-matched
+    // For RECEIVED (Confirm & Receive Stock) â€” all items must be catalog-matched
     if (activeRows.length === 0) {
       setReceiveSubmitMessage('Add at least one item before receiving stock.');
       if (showToast) showToast('Please select at least one item to receive.', 'error');
@@ -1736,7 +1792,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       if (!r.inventoryItemId) {
         if (editingDraftId) continue;
         const unmatchedCount = activeRows.filter(row => !row.inventoryItemId).length;
-        const message = `${unmatchedCount} new item${unmatchedCount === 1 ? '' : 's'} still need catalog names. Click “Save New Item Names (${unmatchedCount})” first, then confirm receiving.`;
+        const message = `${unmatchedCount} new item${unmatchedCount === 1 ? '' : 's'} still need catalog names. Click â€œSave New Item Names (${unmatchedCount})â€ first, then confirm receiving.`;
         setReceiveSubmitMessage(message);
         if (showToast) showToast(message, 'warning');
         return;
@@ -1753,7 +1809,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   };
 
   // Final Submit Action
-  // draftNewRowsOverride: optional array of unmatched rows (no inventoryItemId) — sent as draftNewItems for DRAFT only
+  // draftNewRowsOverride: optional array of unmatched rows (no inventoryItemId) â€” sent as draftNewItems for DRAFT only
   const executeSubmitReceiving = async (targetStatus, rowsOverride = null, draftNewRowsOverride = null) => {
     if (loading || savingDraft || (targetStatus === 'DRAFT' && draftSaveLock.current)) return false;
     if (targetStatus === 'DRAFT') draftSaveLock.current = true;
@@ -1799,6 +1855,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         status: targetStatus === 'RECEIVED' && editingDraftId ? 'DRAFT' : targetStatus,
         items: rowsToSubmit.map(r => ({
           inventoryItemId: parseInt(r.inventoryItemId, 10),
+          name: String(r.searchTerm || '').trim(),
           quantity: parseFloat(r.quantity),
           unit: r.unit,
           unitCost: parseFloat(r.unitCost) || 0,
@@ -1810,11 +1867,23 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       };
 
       let res;
-      if (editingDraftId) {
+      if (targetStatus === 'RECEIVED') {
+        const currentDelivery = { ...payload, ...(editingDraftId ? { existingReceivingId: editingDraftId } : {}) };
+        const signature = JSON.stringify(currentDelivery);
+        const attemptName = editingDraftId ? `draft-${editingDraftId}` : 'primary-current';
+        const priorAttempt = confirmEntryAttemptKeys.current.get(attemptName);
+        const attemptKey = priorAttempt?.signature === signature
+          ? priorAttempt.key
+          : (globalThis.crypto?.randomUUID?.() || `confirm-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        confirmEntryAttemptKeys.current.set(attemptName, { signature, key: attemptKey });
+        const { data } = await api.post('/inventory/receivings/confirm-batch', { currentDeliveries: [currentDelivery] }, {
+          timeout: 15000,
+          headers: { 'Idempotency-Key': attemptKey },
+        });
+        confirmEntryAttemptKeys.current.delete(attemptName);
+        res = { data: { receiving: data?.receivings?.[0] } };
+      } else if (editingDraftId) {
         res = await api.put(`/inventory/receivings/${editingDraftId}`, payload);
-        if (targetStatus === 'RECEIVED') {
-          res = await api.post(`/inventory/receivings/${editingDraftId}/receive`);
-        }
       } else {
         res = await api.post('/inventory/receivings', payload);
       }
@@ -1822,19 +1891,10 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       const savedRec = res.data?.receiving;
 
       if (targetStatus === 'DRAFT') {
-        const newDraftId = savedRec?.id || editingDraftId;
-        if (newDraftId) {
-          setEditingDraftId(newDraftId);
-          try {
-            localStorage.setItem('zovikpos_active_draft_id', String(newDraftId));
-          } catch { /* Optional storage or parsing failure. */ }
-        }
-        if (showToast) {
-          showToast('Draft has been saved successfully.', 'success');
-        }
-        setDraftSaveResult({ success: true, message: `Draft ${savedRec?.receivingNumber ? `“${savedRec.receivingNumber}” ` : ''}was saved. Stock has not changed.` });
-        setSubTab('HISTORY');
-        setCompletedReceiving(null);
+        resetPrimaryReceivingEntry();
+        setSubTab('NEW_RECEIVING');
+        await fetchReceivings({ silent: true });
+        showToast?.('Draft saved. Your form is ready for the next delivery.', 'success');
       } else {
         setEditingDraftId(null);
         try {
@@ -1906,14 +1966,77 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     try { sessionStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* Optional storage or parsing failure. */ }
   };
 
+  const resetPrimaryReceivingEntry = () => {
+    setEditingDraftId(null);
+    try { localStorage.removeItem('zovikpos_active_draft_id'); } catch { /* Optional storage. */ }
+    const dateStr = getTodayCompactDate();
+    const suffix = String(Date.now()).slice(-6);
+    const nextBatch = `BATCH-${dateStr}-${suffix}`;
+    setReceivingRef(`RCV-${dateStr}-${suffix}`);
+    setSupplierInvoiceNumber(`INV-${dateStr}-${suffix}`);
+    setBatchNumber(nextBatch);
+    setSupplierId('');
+    setBranchId(branchesList[0]?.id ? String(branchesList[0].id) : '');
+    setReceivingDate(getTodayDateString());
+    setNotes('');
+    setAiDetectedSupplier('');
+    setAiDetectedInvoiceNumber('');
+    setDiscountAmount(0);
+    setDiscountMode('AMOUNT');
+    setReceivingRows([{
+      inventoryItemId: '', searchTerm: '', showSearchDropdown: false, quantity: 1,
+      unit: 'KG', unitCost: 0, batchNumber: nextBatch, expiryDate: '', notes: '',
+      showMoreDetails: false, isAiDetected: false, confidence: 1, isUnmatched: false, category: 'General'
+    }]);
+    setPendingUploadRows(null);
+    setPendingUploadData(null);
+    setUploadedInvoiceDataUrl(null);
+    setUploadedInvoiceFileName('');
+    setUploadedInvoiceMimeType('');
+    setOcrFile(null);
+    setReceivingMethod('MANUAL');
+    setCompletedReceiving(null);
+    try { sessionStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* Optional storage. */ }
+  };
+
+  const resetAllDeliveriesForNextEntry = () => {
+    resetPrimaryReceivingEntry();
+    setAdditionalCards([]);
+    setSelectedReceivingIds(new Set());
+  };
+
+  const handleDuplicateSavedDraft = (draft) => {
+    loadDraftIntoForm(draft);
+    setEditingDraftId(null);
+    try { localStorage.removeItem('zovikpos_active_draft_id'); } catch { /* Optional storage. */ }
+    const dateStr = getTodayCompactDate();
+    const suffix = String(Date.now()).slice(-6);
+    const nextRef = `RCV-${dateStr}-${suffix}`;
+    const nextBatch = `BATCH-${dateStr}-${suffix}`;
+    const nextInvoice = `INV-${dateStr}-${suffix}`;
+    setReceivingRef(nextRef);
+    setBatchNumber(nextBatch);
+    setSupplierInvoiceNumber(nextInvoice);
+    setReceivingRows((rows) => rows.map((row) => ({ ...row, batchNumber: nextBatch })));
+    setSubTab('NEW_RECEIVING');
+    showToast?.('Draft copied. Save it to create a separate delivery.', 'success');
+  };
+
   // Confirm existing Draft from History
   const handleConfirmDraft = async (receivingId) => {
     const key = String(receivingId);
     if (confirmingDraftLocks.current.has(key)) return;
+    if (!confirmDraftAttemptKeys.current.has(key)) {
+      confirmDraftAttemptKeys.current.set(key, globalThis.crypto?.randomUUID?.() || `confirm-${key}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    }
     confirmingDraftLocks.current.add(key);
     setConfirmingDraftIds(prev => new Set(prev).add(key));
     try {
-      await api.post(`/inventory/receivings/${receivingId}/receive`);
+      await api.post('/inventory/receivings/confirm-batch', { receivingIds: [Number(receivingId)] }, {
+        timeout: 15000,
+        headers: { 'Idempotency-Key': confirmDraftAttemptKeys.current.get(key) },
+      });
+      confirmDraftAttemptKeys.current.delete(key);
       if (showToast) showToast('Stock has been updated successfully.', 'success');
       if (String(editingDraftId) === String(receivingId)) {
         setEditingDraftId(null);
@@ -2305,7 +2428,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     }
     // Catalog-matched rows
     const rowsToSubmit = activeRows.filter(r => r.inventoryItemId && parseFloat(r.quantity) > 0);
-    // New/unmatched rows (only relevant for DRAFT — deferred catalog creation)
+    // New/unmatched rows (only relevant for DRAFT â€” deferred catalog creation)
     const newItemRows = activeRows.filter(r => !r.inventoryItemId && (r.searchTerm || '').trim() && parseFloat(r.quantity) > 0);
 
     if (rowsToSubmit.length === 0 && newItemRows.length === 0) {
@@ -2322,7 +2445,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         return false;
       }
       if (newItemRows.length > 0) {
-        const message = `${newItemRows.length} new item${newItemRows.length === 1 ? '' : 's'} on this supplier card need catalog names. Click “Save New Item Names (${newItemRows.length})” on this card, then confirm receiving.`;
+        const message = `${newItemRows.length} new item${newItemRows.length === 1 ? '' : 's'} on this supplier card need catalog names. Click â€œSave New Item Names (${newItemRows.length})â€ on this card, then confirm receiving.`;
         setCardReceiveMessages(prev => ({ ...prev, [cardId]: message }));
         showToast?.(message, 'warning');
         return false;
@@ -2375,6 +2498,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         status: targetStatus,
         items: rowsToSubmit.map(r => ({
           inventoryItemId: parseInt(r.inventoryItemId, 10),
+          name: String(r.searchTerm || '').trim(),
           quantity: parseFloat(r.quantity),
           unit: r.unit,
           unitCost: parseFloat(r.unitCost) || 0,
@@ -2385,14 +2509,27 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         ...(draftNewItems.length > 0 ? { draftNewItems } : {})
       };
 
-      await api.post('/inventory/receivings', payload);
+      if (targetStatus === 'DRAFT') {
+        await api.post('/inventory/receivings', payload);
+      } else {
+        const signature = JSON.stringify(payload);
+        const priorAttempt = confirmEntryAttemptKeys.current.get(cardId);
+        const attemptKey = priorAttempt?.signature === signature
+          ? priorAttempt.key
+          : (globalThis.crypto?.randomUUID?.() || `confirm-${cardId}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        confirmEntryAttemptKeys.current.set(cardId, { signature, key: attemptKey });
+        await api.post('/inventory/receivings/confirm-batch', { currentDeliveries: [payload] }, {
+          timeout: 15000,
+          headers: { 'Idempotency-Key': attemptKey },
+        });
+        confirmEntryAttemptKeys.current.delete(cardId);
+      }
       const supName = suppliers.find(s => String(s.id) === String(card.supplierId))?.name || card.aiDetectedSupplier || 'Supplier';
 
       if (targetStatus === 'DRAFT') {
-        if (showToast) showToast(`Draft saved for ${supName}. New items will be added to catalog when confirmed.`, 'success');
-        setDraftSaveResult({ success: true, message: `Draft for ${supName} was saved. Stock has not changed.` });
+        if (showToast) showToast('Draft saved. Your delivery cards are ready for the next entry.', 'success');
+        await fetchReceivings({ silent: true });
         setAdditionalCards(prev => prev.filter(c => c.id !== cardId));
-        setSubTab('HISTORY');
       } else {
         if (showToast) showToast(`Stock received successfully for ${supName}!`, 'success');
         setAdditionalCards(prev => prev.filter(c => c.id !== cardId));
@@ -2448,27 +2585,198 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     }
   };
 
-  // Save every active supplier card as a separate draft from one explicit action.
-  // Successful additional cards are removed from the editable stack to make retries safe;
-  // the primary draft id is retained so a partial retry updates it instead of duplicating it.
-  const handleSaveAllDeliveryDrafts = async () => {
-    if (loading || savingDraft || draftSaveLock.current) return;
+  const buildCurrentDeliveryDrafts = () => {
     const primaryRows = receivingRows.filter(row => row?.searchTerm || row?.inventoryItemId);
-    const cards = additionalCards.map(card => ({
+    const cards = additionalCards.map((card, cardIndex) => ({
       ...card,
+      cardIndex,
       activeRows: (card.receivingRows || []).filter(row => row?.searchTerm || row?.inventoryItemId)
     }));
     const deliveries = [
-      ...(primaryRows.length ? [{ key: 'primary', rows: primaryRows }] : []),
-      ...cards.filter(card => card.activeRows.length).map(card => ({ key: card.id, rows: card.activeRows }))
+      ...(primaryRows.length ? [{ key: 'primary', label: 'Card #1', rows: primaryRows }] : []),
+      ...cards.filter(card => card.activeRows.length).map(card => ({ key: card.id, label: `Card #${card.cardIndex + 2}`, rows: card.activeRows }))
     ];
+    return deliveries.map((delivery) => {
+      const isPrimary = delivery.key === 'primary';
+      const card = isPrimary ? null : cards.find(candidate => candidate.id === delivery.key);
+      const rows = delivery.rows;
+      const knownRows = rows.filter(row => row.inventoryItemId);
+      const newRows = rows.filter(row => !row.inventoryItemId && (row.searchTerm || '').trim());
+      const docBatch = String(isPrimary ? batchNumber : card.batchNumber || '').trim() || null;
+      return {
+        label: delivery.label,
+        ...(isPrimary && editingDraftId ? { existingReceivingId: editingDraftId } : {}),
+        supplierId: (isPrimary ? supplierId : card.supplierId) ? parseInt(isPrimary ? supplierId : card.supplierId, 10) : null,
+        branchId: (isPrimary ? branchId : card.branchId) ? parseInt(isPrimary ? branchId : card.branchId, 10) : null,
+        receivingRef: String(isPrimary ? receivingRef : card.receivingRef || '').trim(),
+        invoiceNumber: String(isPrimary ? supplierInvoiceNumber : card.supplierInvoiceNumber || '').trim() || null,
+        batchNumber: docBatch,
+        receivingDate: isPrimary ? receivingDate : card.receivingDate,
+        notes: (isPrimary ? notes : card.notes) ? String(isPrimary ? notes : card.notes).trim() : null,
+        discount: isPrimary ? calculatedDiscountAmount : getReceivingDiscountAmount(sumReceivingSubtotals(rows), card.discountAmount, card.discountMode),
+        discountPercent: isPrimary
+          ? (discountMode === 'PERCENT' ? Number(discountAmount) || 0 : null)
+          : (card.discountMode === 'PERCENT' ? Number(card.discountAmount) || 0 : null),
+        items: knownRows.map(row => ({
+          inventoryItemId: parseInt(row.inventoryItemId, 10),
+          name: String(row.searchTerm || '').trim(),
+          quantity: Number.parseFloat(row.quantity),
+          unit: row.unit || 'PCS',
+          unitCost: Number.parseFloat(row.unitCost) || 0,
+          batchNumber: docBatch || (row.batchNumber ? String(row.batchNumber).trim() : null),
+          expiryDate: row.expiryDate || null,
+          notes: row.notes ? String(row.notes).trim() : null,
+        })),
+        ...(newRows.length ? { draftNewItems: newRows.map(row => ({
+          name: row.searchTerm.trim(),
+          quantity: Number.parseFloat(row.quantity),
+          unit: row.unit || 'KG',
+          costPrice: Number.parseFloat(row.unitCost) || 0,
+          category: row.category || 'General',
+          expiryDate: row.expiryDate || null,
+          batchNumber: docBatch || (row.batchNumber ? String(row.batchNumber).trim() : null),
+        })) } : {}),
+      };
+    });
+  };
 
-    if (!deliveries.length) {
+  const openConfirmBatchSummary = () => {
+    const currentDeliveries = buildCurrentDeliveryDrafts();
+    const currentExistingIds = new Set(currentDeliveries.map((delivery) => Number(delivery.existingReceivingId)).filter(Boolean));
+    const selectedDrafts = receivingsList.filter((record) =>
+      record.status === 'DRAFT' && selectedReceivingIds.has(record.id) && !currentExistingIds.has(Number(record.id))
+    );
+    const receivingIds = selectedDrafts.map((record) => record.id);
+    const summary = [];
+
+    selectedDrafts.forEach((record) => {
+      (record.items || []).forEach((line) => {
+        const fromUnit = line.unit || line.inventoryItem?.unit || 'PCS';
+        const toUnit = line.inventoryItem?.unit || fromUnit;
+        const quantity = previewConvertedQuantity(line.quantity, fromUnit, toUnit);
+        summary.push({
+          key: `saved-${record.id}-${line.id}`,
+          item: line.inventoryItem?.name || 'Inventory item',
+          quantity: line.quantity,
+          unit: fromUnit,
+          converted: quantity,
+          targetUnit: toUnit,
+          supplier: record.supplier?.name || 'Local Market',
+        });
+      });
+      (record.draftItems || []).forEach((line, index) => {
+        const matchedItem = localInventory.find((item) =>
+          String(item.name || '').trim().toLowerCase() === String(line.name || '').trim().toLowerCase()
+          && (!record.branchId || !item.branchId || String(item.branchId) === String(record.branchId))
+        );
+        const fromUnit = line.unit || 'KG';
+        const toUnit = matchedItem?.unit || fromUnit;
+        summary.push({
+          key: `saved-new-${record.id}-${index}`,
+          item: line.name || 'New catalog item',
+          quantity: line.quantity,
+          unit: fromUnit,
+          converted: previewConvertedQuantity(line.quantity, fromUnit, toUnit),
+          targetUnit: toUnit,
+          supplier: record.supplier?.name || 'Local Market',
+        });
+      });
+    });
+
+    currentDeliveries.forEach((delivery, deliveryIndex) => {
+      const supplier = suppliers.find((entry) => String(entry.id) === String(delivery.supplierId))?.name || 'Local Market';
+      delivery.items.forEach((line, lineIndex) => {
+        const catalogItem = localInventory.find((entry) => String(entry.id) === String(line.inventoryItemId));
+        const fromUnit = line.unit || catalogItem?.unit || 'PCS';
+        const toUnit = catalogItem?.unit || fromUnit;
+        summary.push({
+          key: `current-${deliveryIndex}-${lineIndex}`,
+          item: catalogItem?.name || 'Inventory item',
+          quantity: line.quantity,
+          unit: fromUnit,
+          converted: previewConvertedQuantity(line.quantity, fromUnit, toUnit),
+          targetUnit: toUnit,
+          supplier,
+        });
+      });
+      delivery.draftNewItems?.forEach((line, lineIndex) => {
+        const matchedItem = localInventory.find((item) =>
+          String(item.name || '').trim().toLowerCase() === String(line.name || '').trim().toLowerCase()
+          && (!delivery.branchId || !item.branchId || String(item.branchId) === String(delivery.branchId))
+        );
+        const fromUnit = line.unit || 'KG';
+        const toUnit = matchedItem?.unit || fromUnit;
+        summary.push({
+          key: `current-new-${deliveryIndex}-${lineIndex}`,
+          item: line.name,
+          quantity: line.quantity,
+          unit: fromUnit,
+          converted: previewConvertedQuantity(line.quantity, fromUnit, toUnit),
+          targetUnit: toUnit,
+          supplier,
+        });
+      });
+    });
+
+    const draftCount = selectedDrafts.length + currentDeliveries.length;
+    if (!draftCount) {
+      showToast?.('Select at least one saved draft or add a current delivery before confirming.', 'warning');
+      return;
+    }
+    const key = globalThis.crypto?.randomUUID?.() || `confirm-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const savedTotal = selectedDrafts.reduce((sum, record) => sum + Number(record.totalCost || 0), 0);
+    const currentTotal = currentDeliveries.reduce((sum, delivery) => {
+      const subtotal = [...delivery.items, ...(delivery.draftNewItems || [])].reduce((itemSum, line) => itemSum + Number(line.quantity || 0) * Number(line.unitCost ?? line.costPrice ?? 0), 0);
+      return sum + Math.max(0, subtotal - Number(delivery.discount || 0));
+    }, 0);
+    setConfirmBatchTotal(savedTotal + currentTotal);
+    confirmBatchRequestRef.current = { key, payload: { receivingIds, currentDeliveries } };
+    setConfirmBatchSummary(summary);
+    setConfirmBatchDraftCount(draftCount);
+    setConfirmBatchError('');
+    setConfirmBatchOpen(true);
+  };
+
+  const handleConfirmReceivingBatch = async () => {
+    const request = confirmBatchRequestRef.current;
+    if (!request || confirmBatchLoading) return;
+    setConfirmBatchLoading(true);
+    setConfirmBatchError('');
+    try {
+      await api.post('/inventory/receivings/confirm-batch', request.payload, {
+        timeout: 15000,
+        headers: { 'Idempotency-Key': request.key },
+      });
+      resetAllDeliveriesForNextEntry();
+      setSelectedReceivingIds(new Set());
+      setConfirmBatchOpen(false);
+      confirmBatchRequestRef.current = null;
+      await fetchReceivings({ silent: true });
+      onRefresh?.();
+      showToast?.('All selected deliveries were confirmed and stock was updated.', 'success');
+    } catch (error) {
+      const message = error.response?.data?.error || error.message || 'Could not confirm the selected deliveries.';
+      const card = error.response?.data?.card;
+      setConfirmBatchError(card ? `${card}: ${message}` : message);
+    } finally {
+      setConfirmBatchLoading(false);
+    }
+  };
+
+  const selectedDraftCount = receivingsList.filter((record) => record.status === 'DRAFT' && selectedReceivingIds.has(record.id)).length;
+  const currentActiveDeliveryCount = buildCurrentDeliveryDrafts().length;
+
+  // Save every active supplier card in one all-or-nothing backend transaction.
+  const handleSaveAllDeliveryDrafts = async () => {
+    if (loading || savingDraft || draftSaveLock.current) return;
+    const batchDeliveries = buildCurrentDeliveryDrafts();
+
+    if (!batchDeliveries.length) {
       showToast?.('Add at least one supplier item before saving drafts.', 'warning');
       return;
     }
-    for (const delivery of deliveries) {
-      const invalid = delivery.rows.find(row => !(Number.parseFloat(row.quantity) > 0));
+    for (const delivery of batchDeliveries) {
+      const invalid = [...delivery.items, ...(delivery.draftNewItems || [])].find(row => !(Number.parseFloat(row.quantity) > 0));
       if (invalid) {
         showToast?.(`Enter a quantity greater than zero for ${invalid.searchTerm || 'each item'} before saving.`, 'error');
         return;
@@ -2480,78 +2788,19 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     setReceivingActionScope('all-drafts');
     setSavingDraft(true);
     setDraftSaveScope('all');
-    const savedCardIds = [];
-    let primarySavedId = editingDraftId || null;
-    let savedCount = 0;
     try {
-      for (const delivery of deliveries) {
-        const isPrimary = delivery.key === 'primary';
-        const card = isPrimary ? null : cards.find(candidate => candidate.id === delivery.key);
-        const rows = delivery.rows;
-        const knownRows = rows.filter(row => row.inventoryItemId);
-        const newRows = rows.filter(row => !row.inventoryItemId && (row.searchTerm || '').trim());
-        const docBatch = (isPrimary ? batchNumber : card.batchNumber || '').trim() || null;
-        const payload = {
-          supplierId: (isPrimary ? supplierId : card.supplierId) ? parseInt(isPrimary ? supplierId : card.supplierId, 10) : null,
-          branchId: (isPrimary ? branchId : card.branchId) ? parseInt(isPrimary ? branchId : card.branchId, 10) : null,
-          receivingRef: (isPrimary ? receivingRef : card.receivingRef).trim(),
-          invoiceNumber: (isPrimary ? supplierInvoiceNumber : card.supplierInvoiceNumber).trim() || null,
-          batchNumber: docBatch,
-          receivingDate: isPrimary ? receivingDate : card.receivingDate,
-          notes: (isPrimary ? notes : card.notes) ? String(isPrimary ? notes : card.notes).trim() : null,
-          subtotal: sumReceivingSubtotals(rows),
-          discount: isPrimary ? calculatedDiscountAmount : getReceivingDiscountAmount(sumReceivingSubtotals(rows), card.discountAmount, card.discountMode),
-          discountPercent: isPrimary
-            ? (discountMode === 'PERCENT' ? Number(discountAmount) || 0 : null)
-            : (card.discountMode === 'PERCENT' ? Number(card.discountAmount) || 0 : null),
-          status: 'DRAFT',
-          items: knownRows.map(row => ({
-            inventoryItemId: parseInt(row.inventoryItemId, 10),
-            quantity: Number.parseFloat(row.quantity),
-            unit: row.unit || 'PCS',
-            unitCost: Number.parseFloat(row.unitCost) || 0,
-            batchNumber: docBatch || (row.batchNumber ? String(row.batchNumber).trim() : null),
-            expiryDate: row.expiryDate || null,
-            notes: row.notes ? String(row.notes).trim() : null
-          })),
-          ...(newRows.length ? { draftNewItems: newRows.map(row => ({
-            name: row.searchTerm.trim(),
-            quantity: Number.parseFloat(row.quantity),
-            unit: row.unit || 'KG',
-            costPrice: Number.parseFloat(row.unitCost) || 0,
-            category: row.category || 'General',
-            expiryDate: row.expiryDate || null,
-            batchNumber: docBatch || (row.batchNumber ? String(row.batchNumber).trim() : null)
-          })) } : {})
-        };
-        const response = isPrimary && primarySavedId
-          ? await api.put(`/inventory/receivings/${primarySavedId}`, payload)
-          : await api.post('/inventory/receivings', payload);
-        if (isPrimary) {
-          primarySavedId = response.data?.receiving?.id || primarySavedId;
-          if (primarySavedId) {
-            setEditingDraftId(primarySavedId);
-            try { localStorage.setItem('zovikpos_active_draft_id', String(primarySavedId)); } catch { /* Optional storage or parsing failure. */ }
-          }
-        } else {
-          savedCardIds.push(delivery.key);
-        }
-        savedCount += 1;
-      }
-
-      setAdditionalCards(prev => prev.filter(card => !savedCardIds.includes(card.id)));
-      if (savedCount === deliveries.length) {
-        handleResetForNewReceiving();
-        setDraftSaveResult({ success: true, message: `Saved ${savedCount} supplier draft${savedCount === 1 ? '' : 's'} separately. Stock has not changed.` });
-        setSubTab('HISTORY');
-        onRefresh?.();
-        showToast?.(`Saved ${savedCount} supplier draft${savedCount === 1 ? '' : 's'} separately. Stock has not changed.`, 'success');
-      }
+      const { data } = await api.post('/inventory/receivings/batch', { deliveries: batchDeliveries }, { timeout: 15000 });
+      resetAllDeliveriesForNextEntry();
+      setSubTab('NEW_RECEIVING');
+      await fetchReceivings({ silent: true });
+      const savedCount = data?.receivings?.length || batchDeliveries.length;
+      showToast?.(`Draft saved. ${savedCount} supplier delivery draft${savedCount === 1 ? '' : 's'} saved; stock has not changed.`, 'success');
+      onRefresh?.();
     } catch (error) {
-      setAdditionalCards(prev => prev.filter(card => !savedCardIds.includes(card.id)));
       const message = error.response?.data?.error || 'Could not save every supplier draft. Your unsaved entries are still on this screen.';
-      setDraftSaveResult({ success: false, message: savedCount ? `${savedCount} draft${savedCount === 1 ? '' : 's'} saved separately; remaining drafts were not saved. ${message}` : message });
-      showToast?.(savedCount ? `${savedCount} draft${savedCount === 1 ? '' : 's'} saved; remaining drafts failed: ${message}` : message, 'error');
+      const card = error.response?.data?.card;
+      setDraftSaveResult({ success: false, message: card ? `${card}: ${message}` : message });
+      showToast?.(card ? `${card}: ${message}` : message, 'error');
     } finally {
       setLoading(false);
       setReceivingActionScope(null);
@@ -2619,10 +2868,35 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             }`}
           >
             {historyLoading && subTab === 'HISTORY' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
-            <span>{historyLoading && subTab === 'HISTORY' ? 'Loading History…' : 'Receiving History'}</span>
+            <span>{historyLoading && subTab === 'HISTORY' ? 'Loading Historyâ€¦' : 'Receiving History'}</span>
           </button>
         </div>
       </div>
+
+      {subTab === 'NEW_RECEIVING' && savedDraftsPreview.length > 0 && (
+        <section className="rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4" aria-label="Saved receiving drafts">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-[var(--text-main)]">Saved drafts <span className="ml-1 rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-xs text-[var(--accent)]">{savedDraftsPreview.length}</span></h3>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">Saved entries stay here until you edit, delete, or confirm them.</p>
+            </div>
+            <button type="button" onClick={() => setSubTab('HISTORY')} className="min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold text-[var(--accent)] hover:bg-[var(--accent-soft)]">View all</button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {savedDraftsPreview.slice(0, 3).map((draft) => (
+              <article key={`saved-draft-${draft.id}`} className="min-w-0 rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] p-3">
+                <p className="truncate text-xs font-bold text-[var(--text-main)]" title={draft.receivingNumber}>{draft.receivingNumber || 'Receiving draft'}</p>
+                <p className="mt-1 truncate text-[11px] text-[var(--text-muted)]">{draft.supplier?.name || 'Local Market'} Â· {draft.itemCount ?? draft.items?.length ?? 0} items</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button type="button" onClick={() => requestResumeDraft(draft)} className="min-h-10 rounded-lg border border-[var(--border-color)] px-2.5 text-[11px] font-semibold text-[var(--text-main)] hover:bg-[var(--bg-color)]">Edit</button>
+                  <button type="button" onClick={() => handleDuplicateSavedDraft(draft)} className="min-h-10 rounded-lg border border-[var(--border-color)] px-2.5 text-[11px] font-semibold text-[var(--text-main)] hover:bg-[var(--bg-color)]">Duplicate</button>
+                  <button type="button" onClick={() => setReceivingToDelete(draft)} className="min-h-10 rounded-lg border border-rose-500/30 px-2.5 text-[11px] font-semibold text-rose-500 hover:bg-rose-500/10">Delete</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       {subTab === 'NEW_RECEIVING' && (
         <div>
@@ -2702,16 +2976,16 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
               {/* Active Draft Banner */}
               {editingDraftId && (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-scale-up">
+                <div className="bg-[var(--accent-soft)] border border-[var(--accent)]/35 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-scale-up">
                   <div className="flex items-center space-x-3.5">
-                    <span className="p-2.5 bg-amber-500/20 text-amber-400 rounded-2xl flex-shrink-0">
+                    <span className="p-2.5 bg-[var(--surface-2)] text-[var(--accent)] rounded-2xl flex-shrink-0">
                       <FileText className="w-5 h-5" />
                     </span>
                     <div>
-                      <p className="text-xs sm:text-sm font-black text-amber-300">
+                      <p className="text-xs sm:text-sm font-black text-[var(--text)]">
                         Editing Draft #{editingDraftId} {receivingRef ? `(${receivingRef})` : ''}
                       </p>
-                      <p className="text-[11px] text-amber-200/70 mt-0.5">
+                      <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
                         Working on an existing draft. Click &quot;Save Draft&quot; to keep updating or &quot;Confirm &amp; Receive Stock&quot; to finalize.
                       </p>
                     </div>
@@ -2887,24 +3161,24 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                   {/* Internal Receiving Reference (Dynamic DB Sequence) */}
                   <div>
-                    <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
+                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
                       <span>Internal Reference *</span>
                       <span className="text-[10px] text-orange-400 font-normal lowercase">Auto-generated</span>
                     </label>
-                    <div className="relative flex items-center">
+                  <div className="field-action-control">
                       <input
                         type="text"
                         readOnly
                         value={receivingRef}
                         /* onChange={(e) => setReceivingRef(e.target.value)} -- Manual typing disabled per user request, only auto-generate */
                         placeholder={`RCV-${getTodayCompactDate()}-XXXX`}
-                        className="w-full pl-3.5 pr-9 py-2.5 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
+                        className="field-action-control__input w-full pl-3.5 pr-9 py-2.5 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
                       />
                       <button
                         type="button"
                         onClick={() => generateAutoRef()}
                         title={`Click to generate unique Internal Reference (RCV-${getTodayCompactDate()}-XXXX)`}
-                        className="absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
+                        className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10 icon-btn icon-btn--32"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
                       </button>
@@ -2913,11 +3187,11 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                   {/* Shipment Batch Number (Applies to all receiving items) */}
                   <div>
-                    <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
+                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
                       <span>Shipment Batch Number</span>
                       <span className="text-[10px] text-orange-400 font-normal lowercase">(BATCH-{getTodayCompactDate()}-XXXX)</span>
                     </label>
-                    <div className="relative flex items-center">
+                    <div className="field-action-control">
                       <input
                         type="text"
                         readOnly
@@ -2928,7 +3202,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           setReceivingRows((prev) => prev.map((r) => ({ ...r, batchNumber: newBatch })));
                         }} -- Manual typing disabled per user request, only auto-generate */
                         placeholder={`BATCH-${getTodayCompactDate()}-XXXX`}
-                        className="w-full pl-3.5 pr-9 py-2.5 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
+                        className="field-action-control__input w-full pl-3.5 pr-9 py-2.5 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
                       />
                       <button
                         type="button"
@@ -2941,7 +3215,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           if (showToast) showToast(`Shipment Batch # Generated: ${newBatch}`, 'info');
                         }}
                         title={`Generate auto batch number for all receiving items (BATCH-${getTodayCompactDate()}-XXXX)`}
-                        className="absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
+                        className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10 icon-btn icon-btn--32"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
                       </button>
@@ -2950,7 +3224,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                   {/* Supplier Dropdown */}
                   <div>
-                    <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
+                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
                       <span>Supplier</span>
                       {aiDetectedSupplier && <span className="text-[10px] text-orange-400 font-normal flex items-center gap-1"><Sparkles className="w-3 h-3 inline" /> AI Detected</span>}
                     </label>
@@ -2970,7 +3244,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                   {/* Supplier Invoice # */}
                   <div>
-                    <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
+                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
                       <span>Supplier Invoice #</span>
                       {aiDetectedInvoiceNumber ? (
                         <span className="text-[10px] text-orange-400 font-normal flex items-center gap-1"><Sparkles className="w-3 h-3 inline" /> AI Detected</span>
@@ -2978,20 +3252,20 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         <span className="text-[10px] text-emerald-400 font-normal lowercase">(INV-{getTodayCompactDate()}-XXXXXX)</span>
                       )}
                     </label>
-                    <div className="relative flex items-center">
+                    <div className="field-action-control">
                       <input
                         type="text"
                         readOnly
                         value={supplierInvoiceNumber}
                         /* onChange={(e) => setSupplierInvoiceNumber(e.target.value)} -- Manual typing disabled per user request, only auto-generate */
                         placeholder={`INV-${getTodayCompactDate()}-XXXXXX`}
-                        className="w-full pl-3.5 pr-9 py-2.5 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none cursor-default select-all"
+                        className="field-action-control__input w-full pl-3.5 pr-9 py-2.5 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none cursor-default select-all"
                       />
                       <button
                         type="button"
                         onClick={generateAutoInvoiceNum}
                         title={`Auto-generate unique Supplier Invoice # (e.g. INV-${getTodayCompactDate()}-XXXXXX)`}
-                        className="absolute right-2 p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center"
+                        className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center icon-btn icon-btn--32"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                       </button>
@@ -3000,13 +3274,13 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                   {/* Branch */}
                   <div>
-                    <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                       Branch
                     </label>
                     <ThemedSelect
                       value={branchId}
                       onChange={(e) => setBranchId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                      className="h-11 w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                     >
                       {branchesList.length > 0 ? (
                         branchesList.map((b) => (
@@ -3022,14 +3296,14 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                   {/* Receiving Date */}
                   <div>
-                    <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                       Receiving Date
                     </label>
                     <input
                       type="date"
                       value={receivingDate}
                       onChange={(e) => setReceivingDate(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                      className="h-11 w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                     />
                   </div>
                 </div>
@@ -3225,7 +3499,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                     handleSelectItem(index, exactMatch);
                                   }
                                 }}
-                                placeholder={!row.inventoryItemId && row.searchTerm ? `"${row.searchTerm}" – click "Save in Catalog" or match...` : 'Search or select catalog item...'}
+                                placeholder={!row.inventoryItemId && row.searchTerm ? `"${row.searchTerm}" â€“ click "Save in Catalog" or match...` : 'Search or select catalog item...'}
                                 className={`w-full pl-8 pr-3 py-2 bg-[var(--card-bg)] border rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none ${
                                   row.needsReview
                                     ? 'border-rose-500/60 focus:border-rose-500'
@@ -3368,7 +3642,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                             <button
                               type="button"
                               onClick={() => handleRemoveRow(index)}
-                              className="shrink-0 p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer border border-rose-500/20"
+                              className="shrink-0 p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer border border-rose-500/20 icon-btn"
                               title="Remove item"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -3468,7 +3742,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           <div className="flex items-center gap-2 p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-semibold">
                             <Info className="w-3.5 h-3.5 shrink-0" />
                             <span>
-                              Cost changed — Catalog cost: <strong>Rs. {selectedInvItem.costPrice} / {selectedInvItem.unit}</strong> → Received cost: <strong>Rs. {row.unitCost} / {row.unit}</strong>
+                              Cost changed â€” Catalog cost: <strong>Rs. {selectedInvItem.costPrice} / {selectedInvItem.unit}</strong> â†’ Received cost: <strong>Rs. {row.unitCost} / {row.unit}</strong>
                             </span>
                           </div>
                         )}
@@ -3519,10 +3793,10 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                   <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
                     <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
-                      {draftSaveScope === 'primary' && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === 'primary' && savingDraft ? 'Saving…' : 'Save Draft'}
+                      {draftSaveScope === 'primary' && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === 'primary' && savingDraft ? 'Savingâ€¦' : 'Save Draft'}
                     </button>
                     {newItemsCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
-                      {catalogSaveScope === 'primary' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'primary' ? 'Saving…' : `Save New Item Names (${newItemsCount})`}
+                      {catalogSaveScope === 'primary' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'primary' ? 'Savingâ€¦' : `Save New Item Names (${newItemsCount})`}
                     </button>}
                     <button
                       type="button"
@@ -3583,23 +3857,23 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 bg-[var(--bg-color)]/60 p-4 rounded-2xl border border-[var(--border-color)]">
                       {/* Internal Reference */}
                       <div>
-                        <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
+                        <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
                           <span>Internal Reference *</span>
                           <span className="text-[10px] text-orange-400 font-normal lowercase">Independent</span>
                         </label>
-                        <div className="relative flex items-center">
+                        <div className="field-action-control">
                           <input
                             type="text"
                             readOnly
                             value={card.receivingRef}
                             placeholder={`RCV-${getTodayCompactDate()}-XXXX`}
-                            className="w-full pl-3.5 pr-9 py-2.5 bg-[var(--card-bg)]/80 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
+                            className="field-action-control__input w-full pl-3.5 pr-9 py-2.5 bg-[var(--card-bg)]/80 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
                           />
                           <button
                             type="button"
                             onClick={() => generateAutoRefForCard(card.id)}
                             title="Generate unique Internal Reference"
-                            className="absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
+                            className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10 icon-btn icon-btn--32"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
@@ -3608,23 +3882,23 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                       {/* Shipment Batch Number */}
                       <div>
-                        <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
+                        <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
                           <span>Shipment Batch Number</span>
                           <span className="text-[10px] text-orange-400 font-normal lowercase">Independent</span>
                         </label>
-                        <div className="relative flex items-center">
+                  <div className="field-action-control">
                           <input
                             type="text"
                             readOnly
                             value={card.batchNumber}
                             placeholder={`BATCH-${getTodayCompactDate()}-XXXX`}
-                            className="w-full pl-3.5 pr-9 py-2.5 bg-[var(--card-bg)]/80 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
+                            className="field-action-control__input w-full pl-3.5 pr-9 py-2.5 bg-[var(--card-bg)]/80 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
                           />
                           <button
                             type="button"
                             onClick={() => generateAutoBatchForCard(card.id)}
                             title="Generate unique Shipment Batch Number"
-                            className="absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
+                            className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10 icon-btn icon-btn--32"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
@@ -3633,13 +3907,13 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                       {/* Supplier Selector */}
                       <div>
-                        <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                        <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                           Supplier
                         </label>
                         <ThemedSelect
                           value={card.supplierId}
                           onChange={(e) => handleUpdateCardField(card.id, 'supplierId', e.target.value)}
-                          className="w-full px-3.5 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                          className="h-11 w-full px-3.5 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                         >
                           <option value="">-- Local Market / Not Provided --</option>
                           {suppliers.map((sup) => (
@@ -3652,23 +3926,23 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                       {/* Supplier Invoice # */}
                       <div>
-                        <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
+                        <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
                           <span>Supplier Invoice #</span>
                           <span className="text-[10px] text-emerald-400 font-normal lowercase">Independent</span>
                         </label>
-                        <div className="relative flex items-center">
+                  <div className="field-action-control">
                           <input
                             type="text"
                             readOnly
                             value={card.supplierInvoiceNumber}
                             placeholder={`INV-${getTodayCompactDate()}-XXXXXX`}
-                            className="w-full pl-3.5 pr-9 py-2.5 bg-[var(--card-bg)]/80 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none cursor-default select-all"
+                            className="field-action-control__input w-full pl-3.5 pr-9 py-2.5 bg-[var(--card-bg)]/80 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none cursor-default select-all"
                           />
                           <button
                             type="button"
                             onClick={() => generateAutoInvoiceForCard(card.id)}
                             title="Auto-generate unique Supplier Invoice #"
-                            className="absolute right-2 p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center"
+                            className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center icon-btn icon-btn--32"
                           >
                             <Sparkles className="w-3.5 h-3.5" />
                           </button>
@@ -3677,14 +3951,14 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                       {/* Receiving Date */}
                       <div>
-                        <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                      <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                           Receiving Date
                         </label>
                         <input
                           type="date"
                           value={card.receivingDate}
                           onChange={(e) => handleUpdateCardField(card.id, 'receivingDate', e.target.value)}
-                          className="w-full px-3.5 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                          className="h-11 w-full px-3.5 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                         />
                       </div>
                     </div>
@@ -3701,7 +3975,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           </span>
                           {cardNewCount > 0 && (
                             <span className="text-[11px] font-bold text-amber-400">
-                              • {cardNewCount} new
+                              â€¢ {cardNewCount} new
                             </span>
                           )}
                         </div>
@@ -3784,7 +4058,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                   <button
                                     type="button"
                                     onClick={() => handleCardRemoveRow(card.id, rIdx)}
-                                    className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer border border-rose-500/20"
+                                    className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer border border-rose-500/20 icon-btn"
                                     title="Remove item"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -3879,10 +4153,10 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                       <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
                         <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap rounded-xl border border-orange-500/35 bg-[var(--card-bg)] px-4 py-2 text-center text-xs font-bold text-orange-600 hover:bg-orange-500/10 disabled:opacity-50 sm:w-auto">
-                          {draftSaveScope === card.id && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === card.id && savingDraft ? 'Saving…' : 'Save Draft'}
+                          {draftSaveScope === card.id && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === card.id && savingDraft ? 'Savingâ€¦' : 'Save Draft'}
                         </button>
                         {cardNewCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-2 text-center text-xs font-bold text-amber-700 hover:bg-amber-500/15 disabled:opacity-50 sm:w-auto">
-                          {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Saving…' : `Save New Item Names (${cardNewCount})`}
+                          {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Savingâ€¦' : `Save New Item Names (${cardNewCount})`}
                         </button>}
                         <button
                           type="button"
@@ -3891,7 +4165,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           className="flex w-full flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-orange-600 px-5 py-2 text-center text-xs font-black text-white shadow-md cursor-pointer hover:bg-orange-500 disabled:opacity-60 disabled:cursor-not-allowed sm:w-auto sm:flex-initial"
                         >
                           {receivingActionScope === card.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                          <span>{receivingActionScope === card.id ? 'Receiving…' : `Confirm & Receive (Card #${cardIdx + 2})`}</span>
+                          <span>{receivingActionScope === card.id ? 'Receivingâ€¦' : `Confirm & Receive (Card #${cardIdx + 2})`}</span>
                         </button>
                       </div>
                     </div>}
@@ -3934,7 +4208,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-600 border border-orange-500/35 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                     >
                       {draftSaveScope === 'all' && savingDraft ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      <span>{draftSaveScope === 'all' && savingDraft ? 'Saving drafts…' : 'Save All Deliveries to Draft'}</span>
+                      <span>{draftSaveScope === 'all' && savingDraft ? 'Saving draftsâ€¦' : 'Save All Deliveries to Draft'}</span>
                     </button>
                     {allDeliveryNewItemsCount > 0 && <button
                       type="button"
@@ -3943,7 +4217,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white border border-orange-500 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                     >
                       {catalogSaveScope === 'all' ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      <span>{catalogSaveScope === 'all' ? 'Saving items…' : `Save All New Item Names (${allDeliveryNewItemsCount})`}</span>
+                      <span>{catalogSaveScope === 'all' ? 'Saving itemsâ€¦' : `Save All New Item Names (${allDeliveryNewItemsCount})`}</span>
                     </button>}
                   </div>
                 </div>
@@ -3956,13 +4230,13 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
       {/* Save New Item in Catalog Modal */}
       {catalogModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <div>
                 <h3 className="text-base font-black text-[var(--text-main)] font-display flex items-center gap-2">
-                  <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">📦</span>
+                  <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">ðŸ“¦</span>
                   Save New Item in Catalog
                 </h3>
                 <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
@@ -3976,7 +4250,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   setCatalogModalRowIndex(null);
                   setCatalogModalDuplicateItem(null);
                 }}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4134,7 +4408,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
               {/* Informational note about stock separation */}
               <div className="p-3 rounded-2xl bg-[var(--bg-color)]/70 border border-[var(--border-color)] text-[11px] text-[var(--text-muted)]">
-                ℹ️ <strong>Catalog Separation:</strong> This creates the catalog definition with 0 stock. Actual received quantity will only be added to stock when you click <strong>Confirm &amp; Receive Stock</strong>.
+                â„¹ï¸ <strong>Catalog Separation:</strong> This creates the catalog definition with 0 stock. Actual received quantity will only be added to stock when you click <strong>Confirm &amp; Receive Stock</strong>.
               </div>
 
               {/* Action Buttons */}
@@ -4175,16 +4449,16 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         document.body
       )}
 
-      {/* Confirmation Modal — Confirm Stock Receiving? */}
+      {/* Confirmation Modal â€” Confirm Stock Receiving? */}
       {showConfirmModal && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-scale-up">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <h3 className="text-base font-black text-[var(--text-main)] font-display flex items-center gap-2">
-                <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">📦</span>
+                <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">ðŸ“¦</span>
                 Confirm Stock Receiving
               </h3>
-              <button onClick={() => setShowConfirmModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)]">
+              <button onClick={() => setShowConfirmModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)] icon-btn">
                 <X className="w-5 h-5 text-[var(--text-muted)]" />
               </button>
             </div>
@@ -4284,7 +4558,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <button
                 type="button"
                 onClick={fetchReceivings}
-                className="p-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)]"
+                className="p-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] icon-btn"
               >
                 <RefreshCw className={`w-4 h-4 ${historyLoading ? 'animate-spin' : ''}`} />
               </button>
@@ -4319,12 +4593,19 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 </label>
               )}
             </div>
-            {historySelectionMode && selectedReceivingIds.size > 0 && (
+            {historySelectionMode && (selectedReceivingIds.size > 0 || currentActiveDeliveryCount > 0) && (
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" onClick={() => setSelectedReceivingIds(new Set())} className="shrink-0 rounded-xl border border-[var(--border-color)] px-3 py-2 text-xs font-bold text-[var(--text-muted)] hover:text-[var(--text-main)]">Clear</button>
+                {(selectedDraftCount > 0 || currentActiveDeliveryCount > 0) && (
+                  <button type="button" onClick={openConfirmBatchSummary} className="inline-flex min-h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl bg-orange-600 px-3 py-2 text-xs font-black text-white hover:bg-orange-500">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Confirm Selected + Current ({selectedDraftCount + currentActiveDeliveryCount})
+                  </button>
+                )}
+                {selectedReceivingIds.size > 0 && (
                 <button type="button" onClick={() => setBulkDeleteConfirm(true)} className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white hover:bg-rose-500">
                   <Trash2 className="h-3.5 w-3.5" /> Delete Selected ({selectedReceivingIds.size})
                 </button>
+                )}
               </div>
             )}
           </div>
@@ -4332,7 +4613,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
           <div className="space-y-3 md:hidden">
             {historyLoading ? (
-              <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 text-center text-xs text-orange-400"><span className="inline-flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin" />Loading receiving history…</span></div>
+              <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 text-center text-xs text-orange-400"><span className="inline-flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin" />Loading receiving historyâ€¦</span></div>
             ) : receivingsList.length === 0 ? (
               <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 text-center text-xs text-[var(--text-muted)]">No receiving records found.</div>
             ) : receivingsList.map((rec) => (
@@ -4358,7 +4639,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <button type="button" onClick={() => requestResumeDraft(rec)} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[10px] font-bold text-amber-400">Resume</button>
                     <button type="button" onClick={() => handleConfirmDraft(rec.id)} disabled={confirmingDraftIds.has(String(rec.id))} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[10px] font-bold text-white disabled:opacity-60">{confirmingDraftIds.has(String(rec.id)) && <RefreshCw className="h-3 w-3 animate-spin" />}Confirm</button>
                   </>}
-                  <button type="button" onClick={() => setReceivingToDelete(rec)} disabled={deleteReceivingLoading} aria-label={`Delete receiving ${rec.receivingNumber || rec.invoiceNumber}`} className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-1.5 text-rose-400 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setReceivingToDelete(rec)} disabled={deleteReceivingLoading} aria-label={`Delete receiving ${rec.receivingNumber || rec.invoiceNumber}`} className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-1.5 text-rose-400 disabled:opacity-50 icon-btn"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </article>
             ))}
@@ -4383,7 +4664,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   {historyLoading ? (
                     <tr>
                       <td colSpan={historySelectionMode ? 8 : 7} className="p-12 text-center text-[var(--text-muted)] text-xs">
-                        <span className="inline-flex items-center gap-2 text-orange-500"><RefreshCw className="h-4 w-4 animate-spin" /> Loading receiving history…</span>
+                        <span className="inline-flex items-center gap-2 text-orange-500"><RefreshCw className="h-4 w-4 animate-spin" /> Loading receiving historyâ€¦</span>
                       </td>
                     </tr>
                   ) : receivingsList.length === 0 ? (
@@ -4410,7 +4691,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         </td>
                         <td className="p-4 font-mono font-black text-emerald-400">
                           <div>Rs. {(rec.totalCost || 0).toLocaleString()}</div>
-                          {Number(rec.discount || 0) > 0 && <div className="mt-1 text-[9px] font-semibold text-[var(--text-muted)]">Subtotal Rs. {(rec.subtotal || 0).toLocaleString()} · Discount Rs. {Number(rec.discount).toLocaleString()}</div>}
+                          {Number(rec.discount || 0) > 0 && <div className="mt-1 text-[9px] font-semibold text-[var(--text-muted)]">Subtotal Rs. {(rec.subtotal || 0).toLocaleString()} Â· Discount Rs. {Number(rec.discount).toLocaleString()}</div>}
                         </td>
                         <td className="p-4">
                           <span className={`px-2.5 py-1 rounded-xl text-[9px] font-black uppercase border ${
@@ -4431,7 +4712,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                 setSelectedReceiving(rec);
                                 setShowDetailsModal(true);
                               }}
-                              className="p-1.5 rounded-lg bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors"
+                              className="p-1.5 rounded-lg bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors icon-btn"
                               title="View details"
                             >
                               <Eye className="w-4 h-4" />
@@ -4454,7 +4735,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                   title="Confirm and update stock now"
                                 >
                                   {confirmingDraftIds.has(String(rec.id)) && <RefreshCw className="w-3 h-3 animate-spin" />}
-                                  <span>{confirmingDraftIds.has(String(rec.id)) ? 'Confirming…' : 'Confirm'}</span>
+                                  <span>{confirmingDraftIds.has(String(rec.id)) ? 'Confirmingâ€¦' : 'Confirm'}</span>
                                 </button>
                               </>
                             )}
@@ -4462,7 +4743,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                 type="button"
                                 onClick={() => setReceivingToDelete(rec)}
                                 disabled={deleteReceivingLoading}
-                                className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors cursor-pointer disabled:opacity-50"
+                                className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors cursor-pointer disabled:opacity-50 icon-btn"
                                 title="Delete receiving and reverse stock if received"
                                 aria-label={`Delete receiving ${rec.receivingNumber || rec.invoiceNumber}`}
                               >
@@ -4482,14 +4763,14 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
       {/* AI OCR Invoice Modal */}
       {showOcrModal && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <h3 className="text-base font-black text-[var(--text-main)] flex items-center gap-2">
                 <Camera className="w-5 h-5 text-orange-400" />
                 Upload Invoice (AI Recognized)
               </h3>
-              <button onClick={() => setShowOcrModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)]">
+              <button onClick={() => setShowOcrModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)] icon-btn">
                 <X className="w-5 h-5 text-[var(--text-muted)]" />
               </button>
             </div>
@@ -4522,7 +4803,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
       {/* Receiving Details Modal */}
       {showDetailsModal && selectedReceiving && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-slate-950/80 p-2 backdrop-blur-md sm:p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-[var(--glass-bg-subtle)] p-2 backdrop-blur-md sm:p-4">
           <div className="my-auto max-h-[calc(100dvh-1rem)] w-full max-w-2xl space-y-4 overflow-y-auto rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 shadow-2xl sm:max-h-[90vh] sm:p-6">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <div>
@@ -4533,7 +4814,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   Received on {new Date(selectedReceiving.receivingDate).toLocaleString()}
                 </p>
               </div>
-              <button onClick={() => setShowDetailsModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)]">
+              <button onClick={() => setShowDetailsModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)] icon-btn">
                 <X className="w-5 h-5 text-[var(--text-muted)]" />
               </button>
             </div>
@@ -4594,7 +4875,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
       {/* Uploaded Invoice Document Modal */}
       {showInvoicePreviewModal && uploadedInvoiceDataUrl && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] bg-[var(--glass-bg-subtle)] backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-4xl w-full p-6 space-y-4 shadow-2xl flex flex-col max-h-[92vh]">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3 shrink-0">
               <div className="flex items-center gap-2.5">
@@ -4622,7 +4903,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 <button
                   type="button"
                   onClick={() => setShowInvoicePreviewModal(false)}
-                  className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                  className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -4682,7 +4963,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <button
                 type="button"
                 onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -4849,6 +5130,48 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         ]}
       />
 
+      {confirmBatchOpen && createPortal(
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="presentation">
+          <section role="dialog" aria-modal="true" aria-labelledby="confirm-receiving-batch-title" className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] p-5 shadow-2xl sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)]"><CheckCircle2 className="h-5 w-5" /></span>
+              <div className="min-w-0">
+                <h3 id="confirm-receiving-batch-title" className="text-lg font-bold text-[var(--text-main)]">Confirm all selected deliveries?</h3>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">{confirmBatchDraftCount} draft{confirmBatchDraftCount === 1 ? '' : 's'} will be processed together. Stock and history update only if every item succeeds.</p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)] p-4">
+              <div className="mb-3 flex items-center justify-between gap-3 text-sm">
+                <span className="font-semibold text-[var(--text-muted)]">Total cost</span>
+                <span className="font-bold tabular-nums text-[var(--accent)]">Rs. {Number(confirmBatchTotal || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              </div>
+              <div className="max-h-64 space-y-2 overflow-y-auto">
+                {confirmBatchSummary.length ? confirmBatchSummary.map((line) => (
+                  <div key={line.key} className="flex min-w-0 items-start justify-between gap-3 border-t border-[var(--border-color)] pt-2 text-xs">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-[var(--text-main)]" title={line.item}>{line.item}</p>
+                      <p className="mt-0.5 truncate text-[var(--text-muted)]">{line.supplier}</p>
+                    </div>
+                    <p className="shrink-0 text-right tabular-nums text-[var(--text-main)]">
+                      {Number(line.quantity).toLocaleString()} {line.unit}
+                      {line.converted == null ? <span className="block text-red-500">Cannot convert to {line.targetUnit}</span> : <span className="block text-[var(--text-muted)]">â†’ {Number(line.converted).toLocaleString(undefined, { maximumFractionDigits: 4 })} {line.targetUnit}</span>}
+                    </p>
+                  </div>
+                )) : <p className="text-xs text-[var(--text-muted)]">No line items are available to preview.</p>}
+              </div>
+            </div>
+            {confirmBatchError && <div role="alert" className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500">{confirmBatchError}</div>}
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" disabled={confirmBatchLoading} onClick={() => { setConfirmBatchOpen(false); setConfirmBatchError(''); confirmBatchRequestRef.current = null; }} className="min-h-11 rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] px-4 text-sm font-semibold text-[var(--text-main)] disabled:opacity-60">Cancel</button>
+              <button type="button" disabled={confirmBatchLoading || confirmBatchSummary.some((line) => line.converted == null)} onClick={handleConfirmReceivingBatch} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">
+                {confirmBatchLoading && <RefreshCw className="h-4 w-4 animate-spin" />}
+                {confirmBatchLoading ? 'Confirmingâ€¦' : confirmBatchError ? 'Retry Confirm' : 'Confirm All'}
+              </button>
+            </div>
+          </section>
+        </div>, document.body
+      )}
+
       {pendingReceivingSaveAction && createPortal(
         <div className="fixed inset-0 z-[125] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !loading && !savingDraft && !bulkSavingCatalog) setPendingReceivingSaveAction(null); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="receiving-save-confirm-title" className="w-full max-w-md rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 shadow-2xl">
@@ -4858,7 +5181,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             <h3 id="receiving-save-confirm-title" className="text-lg font-bold text-[var(--text-main)]">
               {pendingReceivingSaveAction.action === 'DRAFT'
                 ? (pendingReceivingSaveAction.cardId ? 'Save this supplier card as a draft?' : 'Save all supplier cards as drafts?')
-                : (pendingReceivingSaveAction.cardId ? 'Save this card’s new item names to the catalog?' : 'Save all cards’ new item names to the catalog?')}
+                : (pendingReceivingSaveAction.cardId ? 'Save this cardâ€™s new item names to the catalog?' : 'Save all cardsâ€™ new item names to the catalog?')}
             </h3>
             <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
               {pendingReceivingSaveAction.action === 'DRAFT'
@@ -4874,7 +5197,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <button type="button" disabled={loading || savingDraft || bulkSavingCatalog} onClick={confirmReceivingSaveAction} className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-500 disabled:opacity-50">
                 {(loading || savingDraft || bulkSavingCatalog) && <RefreshCw className="h-4 w-4 animate-spin" />}
                 {loading || savingDraft || bulkSavingCatalog
-                  ? (pendingReceivingSaveAction.action === 'DRAFT' ? 'Saving draft…' : 'Saving item names…')
+                  ? (pendingReceivingSaveAction.action === 'DRAFT' ? 'Saving draftâ€¦' : 'Saving item namesâ€¦')
                   : pendingReceivingSaveAction.action === 'DRAFT'
                     ? (pendingReceivingSaveAction.cardId ? 'Save Draft' : 'Save All Drafts')
                     : (pendingReceivingSaveAction.cardId ? 'Save New Item Names' : 'Save All New Item Names')}
@@ -4911,7 +5234,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             </div>
             <div className="mt-5 space-y-2.5">
               <button type="button" onClick={saveCurrentAndResumeDraft} disabled={resumeDraftSaving || loading || savingDraft} className="w-full rounded-xl bg-orange-600 px-4 py-3 text-sm font-bold text-white hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60">
-                {resumeDraftSaving ? 'Saving current work…' : 'Save current work as draft and continue'}
+                {resumeDraftSaving ? 'Saving current workâ€¦' : 'Save current work as draft and continue'}
               </button>
               <button type="button" onClick={() => { const draft = pendingResumeDraft; setPendingResumeDraft(null); loadDraftIntoForm(draft); }} disabled={resumeDraftSaving || loading || savingDraft} className="w-full rounded-xl border border-rose-500/30 bg-rose-500/5 px-4 py-2.5 text-sm font-semibold text-rose-500 hover:bg-rose-500/10 disabled:opacity-50">
                 Discard current work and continue
@@ -4929,3 +5252,4 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 };
 
 export default AdminInventoryReceivingView;
+

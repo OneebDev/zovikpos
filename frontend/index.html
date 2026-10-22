@@ -8,7 +8,31 @@
     <title>ZovikPOS — Smart Canteen &amp; Point of Sale System</title>
     <!-- PWA Settings -->
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#F97316" />
+    <meta name="theme-color" content="#FAF9F7" />
+    <style>
+      html, body, #root { min-height: 100%; background: #FAF9F7; }
+      html.dark, html.dark body, html.dark #root { background: #111111; }
+      #app-boot-splash { min-height: 100dvh; display: grid; place-items: center; background: inherit; color: #1C1917; font-family: Arial, sans-serif; }
+      html.dark #app-boot-splash { color: #FAFAF9; }
+      #app-boot-splash .boot-content { display: flex; align-items: center; flex-direction: column; gap: 14px; font-size: 16px; font-weight: 800; letter-spacing: .08em; }
+      #app-boot-splash .boot-mark { display: grid; width: 56px; height: 56px; place-items: center; border-radius: 18px; background: linear-gradient(135deg, #F97316, #E85D2A); color: #FFFFFF; font-size: 24px; }
+      #app-boot-splash .boot-spinner { width: 22px; height: 22px; border: 2px solid #E7E5E4; border-top-color: #E85D2A; border-radius: 50%; animation: boot-spin .8s linear infinite; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #app-boot-splash .boot-spinner { animation: none; } }
+    </style>
+    <script>
+      (function () {
+        var savedTheme = 'light';
+        try {
+          savedTheme = window.localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+        } catch (error) {
+          savedTheme = 'light';
+        }
+        document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+        var themeColor = document.querySelector('meta[name="theme-color"]');
+        if (themeColor) themeColor.setAttribute('content', savedTheme === 'dark' ? '#111111' : '#FAF9F7');
+      })();
+    </script>
     <!-- Apple Mobile Web App Support (iOS Safari Standalone) -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -19,7 +43,15 @@
     <meta name="format-detection" content="telephone=no" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main id="app-boot-splash" role="status" aria-label="Loading ZOVIKPOS">
+        <div class="boot-content">
+          <span class="boot-mark" aria-hidden="true">Z</span>
+          <strong>ZOVIKPOS</strong>
+          <span class="boot-spinner" aria-hidden="true"></span>
+        </div>
+      </main>
+    </div>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

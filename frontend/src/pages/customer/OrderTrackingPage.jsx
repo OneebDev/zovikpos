@@ -3,6 +3,10 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { getSocket } from '../../services/socket';
+import Button from '../../components/ui/Button';
+import { resolveTableLabel } from '../../utils/customerTableLabel';
+import { formatPrice } from '../../utils/formatPrice';
+import './OrderTrackingPage.css';
 import {
 
   CheckCircle2,
@@ -14,6 +18,8 @@ import {
   ShieldCheck,
   MapPin,
   Check,
+  Download,
+  Bell,
 } from 'lucide-react';
 
 const OrderTrackingPage = () => {
@@ -21,12 +27,33 @@ const OrderTrackingPage = () => {
   const navigate = useNavigate();
 
   const [order, setOrder] = useState(null);
+  const displayTableLabel = resolveTableLabel({
+    tableLabel: order?.tableLabel,
+    tableNumber: order?.tableNumber,
+    table: order?.table,
+  });
   const orderId = order?.id;
   const orderStatus = order?.status;
   const orderCreatedAt = order?.createdAt;
   const orderAdjustedEta = order?.etaPrediction?.adjustedEta;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [orderNotFound, setOrderNotFound] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [socketConnected, setSocketConnected] = useState(false);
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+    const updateConnection = () => setSocketConnected(Boolean(socket.connected));
+    updateConnection();
+    socket.on('connect', updateConnection);
+    socket.on('disconnect', updateConnection);
+    return () => {
+      socket.off('connect', updateConnection);
+      socket.off('disconnect', updateConnection);
+    };
+  }, []);
 
   // Table Change State
   const [availableTables, setAvailableTables] = useState([]);
@@ -35,23 +62,41 @@ const OrderTrackingPage = () => {
   const [tableUpdateLoading, setTableUpdateLoading] = useState(false);
   const [tableUpdateSuccess, setTableUpdateSuccess] = useState('');
 
-  // Initial Order Fetch — ONLY runs when trackingToken changes (fixes 1-millisecond flicker!)
+  // Fetch the order over HTTP first; bound the initial wait so a stalled request cannot leave an endless skeleton.
   useEffect(() => {
     let isMounted = true;
+    let timedOut = false;
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    setOrderNotFound(false);
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      if (isMounted) {
+        setError('Order details are taking too long to load. Please try again.');
+        setLoading(false);
+      }
+      controller.abort();
+    }, 8000);
+
     const fetchOrder = async () => {
       try {
-        const res = await api.get(`/orders/track/${encodeURIComponent(trackingToken)}`);
-        if (isMounted) {
+        const res = await api.get(`/orders/track/${encodeURIComponent(trackingToken)}`, { signal: controller.signal });
+        if (isMounted && !timedOut) {
+          if (!res.data?.order) throw new Error('Order tracking details not found.');
           setOrder(res.data.order);
           setTargetTable(res.data.order?.tableNumber || '');
+          setOrderNotFound(false);
         }
       } catch (err) {
-        if (isMounted) {
+        if (isMounted && !timedOut && err?.name !== 'CanceledError' && err?.name !== 'AbortError') {
           console.error('Tracking fetch error:', err);
-          setError(err.response?.data?.error || 'Order tracking details not found.');
+          setOrderNotFound(err.response?.status === 404);
+          setError(err.response?.data?.error || err.response?.data?.message || err.message || 'Order tracking details not found.');
         }
       } finally {
-        if (isMounted) setLoading(false);
+        window.clearTimeout(timeoutId);
+        if (isMounted && !timedOut) setLoading(false);
       }
     };
 
@@ -61,13 +106,17 @@ const OrderTrackingPage = () => {
       if (isMounted && r.data?.tables) setAvailableTables(r.data.tables);
     }).catch(() => { });
 
-    return () => { isMounted = false; };
-  }, [trackingToken]);
+    return () => { isMounted = false; controller.abort(); window.clearTimeout(timeoutId); };
+  }, [trackingToken, retryAttempt]);
 
   // Real-time socket updates — modifies order state directly WITHOUT triggering loading spinner or flickering
   useEffect(() => {
     const socket = getSocket();
-    if (!socket || !orderId) return;
+    if (!socket || !orderId || orderStatus === 'COMPLETED') return undefined;
+
+    let pollController = null;
+    let pollInFlight = false;
+    const updateConnection = () => setSocketConnected(Boolean(socket.connected));
 
     const handleUpdate = (updatedOrder) => {
       if (updatedOrder && (updatedOrder.id === orderId || updatedOrder.trackingToken === trackingToken)) {
@@ -75,9 +124,46 @@ const OrderTrackingPage = () => {
       }
     };
 
+    const fetchLatestOrder = async () => {
+      if (pollInFlight) return;
+      pollInFlight = true;
+      pollController = new AbortController();
+      const pollTimeoutId = window.setTimeout(() => pollController?.abort(), 8000);
+      try {
+        const res = await api.get(`/orders/track/${encodeURIComponent(trackingToken)}`, { signal: pollController.signal });
+        if (res.data?.order && !pollController.signal.aborted) setOrder(res.data.order);
+      } catch {
+        // Keep the last successful order visible while the socket or network reconnects.
+      } finally {
+        window.clearTimeout(pollTimeoutId);
+        pollInFlight = false;
+      }
+    };
+
+    const pollIfDisconnected = () => {
+      if (!socket.connected) fetchLatestOrder();
+    };
+    const handleConnect = () => {
+      updateConnection();
+      socket.emit('join:tracking', trackingToken);
+      fetchLatestOrder();
+    };
+
+    updateConnection();
     socket.on('order:update', handleUpdate);
-    return () => socket.off('order:update', handleUpdate);
-  }, [trackingToken, orderId]);
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', updateConnection);
+    if (socket.connected) socket.emit('join:tracking', trackingToken);
+    const pollTimer = window.setInterval(pollIfDisconnected, 10000);
+    return () => {
+      if (socket.connected) socket.emit('leave:tracking', trackingToken);
+      socket.off('order:update', handleUpdate);
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', updateConnection);
+      window.clearInterval(pollTimer);
+      pollController?.abort();
+    };
+  }, [trackingToken, orderId, orderStatus]);
 
   // ─── Real-Time Client-Side Countdown Timer (0 API Requests) ────────────────
   const [timeLeftSeconds, setTimeLeftSeconds] = useState(0);
@@ -133,12 +219,14 @@ const OrderTrackingPage = () => {
     }
   };
 
+  const handleDownloadInvoice = () => window.print();
+
   const steps = [
-    { key: 'PENDING', label: 'Placed', icon: ShoppingBag },
-    { key: 'PAID', label: 'Paid & Queued', icon: ShieldCheck },
-    { key: 'PREPARING', label: 'In Kitchen', icon: Utensils },
-    { key: 'READY', label: 'Ready for Pickup', icon: Sparkles },
-    { key: 'COMPLETED', label: 'Handed Over', icon: CheckCircle2 },
+    { key: 'PENDING', label: 'Order placed', description: 'Order placed, awaiting confirmation', icon: ShoppingBag },
+    { key: 'PAID', label: 'Confirmed', description: 'Kitchen received your order', icon: ShieldCheck },
+    { key: 'PREPARING', label: 'Preparing', description: 'Chef is cooking your meal', icon: Utensils },
+    { key: 'READY', label: 'Ready', description: 'Ready at the counter', icon: Sparkles },
+    { key: 'COMPLETED', label: 'Completed', description: 'Collected. Enjoy your meal!', icon: CheckCircle2 },
   ];
 
   const getStepIndex = (status) => {
@@ -152,13 +240,36 @@ const OrderTrackingPage = () => {
 
   if (loading) {
     return (
-      <div className="responsive-shell min-h-screen bg-[#FAF9F7] dark:bg-[#121212] flex items-center justify-center p-4">
-        <div className="text-center space-y-4">
-          <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full border-4 border-[#E85D2A]/20 animate-ping" />
-            <div className="w-12 h-12 border-4 border-[#E85D2A] border-t-transparent rounded-full animate-spin" />
+      <div className="customer-tracking-page responsive-shell min-h-screen flex flex-col">
+        <header className="customer-tracking-header glass">
+          <button type="button" onClick={() => navigate('/customer')} className="customer-tracking-header__back icon-btn" aria-label="Back to menu"><ArrowLeft aria-hidden="true" /></button>
+          <h1>Track order</h1>
+          <span className={`customer-tracking-live${socketConnected ? ' is-live' : ''}`} role="status"><i aria-hidden="true" />{socketConnected ? 'Live' : 'Reconnecting…'}</span>
+        </header>
+        <div className="customer-tracking-loading" role="status" aria-live="polite" aria-busy="true">
+          <div className="customer-tracking-loading__intro">
+            <span className="customer-tracking-loading__logo" aria-hidden="true">Z</span>
+            <div>
+              <strong>ZOVIKPOS</strong>
+              <span>Loading your order...</span>
+            </div>
           </div>
-          <p className="text-xs text-[#78716C] dark:text-[#A8A29E] font-bold">Connecting to Kitchen Tracker...</p>
+          <ol className="customer-tracking-loading__progress" aria-label="Order progress">
+            <li className="is-current">Order placed</li><li>Kitchen</li><li>Ready</li>
+          </ol>
+          <div className="customer-tracking-loading__skeleton customer-tracking-loading__skeleton--hero" aria-hidden="true">
+            <span className="customer-tracking-loading__circle" />
+            <span className="customer-tracking-loading__bar customer-tracking-loading__bar--wide" />
+            <span className="customer-tracking-loading__bar customer-tracking-loading__bar--medium" />
+          </div>
+          <div className="customer-tracking-loading__skeleton customer-tracking-loading__skeleton--timeline" aria-hidden="true">
+            {Array.from({ length: 4 }, (_, index) => <span className="customer-tracking-loading__timeline-row" key={index}><i /><b /><em /></span>)}
+          </div>
+          <div className="customer-tracking-loading__skeleton customer-tracking-loading__skeleton--receipt" aria-hidden="true">
+            <span className="customer-tracking-loading__bar customer-tracking-loading__bar--wide" />
+            <span className="customer-tracking-loading__bar" />
+            <span className="customer-tracking-loading__bar customer-tracking-loading__bar--medium" />
+          </div>
         </div>
       </div>
     );
@@ -166,19 +277,30 @@ const OrderTrackingPage = () => {
 
   if (error || !order) {
     return (
-      <div className="responsive-shell min-h-screen bg-[#FAF9F7] dark:bg-[#121212] flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-[#1E1E1E] border border-[#E7E5E4] dark:border-[#333] rounded-[32px] p-8 max-w-md w-full text-center space-y-4 shadow-2xl">
-          <div className="w-16 h-16 bg-rose-100 dark:bg-rose-950/50 text-rose-600 rounded-full flex items-center justify-center mx-auto">
-            <AlertCircle className="w-8 h-8" />
+      <div className="customer-tracking-page responsive-shell min-h-screen flex flex-col">
+        <header className="customer-tracking-header glass">
+          <button type="button" onClick={() => navigate('/customer')} className="customer-tracking-header__back icon-btn" aria-label="Back to menu"><ArrowLeft aria-hidden="true" /></button>
+          <h1>Track order</h1>
+          <span className={`customer-tracking-live${socketConnected ? ' is-live' : ''}`} role="status"><i aria-hidden="true" />{socketConnected ? 'Live' : 'Reconnecting…'}</span>
+        </header>
+        <div className="customer-tracking-error glass">
+          <div className="customer-tracking-error__icon">
+            <AlertCircle aria-hidden="true" />
           </div>
-          <h2 className="text-xl font-black text-[#171717] dark:text-white">Order Tracking Not Found</h2>
-          <p className="text-xs text-[#78716C] dark:text-[#A8A29E]">{error || 'This order tracking code is invalid or expired.'}</p>
-          <button
+          <h2>{orderNotFound ? 'Order not found' : "We couldn't load your order"}</h2>
+          <p>{error || 'Check your connection, then try loading the order again.'}</p>
+          <Button
+            onClick={() => { setOrder(null); setError(''); setLoading(true); setRetryAttempt(attempt => attempt + 1); }}
+            className="customer-tracking-error__retry"
+          >
+            Try again
+          </Button>
+          <Button
             onClick={() => navigate('/customer')}
-            className="w-full py-3.5 bg-[#E85D2A] hover:bg-[#D94E1B] text-white rounded-2xl font-bold text-xs transition-all shadow-lg shadow-[#E85D2A]/20 cursor-pointer"
+            className="customer-tracking-error__action"
           >
             Back to Menu
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -198,29 +320,29 @@ const OrderTrackingPage = () => {
   const strokeDashoffset = circumference - (timeProgressPercent / 100) * circumference;
 
   return (
-    <div className="responsive-shell min-h-screen bg-[#FAF9F7] dark:bg-[#121212] text-[#171717] dark:text-[#E5E5E5] font-sans p-4 sm:p-6 lg:p-8 flex flex-col justify-between selection:bg-[#E85D2A]/20">
-      <div className="max-w-2xl w-full mx-auto space-y-6">
+    <div className="customer-tracking-page responsive-shell min-h-screen flex flex-col selection:bg-[#E85D2A]/20">
+      <header className="customer-tracking-header glass">
+        <button
+          type="button"
+          onClick={() => navigate('/customer')}
+          className="customer-tracking-header__back icon-btn"
+          aria-label="Back to menu"
+        >
+          <ArrowLeft aria-hidden="true" />
+        </button>
+        <h1>Track order</h1>
+        <span className={`customer-tracking-live${socketConnected ? ' is-live' : ''}`} role="status">
+          <i aria-hidden="true" />{socketConnected ? 'Live' : 'Reconnecting…'}
+        </span>
+      </header>
 
-        {/* Top Header Navigation */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => navigate('/customer')}
-            className="inline-flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-white dark:bg-[#1E1E1E] border border-[#E7E5E4] dark:border-[#333] text-xs font-extrabold text-[#78716C] dark:text-[#A8A29E] hover:text-[#E85D2A] dark:hover:text-[#E85D2A] transition-all shadow-xs cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to Menu</span>
-          </button>
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#E85D2A]/10 text-[#E85D2A] dark:text-orange-400 rounded-full text-xs font-black border border-[#E85D2A]/20 uppercase tracking-wide">
-            <span className="w-2 h-2 rounded-full bg-[#E85D2A] animate-ping" />
-            <span>Live Kitchen Sync</span>
-          </div>
-        </div>
+      <div className="customer-tracking-content">
 
         {/* Main Tracker Card */}
-        <div className="bg-white dark:bg-[#1E1E1E] border border-[#E7E5E4] dark:border-[#333] rounded-[32px] p-6 sm:p-8 shadow-xl space-y-8 relative overflow-hidden">
+        <div className="tracking-card glass">
 
           {/* Order Identity Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#F5F5F4] dark:border-[#2A2A2A] pb-6">
+          <div className="tracking-order-meta flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#F5F5F4] dark:border-[#2A2A2A] pb-6">
             <div>
               <span className="text-[10px] font-black text-[#E85D2A] uppercase tracking-widest block mb-1">
                 Order Tracking
@@ -229,12 +351,12 @@ const OrderTrackingPage = () => {
                 {order.orderNumber || `#000${order.id}`}
               </h1>
               <p className="text-xs text-[#78716C] dark:text-[#A8A29E] mt-1.5 flex items-center gap-1.5 flex-wrap">
-                <span>Delivering to:</span>
-                <strong className="text-[#E85D2A] font-extrabold bg-orange-50 dark:bg-orange-950/40 px-2.5 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/50">
-                  {order.tableNumber || 'Takeaway'}
+                <strong className="tracking-table-label">
+                  {displayTableLabel}
                 </strong>
                 <span>• {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </p>
+              {/* TEMP: hidden "Changed seat? Reroute table delivery" button, uncomment to restore
               {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
                 <button
                   onClick={() => setShowTablePicker(!showTablePicker)}
@@ -244,6 +366,7 @@ const OrderTrackingPage = () => {
                   <span>Changed seat? Reroute table delivery</span>
                 </button>
               )}
+              */}
             </div>
 
             {/* Status Pill Badge */}
@@ -293,6 +416,11 @@ const OrderTrackingPage = () => {
           )}
 
           {/* ── ANIMATED CIRCULAR PROGRESS & REAL-TIME COUNTDOWN TIMER ──────────── */}
+          <section className="tracking-hero" key={order.status} aria-live="polite" aria-atomic="true">
+            <h2 className="tracking-hero__headline">
+              {isCompleted ? 'Enjoy your meal!' : isReady ? 'Your order is ready' : order.status === 'PREPARING' ? 'Your food is being prepared' : order.status === 'PAID' ? 'Your order is confirmed' : 'We have received your order'}
+            </h2>
+            <div className="tracking-hero__content">
           <div className="flex flex-col items-center justify-center py-4 space-y-4">
             <div className="relative w-52 h-52 sm:w-60 sm:h-60 flex items-center justify-center">
               {/* SVG Animated Circular Progress Ring */}
@@ -303,7 +431,7 @@ const OrderTrackingPage = () => {
                   cy="80"
                   r={circleRadius}
                   stroke="currentColor"
-                  strokeWidth="10"
+                  strokeWidth="8"
                   className="text-stone-100 dark:text-[#2A2A2A]"
                   fill="transparent"
                 />
@@ -313,7 +441,7 @@ const OrderTrackingPage = () => {
                   cy="80"
                   r={circleRadius}
                   stroke="url(#orangeProgressGradient)"
-                  strokeWidth="10"
+                  strokeWidth="8"
                   strokeDasharray={circumference}
                   strokeDashoffset={strokeDashoffset}
                   strokeLinecap="round"
@@ -324,13 +452,13 @@ const OrderTrackingPage = () => {
                   <linearGradient id="orangeProgressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
                     {isReady || isCompleted ? (
                       <>
-                        <stop offset="0%" stopColor="#10B981" />
-                        <stop offset="100%" stopColor="#059669" />
+                        <stop offset="0%" stopColor="var(--success)" />
+                        <stop offset="100%" stopColor="var(--success)" />
                       </>
                     ) : (
                       <>
-                        <stop offset="0%" stopColor="#E85D2A" />
-                        <stop offset="100%" stopColor="#F97316" />
+                        <stop offset="0%" stopColor="var(--accent)" />
+                        <stop offset="100%" stopColor="var(--accent)" />
                       </>
                     )}
                   </linearGradient>
@@ -370,88 +498,108 @@ const OrderTrackingPage = () => {
               </div>
             </div>
 
-            <p className="text-xs font-bold text-[#78716C] dark:text-[#A8A29E] text-center max-w-xs leading-relaxed">
+            <p className="tracking-hero__description text-xs font-bold text-[#78716C] dark:text-[#A8A29E] text-center max-w-xs leading-relaxed">
               {isReady
-                ? '🎉 Your order is hot & ready! Please collect your food from the pickup counter.'
+                ? 'Collect your order at the pickup counter.'
                 : order.status === 'PREPARING'
-                ? '🔥 Chef is preparing your fresh meal right now.'
+                ? 'Our chef is preparing your meal.'
                 : order.status === 'PAID'
-                ? '✅ Payment confirmed. Ticket queued in kitchen.'
+                ? 'Your order is confirmed and queued in the kitchen.'
                 : isCompleted
-                ? '✨ Order complete! Enjoy your delicious meal.'
-                : '⏳ Order placed. Awaiting cashier/payment confirmation.'}
+                ? 'Your order is complete. Enjoy your meal.'
+                : 'Order received. Awaiting confirmation.'}
             </p>
           </div>
+            </div>
+          </section>
+
+          {isReady && (
+            <div className="tracking-ready-banner" role="status">
+              <Bell aria-hidden="true" />
+              <span>Your order is ready at the counter!</span>
+            </div>
+          )}
+
+          {isCompleted && (
+            <div className="tracking-completed-banner">
+              <CheckCircle2 aria-hidden="true" />
+              <span>Order complete. We hope you enjoy your meal!</span>
+            </div>
+          )}
 
           {/* ── PREPARATION STAGES TIMELINE ──────────────────────────────────────── */}
-          <div className="space-y-4 pt-2">
-            <h3 className="text-xs font-black uppercase tracking-wider text-[#78716C] dark:text-[#A8A29E]">Preparation Stages</h3>
-            <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+          <section className="tracking-timeline">
+            <h3>Order progress</h3>
+            <ol>
               {steps.map((step, idx) => {
                 const Icon = step.icon;
-                const isPassed = idx <= currentStepIdx;
+                const isPassed = idx < currentStepIdx;
                 const isCurrent = idx === currentStepIdx;
+                const statusEntry = order.statusHistory?.find((entry) => entry.newStatus === step.key);
+                const timestamp = step.key === 'PENDING' ? order.createdAt : statusEntry?.createdAt;
                 return (
-                  <div key={step.key} className="text-center space-y-2">
-                    <div
-                      className={`w-10 h-10 sm:w-11 sm:h-11 mx-auto rounded-2xl flex items-center justify-center transition-all duration-500 ${
-                        isCurrent
-                          ? 'bg-[#E85D2A] text-white ring-4 ring-[#E85D2A]/20 shadow-lg scale-110'
-                          : isPassed
-                          ? 'bg-emerald-500 text-white'
-                          : 'bg-[#FAF9F7] dark:bg-[#2A2A2A] text-[#78716C] dark:text-[#666] border border-[#E7E5E4] dark:border-[#404040]'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </div>
-                    <span
-                      className={`text-[9px] sm:text-[10px] font-extrabold block leading-tight ${
-                        isCurrent
-                          ? 'text-[#E85D2A] dark:text-orange-400'
-                          : isPassed
-                          ? 'text-[#171717] dark:text-white'
-                          : 'text-[#78716C] dark:text-[#666]'
-                      }`}
-                    >
-                      {step.label}
+                  <li key={step.key} className={`tracking-timeline__step${isPassed ? ' is-complete' : ''}${isCurrent ? ' is-current' : ''}`} aria-current={isCurrent ? 'step' : undefined}>
+                    <span className="tracking-timeline__marker" aria-hidden="true">
+                      <span className="tracking-timeline__node">
+                        {isPassed ? <Check /> : <Icon />}
+                      </span>
+                      {idx < steps.length - 1 && <span className={`tracking-timeline__connector${isPassed ? ' is-filled' : ''}`} />}
                     </span>
-                  </div>
+                    <span className="tracking-timeline__copy">
+                      <strong>{step.label}</strong>
+                      <span>{step.description}</span>
+                      {timestamp && <time dateTime={timestamp}>{new Date(timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time>}
+                    </span>
+                  </li>
                 );
               })}
-            </div>
-          </div>
+            </ol>
+          </section>
 
           {/* Order Items Summary Hierarchy */}
-          <div className="space-y-3 pt-4 border-t border-[#F5F5F4] dark:border-[#2A2A2A]">
-            <h3 className="text-xs font-black uppercase tracking-wider text-[#78716C] dark:text-[#A8A29E]">Order Items Summary</h3>
-            <div className="divide-y divide-[#F5F5F4] dark:divide-[#2A2A2A]">
+          <section className="tracking-receipt">
+            <div className="tracking-receipt__heading">
+              <div>
+                <span>Customer receipt</span>
+                <h3>{order.orderNumber || `#ORD-${order.id}`}</h3>
+              </div>
+              <span className={`tracking-payment-badge${order.paymentStatus === 'PAID' ? ' is-paid' : ' is-unpaid'}`}>{order.paymentStatus || 'UNPAID'}</span>
+            </div>
+            <div className="tracking-receipt__details">
+              <span><strong>{displayTableLabel}</strong></span>
+              <span>{new Date(order.createdAt).toLocaleDateString()}</span>
+            </div>
+            <div className="tracking-receipt__items">
               {order.orderItems?.map((item) => (
-                <div key={item.id} className="py-3 flex justify-between items-center text-xs">
-                  <div>
-                    <strong className="text-[#171717] dark:text-white font-extrabold block text-sm">{item.nameSnapshot || item.menuItem?.name}</strong>
-                    <span className="text-[#78716C] dark:text-[#A8A29E] text-[11px]">
-                      Qty: {item.quantity} • {item.unit || '1 Portion'} • Rs. {(item.priceSnapshot ?? item.price ?? 0).toFixed(2)} each
-                    </span>
+                <div key={item.id} className="tracking-receipt__line">
+                  <div className="tracking-receipt__item-copy">
+                    <strong>{item.quantity} × {item.nameSnapshot || item.menuItem?.name}</strong>
+                    <span>{item.unit || '1 Portion'} · {formatPrice(item.priceSnapshot ?? item.price ?? 0)} each</span>
                   </div>
-                  <strong className="text-[#171717] dark:text-white font-black text-sm">
-                    Rs. {((item.priceSnapshot ?? item.price ?? 0) * item.quantity).toFixed(2)}
+                  <strong className="tracking-receipt__amount">
+                  {formatPrice((item.priceSnapshot ?? item.price ?? 0) * item.quantity)}
                   </strong>
                 </div>
               ))}
             </div>
 
-            {/* Total Paid Financial Summary */}
-            <div className="border-t border-[#E7E5E4] dark:border-[#333] pt-3.5 flex justify-between items-center text-sm font-black">
-              <span className="text-[#171717] dark:text-white text-base">Total Paid:</span>
-              <span className="text-[#E85D2A] text-xl font-mono font-black">Rs. {Number(order.total || 0).toFixed(2)}</span>
+            <div className="tracking-receipt__totals">
+              <div className="tracking-receipt__grand-total"><span>Total</span><strong>{formatPrice(order.total || 0)}</strong></div>
             </div>
-          </div>
+          </section>
 
         </div>
       </div>
 
-      <footer className="max-w-2xl w-full mx-auto text-center py-6 text-[11px] text-[#78716C] dark:text-[#A8A29E] font-bold">
-        ZovikPOS Smart Dining System
+      <footer className="tracking-actions glass">
+        <Button variant="primary" onClick={() => navigate('/customer')} className="tracking-actions__more">
+          <ShoppingBag aria-hidden="true" />
+          Order more food
+        </Button>
+        <Button variant="secondary" onClick={handleDownloadInvoice} className="tracking-actions__invoice">
+          <Download aria-hidden="true" />
+          Download Invoice
+        </Button>
       </footer>
     </div>
   );

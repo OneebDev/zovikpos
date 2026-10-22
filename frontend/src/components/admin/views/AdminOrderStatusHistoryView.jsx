@@ -1,4 +1,4 @@
-import  { useState, useEffect, useMemo, useCallback } from 'react';
+﻿import  { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   History,
   Search,
@@ -188,7 +188,7 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col items-stretch gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl lg:flex-row lg:justify-between lg:items-start">
+      <div className="flex flex-col items-stretch gap-4 glass-card p-4 sm:p-6 lg:flex-row lg:justify-between lg:items-start">
         <div className="min-w-0 flex items-start gap-2">
           <History className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
           <div className="min-w-0">
@@ -341,7 +341,7 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
                             setDeleteModalOpen(true);
                           }}
                           title="Delete Status History Entry"
-                          className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer inline-flex items-center"
+                          className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer inline-flex items-center icon-btn"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -368,7 +368,7 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
         message={
           isBulkDeleting
             ? `Are you sure you want to permanently delete ${selectedHistoryIds.size} selected status history records? This cannot be undone.`
-            : `Are you sure you want to delete status history transition "${itemToDelete?.fromStatus || 'INITIAL'} → ${itemToDelete?.toStatus}" for ${itemToDelete?.order?.orderNumber || 'this order'}?`
+            : `Are you sure you want to delete status history transition "${itemToDelete?.fromStatus || 'INITIAL'} â†’ ${itemToDelete?.toStatus}" for ${itemToDelete?.order?.orderNumber || 'this order'}?`
         }
         itemCount={isBulkDeleting ? selectedHistoryIds.size : 1}
         itemName={isBulkDeleting ? `${selectedHistoryIds.size} History Records` : itemToDelete?.order?.orderNumber || 'Status History'}
@@ -385,3 +385,4 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
 };
 
 export default AdminOrderStatusHistoryView;
+

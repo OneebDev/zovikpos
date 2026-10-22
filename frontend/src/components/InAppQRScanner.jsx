@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { X, Camera, RefreshCw, AlertCircle } from 'lucide-react';
+import ModalShell from './ui/ModalShell';
 
 const InAppQRScanner = ({ isOpen, onClose, onScanSuccess }) => {
   const [cameraError, setCameraError] = useState('');
@@ -116,63 +117,65 @@ const InAppQRScanner = ({ isOpen, onClose, onScanSuccess }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[999999] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-fade-in">
-      <div className="bg-[#18181B] border border-[#27272A] w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl flex flex-col relative text-white">
+    <ModalShell isOpen onClose={onClose} labelledBy="customer-qr-title" closeOnBackdrop={false} closeOnEscape={false} className="customer-modal customer-modal--scanner">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-[#27272A] flex items-center justify-between">
+        <div className="customer-modal__header">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#E85D2A]/20 text-[#E85D2A] flex items-center justify-center">
+            <div className="customer-modal__icon">
               <Camera className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm text-white">Table QR Scanner</h3>
-              <p className="text-[11px] text-[#A1A1AA]">Switch tables or reconnect session</p>
+              <h2 id="customer-qr-title">Table QR Scanner</h2>
+              <p>Switch tables or reconnect session</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-zinc-300 hover:text-white transition-all cursor-pointer"
+            className="customer-modal__close icon-btn"
+            aria-label="Close QR scanner"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-4 flex flex-col items-center justify-center bg-black/40">
+        <div className="customer-modal__body customer-modal__scanner-body">
+          <p className="customer-modal__scanner-help">Align the table QR within the frame</p>
+          <div className="customer-modal__scanner-frame">
             <div
               id="in-app-qr-reader"
-              className={`w-full max-w-[270px] h-[270px] rounded-2xl overflow-hidden bg-black flex items-center justify-center shadow-inner ${cameraError ? 'border-2 border-dashed border-amber-500/50' : 'border-2 border-[#E85D2A]/60'}`}
+              className={`customer-modal__scanner-viewport${cameraError ? ' has-error' : ''}`}
             />
+          </div>
 
             {cameraError && (
-              <div className="mt-3 p-3 bg-amber-950/40 border border-amber-800/60 rounded-2xl text-amber-200 text-xs flex flex-col gap-2 text-left w-full">
+              <div className="customer-modal__scanner-error">
                 <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
-                  <span className="leading-snug text-[11px]">{cameraError}</span>
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{cameraError}</span>
                 </div>
               </div>
             )}
 
             {!cameraError && scanning && (
-              <p className="text-[11px] text-zinc-400 mt-3 flex items-center gap-1.5">
-                <RefreshCw className="w-3 h-3 animate-spin text-[#E85D2A]" />
-                Align table QR within the frame...
+              <p className="customer-modal__scanner-status">
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                Starting camera…
               </p>
             )}
 
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 bg-[#121215] border-t border-[#27272A] flex justify-between items-center text-xs text-zinc-400">
+        <div className="customer-modal__footer">
           <span>Seamless table sync</span>
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs cursor-pointer transition-colors"
+            className="customer-modal__button customer-modal__button--secondary"
           >
             Close
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+﻿import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Users,
@@ -135,7 +135,7 @@ const AdminCustomersView = ({ showToast }) => {
   const [selectionMode, setSelectionMode] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  // ─── Fetch Customers ────────────────────────────────────────────────────────
+  // â”€â”€â”€ Fetch Customers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
@@ -152,7 +152,7 @@ const AdminCustomersView = ({ showToast }) => {
     }
   }, [showToast]);
 
-  // ─── Fetch Disputes ─────────────────────────────────────────────────────────
+  // â”€â”€â”€ Fetch Disputes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const fetchDisputes = useCallback(async () => {
     setDisputesLoading(true);
     try {
@@ -183,7 +183,7 @@ const AdminCustomersView = ({ showToast }) => {
     }
   }, [activeTab, fetchDisputes]);
 
-  // ─── Filtered Customers List ───────────────────────────────────────────────
+  // â”€â”€â”€ Filtered Customers List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const filteredCustomers = useMemo(() => {
     return customers.filter((c) => {
       // 1. Text Search (Name, Email, Student Roll Number)
@@ -227,7 +227,7 @@ const AdminCustomersView = ({ showToast }) => {
     });
   }, [customers, searchTerm, statusFilter, disputeFilter, dateFilter]);
 
-  // ─── Selection Actions ─────────────────────────────────────────────────────
+  // â”€â”€â”€ Selection Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const hasSelectedCustomers = selectionMode && selectedCustomerIds.size > 0;
   const mobileActionWidth = 'mobile-action-third';
 
@@ -260,7 +260,7 @@ const AdminCustomersView = ({ showToast }) => {
     setDeleteModalOpen(true);
   };
 
-  // ─── Block Customer Handler ────────────────────────────────────────────────
+  // â”€â”€â”€ Block Customer Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleOpenBlockModal = (customer) => {
     setCustomerToBlock(customer);
     setBlockReason(ALLOWED_BLOCK_REASONS[0]);
@@ -309,7 +309,7 @@ const AdminCustomersView = ({ showToast }) => {
     }
   };
 
-  // ─── Unblock Customer Handler ──────────────────────────────────────────────
+  // â”€â”€â”€ Unblock Customer Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleOpenUnblockModal = (customer) => {
     setCustomerToUnblock(customer);
     setUnblockReason(ALLOWED_UNBLOCK_REASONS[0]);
@@ -356,7 +356,7 @@ const AdminCustomersView = ({ showToast }) => {
     }
   };
 
-  // ─── Dispute Status Update Handler ─────────────────────────────────────────
+  // â”€â”€â”€ Dispute Status Update Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleOpenUpdateDispute = (dispute) => {
     setDisputeToUpdate(dispute);
     setNewDisputeStatus(dispute.status === 'OPEN' ? 'UNDER_REVIEW' : 'RESOLVED');
@@ -388,7 +388,7 @@ const AdminCustomersView = ({ showToast }) => {
     }
   };
 
-  // ─── Create Dispute Handler ────────────────────────────────────────────────
+  // â”€â”€â”€ Create Dispute Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleSaveNewDispute = async (e) => {
     if (e) e.preventDefault();
     if (!newDisputeData.customerEmail.trim()) {
@@ -427,7 +427,7 @@ const AdminCustomersView = ({ showToast }) => {
     }
   };
 
-  // ─── Export CSV & PDF ──────────────────────────────────────────────────────
+  // â”€â”€â”€ Export CSV & PDF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleExportCSV = () => {
     const csvData = filteredCustomers.map((c) => ({
       Name: c.name,
@@ -492,8 +492,8 @@ const AdminCustomersView = ({ showToast }) => {
 
   return (
     <div className="space-y-6">
-      {/* ─── Top Header Bar ─────────────────────────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl">
+      {/* â”€â”€â”€ Top Header Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 glass-card p-4 sm:p-6">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2.5">
             <h2 className="min-w-0 text-lg font-extrabold leading-tight text-[var(--text-main)] font-display sm:text-xl">
@@ -515,7 +515,7 @@ const AdminCustomersView = ({ showToast }) => {
               fetchCustomers();
               if (activeTab === 'disputes') fetchDisputes();
             }}
-            className="p-2 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] hover:border-orange-500/40 text-[var(--text-muted)] hover:text-orange-400 transition-all cursor-pointer"
+            className="p-2 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] hover:border-orange-500/40 text-[var(--text-muted)] hover:text-orange-400 transition-all cursor-pointer icon-btn"
             title="Refresh Data"
           >
             <RefreshCw className={`w-4 h-4 ${loading || disputesLoading ? 'animate-spin text-orange-400' : ''}`} />
@@ -572,7 +572,7 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
       </div>
 
-      {/* ─── Compact Summary Cards (Requirement 1) ─────────────────────────── */}
+      {/* â”€â”€â”€ Compact Summary Cards (Requirement 1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Customers */}
         <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 rounded-2xl shadow-md hover:border-orange-500/30 transition-all flex items-center justify-between">
@@ -639,7 +639,7 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
       </div>
 
-      {/* ─── Navigation Tabs ────────────────────────────────────────────────── */}
+      {/* â”€â”€â”€ Navigation Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex border-b border-[var(--border-color)] gap-6">
         <button
           onClick={() => setActiveTab('customers')}
@@ -674,9 +674,9 @@ const AdminCustomersView = ({ showToast }) => {
         </button>
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════════════
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           TAB 1: CUSTOMERS ROSTER
-         ═══════════════════════════════════════════════════════════════════════ */}
+         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {activeTab === 'customers' && (
         <div className="space-y-4">
           {/* Search & Comprehensive Filters */}
@@ -908,7 +908,7 @@ const AdminCustomersView = ({ showToast }) => {
                                   setDeleteModalOpen(true);
                                 }}
                                 title="Delete / Archive Customer"
-                                className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer"
+                                className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl border border-transparent hover:border-rose-500/20 transition-all cursor-pointer icon-btn"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -925,9 +925,9 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           TAB 2: CENTRALIZED DISPUTES MANAGEMENT (Requirement 5)
-         ═══════════════════════════════════════════════════════════════════════ */}
+         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {activeTab === 'disputes' && (
         <div className="space-y-4">
           {/* Dispute Metric Badges */}
@@ -1073,7 +1073,7 @@ const AdminCustomersView = ({ showToast }) => {
                             <div>
                               <p className="text-[var(--text-main)] italic">"{d.resolution}"</p>
                               <span className="text-[10px] text-[var(--text-muted)] block mt-0.5">
-                                By {d.resolvedBy || 'Admin'} {d.resolvedAt ? `· ${new Date(d.resolvedAt).toLocaleDateString()}` : ''}
+                                By {d.resolvedBy || 'Admin'} {d.resolvedAt ? `Â· ${new Date(d.resolvedAt).toLocaleDateString()}` : ''}
                               </span>
                             </div>
                           ) : (
@@ -1098,11 +1098,11 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           MODAL 1: CUSTOMER VIEW DETAILS (Requirement 3)
-         ═══════════════════════════════════════════════════════════════════════ */}
+         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {selectedCustomer && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[var(--glass-bg-subtle)] backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto custom-scrollbar">
             {/* Header */}
             <div className="flex justify-between items-start border-b border-[var(--border-color)] pb-4">
@@ -1131,7 +1131,7 @@ const AdminCustomersView = ({ showToast }) => {
               </div>
               <button
                 onClick={() => setSelectedCustomer(null)}
-                className="p-2 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                className="p-2 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1204,7 +1204,7 @@ const AdminCustomersView = ({ showToast }) => {
                       <div>
                         <strong className="text-orange-400 font-mono block">{order.orderNumber}</strong>
                         <span className="text-[10px] text-[var(--text-muted)]">
-                          {new Date(order.createdAt).toLocaleString()} · {order.paymentStatus}
+                          {new Date(order.createdAt).toLocaleString()} Â· {order.paymentStatus}
                         </span>
                       </div>
                       <div className="text-right">
@@ -1237,7 +1237,7 @@ const AdminCustomersView = ({ showToast }) => {
                         <p className="text-[11px] text-emerald-400 italic">Resolution: {d.resolution}</p>
                       )}
                       <span className="text-[10px] text-[var(--text-muted)] block">
-                        Logged on {new Date(d.createdAt).toLocaleString()} {d.orderNumber ? `· Order: ${d.orderNumber}` : ''}
+                        Logged on {new Date(d.createdAt).toLocaleString()} {d.orderNumber ? `Â· Order: ${d.orderNumber}` : ''}
                       </span>
                     </div>
                   ))}
@@ -1305,7 +1305,7 @@ const AdminCustomersView = ({ showToast }) => {
                     setCustomerToDelete(selectedCustomer);
                     setDeleteModalOpen(true);
                   }}
-                  className="px-3 py-2 bg-slate-500/10 hover:bg-slate-500/20 text-[var(--text-muted)] hover:text-rose-400 rounded-xl text-xs font-bold border border-transparent transition-all cursor-pointer"
+                  className="px-3 py-2 bg-slate-500/10 hover:bg-slate-500/20 text-[var(--text-muted)] hover:text-rose-400 rounded-xl text-xs font-bold border border-transparent transition-all cursor-pointer icon-btn"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -1323,11 +1323,11 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           MODAL 2: BLOCK CUSTOMER MODAL (Requirement 4)
-         ═══════════════════════════════════════════════════════════════════════ */}
+         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {blockModalOpen && customerToBlock && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[var(--glass-bg-subtle)] backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-rose-500/30 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl animate-scale-up">
             <div className="flex justify-between items-start border-b border-[var(--border-color)] pb-3">
               <div className="flex items-center gap-2 text-rose-400">
@@ -1336,7 +1336,7 @@ const AdminCustomersView = ({ showToast }) => {
               </div>
               <button
                 onClick={() => setBlockModalOpen(false)}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1435,11 +1435,11 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           MODAL 3: UNBLOCK CUSTOMER MODAL (Requirement 4)
-         ═══════════════════════════════════════════════════════════════════════ */}
+         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {unblockModalOpen && customerToUnblock && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[var(--glass-bg-subtle)] backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-emerald-500/30 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl animate-scale-up">
             <div className="flex justify-between items-start border-b border-[var(--border-color)] pb-3">
               <div className="flex items-center gap-2 text-emerald-400">
@@ -1448,7 +1448,7 @@ const AdminCustomersView = ({ showToast }) => {
               </div>
               <button
                 onClick={() => setUnblockModalOpen(false)}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1547,22 +1547,22 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           MODAL 4: UPDATE DISPUTE STATUS (Requirement 5)
-         ═══════════════════════════════════════════════════════════════════════ */}
+         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {updateDisputeModalOpen && disputeToUpdate && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[var(--glass-bg-subtle)] backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl animate-scale-up">
             <div className="flex justify-between items-start border-b border-[var(--border-color)] pb-3">
               <div>
                 <h3 className="text-lg font-extrabold text-[var(--text-main)]">Update Dispute / Complaint</h3>
                 <p className="text-xs text-[var(--text-muted)]">
-                  Customer: {disputeToUpdate.customerEmail} {disputeToUpdate.orderNumber ? `· Order #${disputeToUpdate.orderNumber}` : ''}
+                  Customer: {disputeToUpdate.customerEmail} {disputeToUpdate.orderNumber ? `Â· Order #${disputeToUpdate.orderNumber}` : ''}
                 </p>
               </div>
               <button
                 onClick={() => setUpdateDisputeModalOpen(false)}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1621,11 +1621,11 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           MODAL 5: RECORD NEW DISPUTE MODAL (Requirement 5)
-         ═══════════════════════════════════════════════════════════════════════ */}
+         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {createDisputeModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[var(--glass-bg-subtle)] backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl animate-scale-up">
             <div className="flex justify-between items-start border-b border-[var(--border-color)] pb-3">
               <div>
@@ -1634,7 +1634,7 @@ const AdminCustomersView = ({ showToast }) => {
               </div>
               <button
                 onClick={() => setCreateDisputeModalOpen(false)}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1742,7 +1742,7 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
       )}
 
-      {/* ─── Global Delete Confirmation Modal ───────────────────────────────── */}
+      {/* â”€â”€â”€ Global Delete Confirmation Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <GlobalDeleteModal
         isOpen={deleteModalOpen}
         onClose={() => {
@@ -1794,3 +1794,5 @@ const AdminCustomersView = ({ showToast }) => {
 };
 
 export default AdminCustomersView;
+
+

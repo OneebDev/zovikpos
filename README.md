@@ -332,6 +332,7 @@ python main.py
 ### 12. Customer Mobile & QR Table Ordering View
 - **Path:** `/customer/menu`
 - **Purpose:** Frictionless QR table ordering for customers.
+- **Table access:** Customers must scan a table QR; there is no default session. A session can be created only from a valid signed QR code for an active physical table.
 - **Features:**
   - **OTP Authentication:** Login via Email OTP code.
   - **Table QR Scanner / Selector:** Table assignment via QR code.

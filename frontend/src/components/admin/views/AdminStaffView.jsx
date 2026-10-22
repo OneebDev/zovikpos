@@ -1,4 +1,4 @@
-import  { useState, useEffect, useCallback } from 'react';
+﻿import  { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Users,
@@ -160,7 +160,7 @@ const AdminStaffView = ({ showToast }) => {
     fetchStaff();
   }, [fetchStaff]);
 
-  // ── Create Staff ──────────────────────────────────────────────────────────
+  // â”€â”€ Create Staff â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleCreateStaff = async (e) => {
     e.preventDefault();
     setActionLoading(true);
@@ -177,7 +177,7 @@ const AdminStaffView = ({ showToast }) => {
     }
   };
 
-  // ── Toggle Activate / Deactivate ─────────────────────────────────────────
+  // â”€â”€ Toggle Activate / Deactivate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleToggleStatus = async (staff) => {
     try {
       await api.put(`/admin/staff/${staff.id}/status`, { isActive: !staff.isActive });
@@ -188,7 +188,7 @@ const AdminStaffView = ({ showToast }) => {
     }
   };
 
-  // ── Reset Password ────────────────────────────────────────────────────────
+  // â”€â”€ Reset Password â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleResetPassword = async (e) => {
     e.preventDefault();
     if (!selectedStaff || !resetPasswordInput) return;
@@ -206,7 +206,7 @@ const AdminStaffView = ({ showToast }) => {
     }
   };
 
-  // ── Change Role ───────────────────────────────────────────────────────────
+  // â”€â”€ Change Role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleChangeRole = async (e) => {
     e.preventDefault();
     if (!selectedStaff || !newRole) return;
@@ -242,7 +242,7 @@ const AdminStaffView = ({ showToast }) => {
 
   return (
     <div className="space-y-6">
-      {/* ── Top Header Bar ─────────────────────────────────────────────────── */}
+      {/* â”€â”€ Top Header Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-6 rounded-2xl shadow-sm">
         <div>
           <h2 className="text-xl font-bold text-[var(--text-main)] flex items-center gap-2.5">
@@ -277,7 +277,7 @@ const AdminStaffView = ({ showToast }) => {
             onClick={fetchStaff}
             disabled={loading}
             aria-label={loading ? 'Refreshing staff list' : 'Refresh staff list'}
-            className={`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] p-2.5 text-[var(--text-muted)] shadow-sm transition-all hover:border-orange-400 hover:text-[var(--text-main)] cursor-pointer disabled:cursor-wait disabled:opacity-60 sm:h-auto sm:w-auto sm:rounded-xl`}
+            className={['icon-btn', (`flex h-10 ${mobileActionWidth} shrink-0 items-center justify-center rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] p-2.5 text-[var(--text-muted)] shadow-sm transition-all hover:border-orange-400 hover:text-[var(--text-main)] cursor-pointer disabled:cursor-wait disabled:opacity-60 sm:h-auto sm:w-auto sm:rounded-xl`)].filter(Boolean).join(' ')}
             title="Refresh list"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-orange-600' : ''}`} />
@@ -285,7 +285,7 @@ const AdminStaffView = ({ showToast }) => {
         </div>
       </div>
 
-      {/* ── Search and Counter ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Search and Counter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-[var(--text-muted)] absolute left-3.5 top-3" />
@@ -302,7 +302,7 @@ const AdminStaffView = ({ showToast }) => {
         </div>
       </div>
 
-      {/* ── Modern Staff Table ──────────────────────────────────────────────── */}
+      {/* â”€â”€ Modern Staff Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl shadow-sm overflow-hidden">
         {loading && staffList.length === 0 ? (
           <div className="py-20 text-center flex flex-col items-center justify-center space-y-3">
@@ -317,11 +317,11 @@ const AdminStaffView = ({ showToast }) => {
             <p className="text-xs font-bold text-[var(--text-muted)]">No staff accounts found matching your search.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-max text-left border-collapse text-xs">
+          <div className="overflow-x-auto lg:overflow-x-visible">
+            <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/70 text-[11px] font-semibold text-[var(--text-muted)] tracking-wide">
-                  {selectionMode && <th className="py-3.5 px-4 w-10 text-center">
+                  {selectionMode && <th className="py-3.5 px-3 w-9 text-center">
                     <input
                       type="checkbox"
                       checked={filteredStaff.length > 0 && selectedStaffIds.size === filteredStaff.length}
@@ -329,13 +329,13 @@ const AdminStaffView = ({ showToast }) => {
                       className="rounded border-[var(--border-color)] text-orange-600 focus:ring-orange-500 cursor-pointer"
                     />
                   </th>}
-                  <th className="py-3.5 px-5">Staff Member</th>
-                  <th className="py-3.5 px-5">Email Address</th>
-                  <th className="py-3.5 px-5">Account Type</th>
-                  <th className="py-3.5 px-5">Assigned Role</th>
-                  <th className="py-3.5 px-5">Status</th>
-                  <th className="py-3.5 px-5">Created Date</th>
-                  <th className="py-3.5 px-5 text-right">Actions</th>
+                  <th className="py-3 px-3.5 sm:px-4">Staff Member</th>
+                  <th className="py-3 px-3 sm:px-3.5 hidden md:table-cell">Email Address</th>
+                  <th className="py-3 px-2.5 sm:px-3 text-center">Account Type</th>
+                  <th className="py-3 px-2.5 sm:px-3">Assigned Role</th>
+                  <th className="py-3 px-2.5 sm:px-3 text-center">Status</th>
+                  <th className="py-3 px-3 hidden xl:table-cell">Created Date</th>
+                  <th className="py-3 px-3.5 sm:px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-color)]">
@@ -351,7 +351,7 @@ const AdminStaffView = ({ showToast }) => {
 
                   return (
                     <tr key={staff.id} className={`hover:bg-[var(--bg-color)]/50 transition-colors group ${isChecked ? 'bg-orange-500/5' : ''}`}>
-                      {selectionMode && <td className="py-4 px-4 text-center">
+                      {selectionMode && <td className="py-3.5 px-3 text-center">
                         <input
                           type="checkbox"
                           checked={isChecked}
@@ -360,14 +360,14 @@ const AdminStaffView = ({ showToast }) => {
                         />
                       </td>}
                       {/* Name + Avatar */}
-                      <td className="py-4 px-5">
-                        <div className="flex items-center gap-3">
+                      <td className="py-3.5 px-3.5 sm:px-4">
+                        <div className="flex items-center gap-2.5">
                           <StaffAvatar name={staff.name} role={staff.role} />
-                          <div>
-                            <div className="font-bold text-[var(--text-main)] text-xs group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">
+                          <div className="min-w-0">
+                            <div className="font-bold text-[var(--text-main)] text-xs group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors truncate">
                               {staff.name}
                             </div>
-                            <div className="text-[11px] text-[var(--text-muted)] sm:hidden font-normal">
+                            <div className="text-[11px] text-[var(--text-muted)] md:hidden font-normal truncate max-w-[170px]">
                               {staff.email}
                             </div>
                           </div>
@@ -375,45 +375,46 @@ const AdminStaffView = ({ showToast }) => {
                       </td>
 
                       {/* Email */}
-                      <td className="py-4 px-5 font-normal text-[var(--text-muted)] text-xs">
-                        <div className="flex items-center gap-1.5">
+                      <td className="py-3.5 px-3 sm:px-3.5 font-normal text-[var(--text-muted)] text-xs hidden md:table-cell">
+                        <div className="flex items-center gap-1.5 truncate max-w-[210px]">
                           <Mail className="w-3.5 h-3.5 opacity-40 flex-shrink-0" />
-                          <span>{staff.email}</span>
+                          <span className="truncate">{staff.email}</span>
                         </div>
                       </td>
 
                       {/* Account Type */}
-                      <td className="py-4 px-5">
+                      <td className="py-3.5 px-2.5 sm:px-3 text-center">
                         {staff.isDemo ? (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-orange-50 text-orange-600 border border-orange-200 dark:bg-orange-900/30 dark:border-orange-800">
-                            <Lock className="w-3 h-3" />
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-orange-50 text-orange-600 border border-orange-200 dark:bg-orange-900/30 dark:border-orange-800">
+                            <Lock className="w-2.5 h-2.5" />
                             Demo
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800">
-                            <ShieldCheck className="w-3 h-3" />
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800">
+                            <ShieldCheck className="w-2.5 h-2.5" />
                             Real
                           </span>
                         )}
                       </td>
 
-                      {/* Role Badge (Fixed whitespace & padding) */}
-                      <td className="py-4 px-5">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border whitespace-nowrap ${roleConfig.badgeBg}`}>
-                          <RoleIcon className={`w-3.5 h-3.5 ${roleConfig.iconColor}`} />
-                          <span>{roleConfig.label}</span>
+                      {/* Role Badge (Responsive full label or short label) */}
+                      <td className="py-3.5 px-2.5 sm:px-3">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] font-semibold border whitespace-nowrap ${roleConfig.badgeBg}`}>
+                          <RoleIcon className={`w-3.5 h-3.5 shrink-0 ${roleConfig.iconColor}`} />
+                          <span className="hidden xl:inline">{roleConfig.label}</span>
+                          <span className="inline xl:hidden">{roleConfig.shortLabel || roleConfig.label}</span>
                         </span>
                       </td>
 
                       {/* Status */}
-                      <td className="py-4 px-5">
+                      <td className="py-3.5 px-2.5 sm:px-3 text-center">
                         {staff.isActive !== false ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 whitespace-nowrap">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                             <span>Active</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold border bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800 whitespace-nowrap">
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
                             <span>Deactivated</span>
                           </span>
@@ -421,7 +422,7 @@ const AdminStaffView = ({ showToast }) => {
                       </td>
 
                       {/* Created Date */}
-                      <td className="py-4 px-5 text-xs text-[var(--text-muted)] font-normal whitespace-nowrap">
+                      <td className="py-3.5 px-3 text-xs text-[var(--text-muted)] font-normal whitespace-nowrap hidden xl:table-cell">
                         {new Date(staff.createdAt).toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric',
@@ -430,8 +431,8 @@ const AdminStaffView = ({ showToast }) => {
                       </td>
 
                       {/* Actions */}
-                      <td className="py-4 px-5 text-right">
-                        <div className="inline-flex items-center justify-end gap-1.5">
+                      <td className="py-3.5 px-3.5 sm:px-4 text-right">
+                        <div className="inline-flex items-center justify-end gap-1 sm:gap-1.5">
                           {/* Change Role */}
                           <button
                             onClick={() => openRoleModal(staff)}
@@ -484,7 +485,7 @@ const AdminStaffView = ({ showToast }) => {
                               setStaffToDelete(staff);
                               setDeleteModalOpen(true);
                             }}
-                            className="p-1.5 rounded-lg border border-transparent hover:border-rose-500/20 text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg border border-transparent hover:border-rose-500/20 text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer icon-btn"
                             title="Delete Staff Member"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -526,12 +527,12 @@ const AdminStaffView = ({ showToast }) => {
         ]}
       />
 
-      {/* ══════════════════════════════════════════════════════════════════════
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           MODAL: Add Staff
-      ══════════════════════════════════════════════════════════════════════ */}
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {showAddModal && createPortal(
         <div
-          className="fixed inset-0 z-[9999] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[9999] bg-[var(--glass-bg-subtle)] backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
           onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}
         >
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-scale-up">
@@ -547,7 +548,7 @@ const AdminStaffView = ({ showToast }) => {
               </div>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-color)] transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-color)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -673,12 +674,12 @@ const AdminStaffView = ({ showToast }) => {
         document.body
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           MODAL: Reset Password
-      ══════════════════════════════════════════════════════════════════════ */}
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {showResetModal && selectedStaff && createPortal(
         <div
-          className="fixed inset-0 z-[9999] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[9999] bg-[var(--glass-bg-subtle)] backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
           onClick={(e) => e.target === e.currentTarget && setShowResetModal(false)}
         >
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-scale-up">
@@ -694,7 +695,7 @@ const AdminStaffView = ({ showToast }) => {
               </div>
               <button
                 onClick={() => setShowResetModal(false)}
-                className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-color)] transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-color)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -749,12 +750,12 @@ const AdminStaffView = ({ showToast }) => {
         document.body
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           MODAL: Change Role
-      ══════════════════════════════════════════════════════════════════════ */}
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       {showRoleModal && selectedStaff && createPortal(
         <div
-          className="fixed inset-0 z-[9999] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[9999] bg-[var(--glass-bg-subtle)] backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
           onClick={(e) => e.target === e.currentTarget && setShowRoleModal(false)}
         >
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-scale-up">
@@ -765,12 +766,12 @@ const AdminStaffView = ({ showToast }) => {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[var(--text-main)]">Change Authorization Role</h3>
-                  <p className="text-[11px] text-[var(--text-muted)]">{selectedStaff.name} · current: <span className="font-bold text-orange-600 dark:text-orange-400">{selectedStaff.role}</span></p>
+                  <p className="text-[11px] text-[var(--text-muted)]">{selectedStaff.name} Â· current: <span className="font-bold text-orange-600 dark:text-orange-400">{selectedStaff.role}</span></p>
                 </div>
               </div>
               <button
                 onClick={() => setShowRoleModal(false)}
-                className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-color)] transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-color)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -848,3 +849,4 @@ const AdminStaffView = ({ showToast }) => {
 };
 
 export default AdminStaffView;
+

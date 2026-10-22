@@ -115,6 +115,10 @@ const http = require('http');
 const path = require('path');
 require('dotenv').config();
 
+if (/(localhost|127\.0\.0\.1)/i.test(process.env.FRONTEND_URL || '')) {
+  console.warn('⚠️ FRONTEND_URL contains localhost or 127.0.0.1; OTP email links will not work from a phone.');
+}
+
 // Production secrets validation
 if (process.env.NODE_ENV === 'production') {
   const insecureDefaults = {

@@ -1,5 +1,5 @@
 import { io } from 'socket.io-client';
-import { resolveBackendUrl } from './api';
+import { resolveSocketUrl } from './api';
 
 let currentUser = null;
 
@@ -26,7 +26,7 @@ const getTokenForUser = (user) => {
     localStorage.getItem('token');
 };
 
-const getSocketUrl = () => resolveBackendUrl();
+const getSocketUrl = () => resolveSocketUrl();
 
 // Create a single persistent socket instance so event listeners are preserved
 export const socket = io(getSocketUrl(), {

@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import api from '../services/api';
 import { getSocket } from '../services/socket';
+import { resolveTableLabel } from '../utils/customerTableLabel';
 import {
 
   Play,
@@ -15,9 +16,11 @@ import {
   Keyboard,
 } from 'lucide-react';
 import DemoStatusBadge from './DemoStatusBadge';
+import { isOrderDeletedEvent, mergeOrderList, mergeOrderRecord, orderStoreFromList, removeDeletedOrders, stableOrderSort } from '../utils/liveOrderStore';
 
 const KitchenDashboard = ({ user }) => {
-  const [orders, setOrders] = useState([]);
+  const [orderStore, setOrderStore] = useState({});
+  const orders = useMemo(() => stableOrderSort(Object.values(orderStore)), [orderStore]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [newOrderAlert, setNewOrderAlert] = useState(false);
@@ -31,6 +34,25 @@ const KitchenDashboard = ({ user }) => {
   const shiftTimerRef = useRef(null);
   // Tracks optimistic status changes so incoming socket events don't revert them
   const optimisticStatusRef = useRef({});
+  const latestSequenceRef = useRef(0);
+  const latestSequenceByIdRef = useRef({});
+  const fetchRequestRef = useRef(0);
+  const fetchControllerRef = useRef(null);
+  const mountedRef = useRef(false);
+  const writeOrders = useCallback((updater, source = 'optimistic') => {
+    setOrderStore((previousStore) => {
+      const previous = stableOrderSort(Object.values(previousStore));
+      const nextOrders = typeof updater === 'function' ? updater(previous) : updater;
+      const nextStore = orderStoreFromList(nextOrders);
+      if (import.meta.env.DEV) {
+        const ids = new Set([...Object.keys(previousStore), ...Object.keys(nextStore)]);
+        ids.forEach((id) => {
+          if (previousStore[id] !== nextStore[id]) console.debug(`[orders:${source}]`, id);
+        });
+      }
+      return nextStore;
+    });
+  }, []);
 
   // Auto update elapsed timers every 30 seconds
   useEffect(() => {
@@ -61,58 +83,99 @@ const KitchenDashboard = ({ user }) => {
   }, [soundEnabled]);
 
   const [pendingStatusOrderIds, setPendingStatusOrderIds] = useState(new Set());
+  const playNotificationSoundRef = useRef(playNotificationSound);
+  playNotificationSoundRef.current = playNotificationSound;
 
   const fetchActiveOrders = useCallback(async () => {
+    const requestId = ++fetchRequestRef.current;
+    const startedAtSequence = latestSequenceRef.current;
+    fetchControllerRef.current?.abort();
+    const controller = new AbortController();
+    fetchControllerRef.current = controller;
     setLoading(true);
     try {
-      const response = await api.get('/orders');
+      const response = await api.get('/orders', { signal: controller.signal });
+      if (requestId !== fetchRequestRef.current || !mountedRef.current) return;
       const active = response.data.orders.filter((o) => ['PAID', 'PREPARING', 'READY'].includes(o.status));
-      optimisticStatusRef.current = {};
-      setOrders(active);
+      active.forEach((order) => {
+        const pending = optimisticStatusRef.current[String(order.id)];
+        if (pending && (pending.status === order.status || ['COMPLETED', 'CANCELLED'].includes(order.status))) {
+          delete optimisticStatusRef.current[String(order.id)];
+        }
+      });
+      const optimisticStatuses = Object.fromEntries(Object.entries(optimisticStatusRef.current).map(([id, status]) => [id, typeof status === 'string' ? { status, expiresAt: Date.now() + 5000 } : status]));
+      setOrderStore((previous) => mergeOrderList(previous, active, {
+        startedAtSequence,
+        latestSequenceById: latestSequenceByIdRef.current,
+        latestRequest: requestId === fetchRequestRef.current,
+        optimisticStatuses,
+        activeStatuses: ['PAID', 'PREPARING', 'READY'],
+      }));
+      if (import.meta.env.DEV) active.forEach((order) => console.debug('[orders:fetch]', order.id));
     } catch (err) {
+      if (controller.signal.aborted || err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
       console.error(err);
       setError('Failed to fetch orders.');
     } finally {
-      setLoading(false);
+      if (requestId === fetchRequestRef.current && mountedRef.current) setLoading(false);
     }
   }, []);
 
   const handleUpdateStatus = useCallback(async (orderId, nextStatus) => {
     if (pendingStatusOrderIds.has(orderId)) return;
     setPendingStatusOrderIds((prev) => new Set(prev).add(orderId));
-    optimisticStatusRef.current[orderId] = nextStatus;
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)));
-    setPendingStatusOrderIds((prev) => {
-      const next = new Set(prev);
-      next.delete(orderId);
-      return next;
-    });
+    const previousOrder = orders.find((order) => order.id === orderId);
+    optimisticStatusRef.current[orderId] = { status: nextStatus, expiresAt: Date.now() + 5000, previousOrder };
+    latestSequenceByIdRef.current[String(orderId)] = ++latestSequenceRef.current;
+    writeOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)), 'optimistic');
     api.put(`/orders/${orderId}/status`, { status: nextStatus })
-      .then(() => { delete optimisticStatusRef.current[orderId]; })
+      .then((response) => {
+        delete optimisticStatusRef.current[orderId];
+        const confirmedOrder = response.data?.order;
+        if (confirmedOrder) {
+          latestSequenceByIdRef.current[String(orderId)] = ++latestSequenceRef.current;
+          setOrderStore((prev) => mergeOrderRecord(prev, confirmedOrder));
+          if (import.meta.env.DEV) console.debug('[orders:fetch]', orderId);
+        }
+      })
       .catch((err) => {
         console.error(err);
         setError(err.response?.data?.error || 'Failed to update order status.');
+        const optimistic = optimisticStatusRef.current[orderId];
         delete optimisticStatusRef.current[orderId];
+        if (optimistic?.previousOrder) {
+          latestSequenceByIdRef.current[String(orderId)] = ++latestSequenceRef.current;
+          writeOrders((prev) => prev.map((order) => order.id === orderId ? optimistic.previousOrder : order), 'optimistic');
+        }
         fetchActiveOrders();
+      })
+      .finally(() => {
+        setPendingStatusOrderIds((prev) => {
+          const next = new Set(prev);
+          next.delete(orderId);
+          return next;
+        });
       });
-  }, [pendingStatusOrderIds, fetchActiveOrders]);
+  }, [pendingStatusOrderIds, fetchActiveOrders, orders, writeOrders]);
 
   // Real-time socket updates for kitchen
   useEffect(() => {
-    fetchActiveOrders();
-
+    mountedRef.current = true;
+    let debounceTimer;
+    let pollTimer;
+    const scheduleResync = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => fetchActiveOrders(), 300);
+    };
     const socket = getSocket();
     if (socket) {
       const handleOrderNew = (newOrder) => {
-        console.log('Kitchen received new order:', newOrder);
         if (newOrder.status === 'PAID') {
-          playNotificationSound();
+          latestSequenceByIdRef.current[String(newOrder.id)] = ++latestSequenceRef.current;
+          playNotificationSoundRef.current();
           setNewOrderAlert(true);
-          setOrders((prev) => {
-            const exists = prev.some((o) => o.id === newOrder.id);
-            if (exists) return prev.map((o) => (o.id === newOrder.id ? newOrder : o));
-            return [newOrder, ...prev];
-          });
+          setOrderStore((prev) => mergeOrderRecord(prev, newOrder));
+          if (import.meta.env.DEV) console.debug('[orders:socket]', newOrder.id);
 
           if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
           alertTimerRef.current = setTimeout(() => setNewOrderAlert(false), 5000);
@@ -120,65 +183,74 @@ const KitchenDashboard = ({ user }) => {
       };
 
       const handleOrderUpdate = (updatedOrder) => {
-        console.log('Kitchen received order update:', updatedOrder);
-        setOrders((prev) => {
-          const exists = prev.some((o) => o.id === updatedOrder.id);
-          if (exists) {
-            if (['COMPLETED', 'CANCELLED'].includes(updatedOrder.status)) {
-              return prev.filter((o) => o.id !== updatedOrder.id);
-            }
-            return prev.map((o) => {
-              if (o.id !== updatedOrder.id) return o;
-              // If we have an optimistic status that is further in the pipeline,
-              // don't let the socket event revert it back
-              const optimisticStatus = optimisticStatusRef.current[o.id];
-              if (optimisticStatus) {
-                const statusOrder = ['PAID', 'PREPARING', 'READY', 'COMPLETED'];
-                const optimisticIdx = statusOrder.indexOf(optimisticStatus);
-                const incomingIdx = statusOrder.indexOf(updatedOrder.status);
-                if (optimisticIdx > incomingIdx) {
-                  // Keep the optimistic (more advanced) status, merge other data
-                  return { ...updatedOrder, status: optimisticStatus };
-                }
-                // Server caught up or went further — clear the optimistic lock
-                delete optimisticStatusRef.current[o.id];
-              }
-              return updatedOrder;
-            });
-          } else if (['PAID', 'PREPARING', 'READY'].includes(updatedOrder.status)) {
-            return [updatedOrder, ...prev];
-          }
-          return prev;
-        });
+        if (isOrderDeletedEvent(updatedOrder)) {
+          setOrderStore((prev) => removeDeletedOrders(prev, updatedOrder));
+          return;
+        }
+        if (updatedOrder?.id == null) return;
+        latestSequenceByIdRef.current[String(updatedOrder.id)] = ++latestSequenceRef.current;
+        if (['COMPLETED', 'CANCELLED'].includes(updatedOrder.status)) {
+          delete optimisticStatusRef.current[String(updatedOrder.id)];
+          setOrderStore((prev) => { const next = { ...prev }; delete next[String(updatedOrder.id)]; return next; });
+        } else if (['PAID', 'PREPARING', 'READY'].includes(updatedOrder.status)) {
+          const optimistic = optimisticStatusRef.current[String(updatedOrder.id)];
+          const statusOrder = ['PAID', 'PREPARING', 'READY', 'COMPLETED'];
+          const confirmedOrAdvanced = optimistic && statusOrder.indexOf(updatedOrder.status) >= statusOrder.indexOf(optimistic.status);
+          if (confirmedOrAdvanced || (optimistic && Date.now() >= optimistic.expiresAt)) delete optimisticStatusRef.current[String(updatedOrder.id)];
+          setOrderStore((prev) => mergeOrderRecord(prev, updatedOrder, {
+            optimisticStatus: optimistic?.status,
+            preserveStatus: Boolean(optimistic && !confirmedOrAdvanced && Date.now() < optimistic.expiresAt),
+          }));
+        }
+        if (import.meta.env.DEV) console.debug('[orders:socket]', updatedOrder.id);
       };
 
       const handleTableShift = (data) => {
         console.log('Kitchen received table shift event:', data);
-        playNotificationSound();
+        playNotificationSoundRef.current();
         setTableShiftAlert(`⚡ Table Shift Alert: Order ${data.orderNumber} shifted from ${data.oldTable} ➔ ${data.newTable}! Please serve to ${data.newTable}.`);
         if (shiftTimerRef.current) clearTimeout(shiftTimerRef.current);
         shiftTimerRef.current = setTimeout(() => setTableShiftAlert(''), 8000);
-        fetchActiveOrders();
+        scheduleResync();
+      };
+
+      const handleConnect = () => {
+        scheduleResync();
+        clearInterval(pollTimer);
+        pollTimer = null;
+      };
+      const handleDisconnect = () => {
+        if (!pollTimer) pollTimer = setInterval(fetchActiveOrders, 30000);
       };
 
       socket.on('order:new', handleOrderNew);
       socket.on('order:update', handleOrderUpdate);
       socket.on('table:shift', handleTableShift);
+      socket.on('connect', handleConnect);
+      socket.on('disconnect', handleDisconnect);
+      if (!socket.connected) handleDisconnect();
+      scheduleResync();
 
       return () => {
+        mountedRef.current = false;
+        clearTimeout(debounceTimer);
+        clearInterval(pollTimer);
+        fetchControllerRef.current?.abort();
         socket.off('order:new', handleOrderNew);
         socket.off('order:update', handleOrderUpdate);
         socket.off('table:shift', handleTableShift);
+        socket.off('connect', handleConnect);
+        socket.off('disconnect', handleDisconnect);
         if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
         if (shiftTimerRef.current) clearTimeout(shiftTimerRef.current);
       };
     }
-  }, [user, playNotificationSound, fetchActiveOrders]);
+  }, [fetchActiveOrders]);
 
   // Filter orders by queue columns
-  const paidOrders = orders.filter((o) => o.status === 'PAID');
-  const preparingOrders = orders.filter((o) => o.status === 'PREPARING');
-  const readyOrders = orders.filter((o) => o.status === 'READY');
+  const paidOrders = useMemo(() => orders.filter((o) => o.status === 'PAID'), [orders]);
+  const preparingOrders = useMemo(() => orders.filter((o) => o.status === 'PREPARING'), [orders]);
+  const readyOrders = useMemo(() => orders.filter((o) => o.status === 'READY'), [orders]);
 
   // Hands-Free Keyboard Hotkeys (Space to start oldest, R to refresh, M to toggle sound)
   useEffect(() => {
@@ -221,14 +293,7 @@ const KitchenDashboard = ({ user }) => {
   };
 
   const formatTableDisplay = (order) => {
-    if (!order) return 'Takeaway';
-    if (typeof order === 'string') {
-      return order.toLowerCase().startsWith('table') ? order : `Table ${order}`;
-    }
-    if (order.tableNumber) return order.tableNumber;
-    if (order.table?.tableNumber) return order.table.tableNumber;
-    if (order.tableId) return `Table ${order.tableId}`;
-    return 'Takeaway';
+    return resolveTableLabel(typeof order === 'string' ? { tableNumber: order } : order);
   };
 
   // Compute delayed count
@@ -306,7 +371,7 @@ const KitchenDashboard = ({ user }) => {
 
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
-            className={`p-2 rounded-xl border transition-all cursor-pointer ${
+            className={`p-2 rounded-xl border transition-all cursor-pointer icon-btn ${
               soundEnabled
                 ? 'bg-orange-500/15 border-orange-500/30 text-orange-300'
                 : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-muted)]'

@@ -1,26 +1,26 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { getSocket } from '../services/socket';
 import AdminLayout from './admin/AdminLayout';
 
 // Import Views
-import AdminHomeView from './admin/views/AdminHomeView';
-import AdminOrdersView from './admin/views/AdminOrdersView';
-import AdminPaymentsView from './admin/views/AdminPaymentsView';
-import AdminMenuView from './admin/views/AdminMenuView';
-import AdminInventoryView from './admin/views/AdminInventoryView';
-import AdminStaffView from './admin/views/AdminStaffView';
-import AdminCustomersView from './admin/views/AdminCustomersView';
-import AdminTablesQRView from './admin/views/AdminTablesQRView';
-import AdminPaymentAvailabilityView from './admin/views/AdminPaymentAvailabilityView';
-import AdminKitchenMonitorView from './admin/views/AdminKitchenMonitorView';
-import AdminAIInsightsView from './admin/views/AdminAIInsightsView';
-import AdminReportsView from './admin/views/AdminReportsView';
-import AdminNotificationsView from './admin/views/AdminNotificationsView';
-import AdminAuditLogsView from './admin/views/AdminAuditLogsView';
-import AdminOrderStatusHistoryView from './admin/views/AdminOrderStatusHistoryView';
-import AdminBranchesView from './admin/views/AdminBranchesView';
+const AdminHomeView = lazy(() => import('./admin/views/AdminHomeView'));
+const AdminOrdersView = lazy(() => import('./admin/views/AdminOrdersView'));
+const AdminPaymentsView = lazy(() => import('./admin/views/AdminPaymentsView'));
+const AdminMenuView = lazy(() => import('./admin/views/AdminMenuView'));
+const AdminInventoryView = lazy(() => import('./admin/views/AdminInventoryView'));
+const AdminStaffView = lazy(() => import('./admin/views/AdminStaffView'));
+const AdminCustomersView = lazy(() => import('./admin/views/AdminCustomersView'));
+const AdminTablesQRView = lazy(() => import('./admin/views/AdminTablesQRView'));
+const AdminPaymentAvailabilityView = lazy(() => import('./admin/views/AdminPaymentAvailabilityView'));
+const AdminKitchenMonitorView = lazy(() => import('./admin/views/AdminKitchenMonitorView'));
+const AdminAIInsightsView = lazy(() => import('./admin/views/AdminAIInsightsView'));
+const AdminReportsView = lazy(() => import('./admin/views/AdminReportsView'));
+const AdminNotificationsView = lazy(() => import('./admin/views/AdminNotificationsView'));
+const AdminAuditLogsView = lazy(() => import('./admin/views/AdminAuditLogsView'));
+const AdminOrderStatusHistoryView = lazy(() => import('./admin/views/AdminOrderStatusHistoryView'));
+const AdminBranchesView = lazy(() => import('./admin/views/AdminBranchesView'));
 
 const AdminDashboard = ({ user, onLogout }) => {
   const location = useLocation();
@@ -44,6 +44,8 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [branches, setBranches] = useState([]);
   const [selectedBranchId, setSelectedBranchId] = useState('all');
   const [stats, setStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState('');
   const [menuItems, setMenuItems] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -55,6 +57,18 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [forecastingLoading, setForecastingLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [inventoryFocus, setInventoryFocus] = useState(null);
+  const statsRequestRef = useRef(0);
+  const statsAbortRef = useRef(null);
+  const statsFetchInProgressRef = useRef(false);
+  const statsRequestKeyRef = useRef('');
+  const statsRefreshQueuedRef = useRef(false);
+  const statsRefreshTimerRef = useRef(null);
+  const ordersRequestRef = useRef(0);
+  const ordersAbortRef = useRef(null);
+  const activeDataRequestRef = useRef(0);
+  const activeDataAbortRef = useRef(null);
+  const realtimeRefreshTimerRef = useRef(null);
+  const realtimeSourcesRef = useRef(new Set());
 
   const showToast = useCallback((msg, type = 'success') => {
     setToastMessage({ text: msg, type });
@@ -80,100 +94,212 @@ const AdminDashboard = ({ user, onLogout }) => {
     refreshBranchOptions();
   }, []);
 
-  const fetchDashboardData = useCallback(async () => {
-    setLoading(true);
-
+  const refreshDashboardStats = useCallback(async ({ force = false } = {}) => {
     const bQuery = selectedBranchId && selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : '';
-    const bQuerySingle = selectedBranchId && selectedBranchId !== 'all' ? `?branchId=${selectedBranchId}` : '';
-
     const rangeQuery = dashboardDateRange
       ? `&from=${dashboardDateRange.from || ''}&to=${dashboardDateRange.to || ''}`
       : '';
+    const refreshQuery = force ? '&refresh=true' : '';
+    const requestUrl = `/admin/stats?period=${period}${bQuery}${rangeQuery}${refreshQuery}`;
+
+    if (statsFetchInProgressRef.current && statsRequestKeyRef.current === requestUrl) {
+      // Reuse an in-flight request, then run one fresh request if a forced refresh arrives meanwhile.
+      if (force) statsRefreshQueuedRef.current = true;
+      return;
+    }
+
+    statsAbortRef.current?.abort();
+    window.clearTimeout(statsRefreshTimerRef.current);
+    const controller = new AbortController();
+    statsAbortRef.current = controller;
+    const requestId = ++statsRequestRef.current;
+
+    setStatsLoading(true);
+    setStatsError('');
+    statsRefreshQueuedRef.current = false;
+    statsFetchInProgressRef.current = true;
+    statsRequestKeyRef.current = requestUrl;
+    let requestSucceeded = false;
     try {
-      await Promise.all([
-        api.get(`/admin/stats?period=${period}${bQuery}${rangeQuery}`)
-          .then(res => setStats(res.data))
-          .catch(err => console.error('Fetch stats error:', err)),
-        api.get(`/menu?all=true${bQuery}`)
-          .then(res => setMenuItems(res.data.items || []))
-          .catch(err => console.error('Fetch menu error:', err)),
-        api.get(`/inventory${bQuerySingle}`)
-          .then(res => setInventory(res.data.items || []))
-          .catch(err => console.error('Fetch inventory error:', err)),
-        api.get(`/orders?period=${period}${bQuery}`)
-          .then(res => setAdminOrders(res.data.orders || []))
-          .catch(err => console.error('Fetch orders error:', err)),
-        api.get('/inventory/logs')
-          .then(res => setLogs(res.data.logs || []))
-          .catch(err => console.error('Fetch logs error:', err)),
-        api.get('/inventory/alerts')
-          .then(res => {
-            setAlerts(res.data.alerts || []);
-            setAlertsContext(res.data.context || null);
-          })
-          .catch(err => console.error('Fetch alerts error:', err)),
-        api.get('/admin/audit-logs')
-          .then(res => setAuditLogs(res.data.logs || []))
-          .catch(err => console.error('Fetch audit logs error:', err)),
-      ]);
+      const response = await api.get(requestUrl, { signal: controller.signal, timeout: 8000 });
+      if (requestId === statsRequestRef.current) {
+        setStats(response.data);
+        requestSucceeded = true;
+      }
+    } catch (error) {
+      if (requestId !== statsRequestRef.current || controller.signal.aborted) return;
+      console.error('Fetch stats error:', error);
+      setStatsError(error.response?.data?.message || error.response?.data?.error || error.message || 'Could not load dashboard analytics.');
     } finally {
-      setLoading(false);
+      if (requestId === statsRequestRef.current) {
+        setStatsLoading(false);
+        statsFetchInProgressRef.current = false;
+        statsRequestKeyRef.current = '';
+        if (statsRefreshQueuedRef.current && requestSucceeded) {
+          statsRefreshQueuedRef.current = false;
+          statsRefreshTimerRef.current = window.setTimeout(() => refreshDashboardStats({ force: true }), 100);
+        }
+      }
     }
   }, [dashboardDateRange, period, selectedBranchId]);
 
-  const fetchLightData = useCallback(async () => {
+  useEffect(() => () => {
+    statsRequestRef.current += 1;
+    statsAbortRef.current?.abort();
+    statsFetchInProgressRef.current = false;
+    statsRequestKeyRef.current = '';
+    statsRefreshQueuedRef.current = false;
+    ordersRequestRef.current += 1;
+    ordersAbortRef.current?.abort();
+    window.clearTimeout(realtimeRefreshTimerRef.current);
+  }, []);
+
+  const refreshAdminOrders = useCallback(async () => {
+    ordersAbortRef.current?.abort();
+    const controller = new AbortController();
+    ordersAbortRef.current = controller;
+    const requestId = ++ordersRequestRef.current;
+    const bQuery = selectedBranchId && selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : '';
     try {
-      const bQuery = selectedBranchId && selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : '';
-      const bQuerySingle = selectedBranchId && selectedBranchId !== 'all' ? `?branchId=${selectedBranchId}` : '';
-      const rangeQuery = dashboardDateRange
-        ? `&from=${dashboardDateRange.from || ''}&to=${dashboardDateRange.to || ''}`
-        : '';
-      const [statsRes, menuRes, invRes, ordersRes] = await Promise.all([
-        api.get(`/admin/stats?period=${period}${bQuery}${rangeQuery}`),
-        api.get(`/menu?all=true${bQuery}`),
-        api.get(`/inventory${bQuerySingle}`),
-        api.get(`/orders?period=${period}${bQuery}`),
-      ]);
-      setStats(statsRes.data);
-      setMenuItems(menuRes.data.items || []);
-      setInventory(invRes.data.items || []);
-      setAdminOrders(ordersRes.data.orders || []);
-    } catch (err) {
-      console.error('Fetch light data error:', err);
+      const response = await api.get(`/orders?period=${period}${bQuery}`, { signal: controller.signal, timeout: 8000 });
+      if (requestId === ordersRequestRef.current) setAdminOrders(response.data?.orders || []);
+    } catch (error) {
+      if (requestId !== ordersRequestRef.current || controller.signal.aborted) return;
+      console.error('Fetch orders error:', error);
     }
-  }, [dashboardDateRange, period, selectedBranchId]);
+  }, [period, selectedBranchId]);
+
+  const refreshActiveTabData = useCallback(async ({ forceStats = false, source = 'manual' } = {}) => {
+    const bQuery = selectedBranchId && selectedBranchId !== 'all' ? `&branchId=${selectedBranchId}` : '';
+    const bQuerySingle = selectedBranchId && selectedBranchId !== 'all' ? `?branchId=${selectedBranchId}` : '';
+    const orderTabs = ['payments', 'kitchen', 'reports', 'notifications'];
+    const statsTabs = ['dashboard', 'ai-insights', 'reports', 'notifications'];
+    const isSocketRefresh = source !== 'manual';
+    if (isSocketRefresh) {
+      const relevant = source === 'connect'
+        || source === 'batch'
+        || (source === 'orders' && (statsTabs.includes(activeTab) || orderTabs.includes(activeTab)))
+        || (source === 'inventory' && ['dashboard', 'ai-insights', 'inventory', 'menu', 'reports', 'notifications'].includes(activeTab))
+        || (source === 'menu' && ['dashboard', 'ai-insights', 'menu', 'reports'].includes(activeTab));
+      if (!relevant) return;
+    }
+    const requestId = ++activeDataRequestRef.current;
+    activeDataAbortRef.current?.abort();
+    const controller = new AbortController();
+    activeDataAbortRef.current = controller;
+    setLoading(true);
+    try {
+      const loadStats = () => refreshDashboardStats({ force: forceStats });
+      const loadOrders = () => refreshAdminOrders();
+      const loadInventory = async () => {
+        const response = await api.get(`/inventory${bQuerySingle}`, { signal: controller.signal });
+        if (requestId === activeDataRequestRef.current) setInventory(response.data.items || []);
+      };
+      const loadMenu = async () => {
+        const response = await api.get(`/menu?all=true${bQuery}`, { signal: controller.signal });
+        if (requestId === activeDataRequestRef.current) setMenuItems(response.data.items || []);
+      };
+      const loadLogs = async () => {
+        const response = await api.get('/inventory/logs', { signal: controller.signal });
+        if (requestId === activeDataRequestRef.current) setLogs(response.data.logs || []);
+      };
+      const loadAlerts = async () => {
+        const response = await api.get('/inventory/alerts', { signal: controller.signal });
+        if (requestId === activeDataRequestRef.current) {
+          setAlerts(response.data.alerts || []);
+          setAlertsContext(response.data.context || null);
+        }
+      };
+      const loadAuditLogs = async () => {
+        const response = await api.get('/admin/audit-logs', { signal: controller.signal });
+        if (requestId === activeDataRequestRef.current) setAuditLogs(response.data.logs || []);
+      };
+
+      const tasks = [];
+      if (statsTabs.includes(activeTab)) tasks.push(loadStats());
+      if (orderTabs.includes(activeTab)) tasks.push(loadOrders());
+      if (['menu'].includes(activeTab)) tasks.push(loadMenu());
+      if (['inventory'].includes(activeTab)) tasks.push(loadInventory(), loadLogs());
+      if (['ai-insights'].includes(activeTab)) tasks.push(loadAlerts());
+      if (['reports'].includes(activeTab)) tasks.push(loadInventory());
+      if (['audit-logs'].includes(activeTab)) tasks.push(loadAuditLogs());
+      const results = await Promise.allSettled(tasks);
+      results.forEach((result) => {
+        if (result.status === 'rejected' && !controller.signal.aborted) {
+          console.error(`Admin ${activeTab} data refresh failed:`, result.reason);
+        }
+      });
+    } finally {
+      if (requestId === activeDataRequestRef.current) setLoading(false);
+    }
+  }, [activeTab, refreshAdminOrders, refreshDashboardStats, selectedBranchId]);
+
+  const fetchDashboardData = useCallback((options = {}) => (
+    refreshActiveTabData({ ...options, forceStats: options.forceStats ?? true })
+  ), [refreshActiveTabData]);
 
   useEffect(() => {
     if (user && user.role === 'ADMIN') {
-      fetchDashboardData();
+      refreshActiveTabData();
     }
-  }, [user, fetchDashboardData]);
+    return () => {
+      activeDataRequestRef.current += 1;
+      activeDataAbortRef.current?.abort();
+      ordersRequestRef.current += 1;
+      ordersAbortRef.current?.abort();
+    };
+  }, [user, refreshActiveTabData]);
 
   // Real-time socket sync
   useEffect(() => {
     const socket = getSocket();
     if (socket) {
-      const handleRealtimeSync = () => {
+      const pendingRealtimeSources = realtimeSourcesRef.current;
+      const scheduleRealtimeSync = (source) => {
+        pendingRealtimeSources.add(source);
+        window.clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current = window.setTimeout(() => {
+          realtimeRefreshTimerRef.current = null;
+          const sources = Array.from(pendingRealtimeSources);
+          pendingRealtimeSources.clear();
+          if (user && user.role === 'ADMIN') {
+            const sourceToRefresh = sources.includes('connect')
+              ? 'connect'
+              : (sources.length > 1 ? 'batch' : sources[0]);
+            refreshActiveTabData({ source: sourceToRefresh });
+          }
+        }, 300);
+      };
+      const createRealtimeHandler = (source) => () => {
         if (user && user.role === 'ADMIN') {
-          fetchLightData();
+          scheduleRealtimeSync(source);
         }
       };
 
-      socket.on('order:new', handleRealtimeSync);
-      socket.on('order:update', handleRealtimeSync);
-      socket.on('payment:verify', handleRealtimeSync);
-      socket.on('inventory:update', handleRealtimeSync);
-      socket.on('menu:update', handleRealtimeSync);
+      const handleOrderSync = createRealtimeHandler('orders');
+      const handleInventorySync = createRealtimeHandler('inventory');
+      const handleMenuSync = createRealtimeHandler('menu');
+      const handleConnectSync = createRealtimeHandler('connect');
+      socket.on('order:new', handleOrderSync);
+      socket.on('order:update', handleOrderSync);
+      socket.on('payment:verify', handleOrderSync);
+      socket.on('inventory:update', handleInventorySync);
+      socket.on('menu:update', handleMenuSync);
+      socket.on('connect', handleConnectSync);
 
       return () => {
-        socket.off('order:new', handleRealtimeSync);
-        socket.off('order:update', handleRealtimeSync);
-        socket.off('payment:verify', handleRealtimeSync);
-        socket.off('inventory:update', handleRealtimeSync);
-        socket.off('menu:update', handleRealtimeSync);
+        socket.off('order:new', handleOrderSync);
+        socket.off('order:update', handleOrderSync);
+        socket.off('payment:verify', handleOrderSync);
+        socket.off('inventory:update', handleInventorySync);
+        socket.off('menu:update', handleMenuSync);
+        socket.off('connect', handleConnectSync);
+        window.clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current = null;
+        pendingRealtimeSources.clear();
       };
     }
-  }, [user, fetchLightData]);
+  }, [user, refreshActiveTabData]);
 
   const handleRecalculateAI = async () => {
     setForecastingLoading(true);
@@ -197,7 +323,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       onSelectTab={handleSelectTab}
       user={user}
       onLogout={onLogout}
-      onRefresh={fetchDashboardData}
+      onRefresh={() => fetchDashboardData({ forceStats: true })}
       refreshing={loading}
       branches={branches}
       selectedBranchId={selectedBranchId}
@@ -216,10 +342,16 @@ const AdminDashboard = ({ user, onLogout }) => {
         </div>
       )}
 
-      {/* Render Active View Component */}
+      {/* Each admin view is loaded on demand so unrelated screens don't inflate startup. */}
+      <Suspense fallback={(
+        <div className="min-h-[220px] rounded-2xl bg-[var(--surface-2)] animate-pulse" role="status" aria-label="Loading admin section" />
+      )}>
       {activeTab === 'dashboard' && (
         <AdminHomeView
           stats={stats}
+          statsLoading={statsLoading}
+          statsError={statsError}
+          onRetry={refreshDashboardStats}
           setPeriod={setPeriod}
           datePreset={dashboardDatePreset}
           setDatePreset={setDashboardDatePreset}
@@ -238,7 +370,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       )}
 
       {activeTab === 'orders' && (
-        <AdminOrdersView orders={adminOrders} loading={loading && adminOrders.length === 0} onRefresh={fetchDashboardData} showToast={showToast} />
+        <AdminOrdersView selectedBranchId={selectedBranchId} onRefresh={fetchDashboardData} showToast={showToast} />
       )}
 
       {activeTab === 'payments' && (
@@ -311,6 +443,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       {activeTab === 'order-history' && <AdminOrderStatusHistoryView showToast={showToast} />}
 
       {activeTab === 'branches' && <AdminBranchesView showToast={showToast} onBranchesChanged={refreshBranchOptions} />}
+      </Suspense>
     </AdminLayout>
   );
 };

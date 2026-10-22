@@ -4,6 +4,7 @@ const { logAudit } = require('../middleware/auditMiddleware');
 const supabaseAdmin = require('../config/supabaseAdmin');
 const { emitToAccount } = require('../sockets/socket');
 const { clearUserCache } = require('../middleware/authMiddleware');
+const { withTableLabel } = require('../utils/tableLabel');
 const {
   getAllDisputes,
   getDisputeCounts,
@@ -110,7 +111,7 @@ const getDashboardStats = async (req, res) => {
     const [
       paidOrders,
       activeOrdersCount,
-      users,
+      userCounts,
       allInventoryItems,
       recentOrders,
       menuItems,
@@ -126,7 +127,7 @@ const getDashboardStats = async (req, res) => {
           status: { in: ['PAID', 'PREPARING', 'READY', 'COMPLETED'] },
           ...dashboardOrderWhere,
         },
-        select: { id: true, total: true, paymentMethod: true, status: true, createdAt: true },
+        select: { total: true, paymentMethod: true, createdAt: true },
       }),
       // 2. Active Queue Count
       prisma.order.count({
@@ -136,8 +137,9 @@ const getDashboardStats = async (req, res) => {
         },
       }),
       // 3. User & Staff Statistics
-      prisma.user.findMany({
-        select: { role: true, isActive: true },
+      prisma.user.groupBy({
+        by: ['role', 'isActive'],
+        _count: { _all: true },
       }),
       // 4. Inventory Items
       prisma.inventoryItem.findMany({
@@ -149,6 +151,7 @@ const getDashboardStats = async (req, res) => {
         where: branchFilter,
         orderBy: { createdAt: 'desc' },
         include: {
+          table: { select: { id: true, tableNumber: true } },
           user: { select: { name: true, email: true } },
           orderItems: { include: { menuItem: true } },
         },
@@ -156,17 +159,18 @@ const getDashboardStats = async (req, res) => {
       // 6. Menu Items
       prisma.menuItem.findMany({
         where: branchFilter,
-        include: { recipeItems: { include: { inventoryItem: true } } },
+        select: { id: true, name: true, category: true, prepTime: true },
       }),
       // 7. Paid Order Items for top selling analysis
-      prisma.orderItem.findMany({
+      prisma.orderItem.groupBy({
+        by: ['menuItemId', 'nameSnapshot', 'priceSnapshot'],
         where: {
           order: {
             status: { in: ['PAID', 'PREPARING', 'READY', 'COMPLETED'] },
             ...dashboardOrderWhere,
           },
         },
-        include: { menuItem: true },
+        _sum: { quantity: true },
       }),
       // 8. AI ETA Records
       prisma.eTAPrediction.findMany({
@@ -215,13 +219,18 @@ const getDashboardStats = async (req, res) => {
       totalAmount: parseFloat(paymentMethodTotalsMap[method].toFixed(2)),
     }));
 
+    const countUsers = (predicate) => userCounts.reduce(
+      (total, group) => total + (predicate(group) ? group._count._all : 0),
+      0
+    );
     const userStats = {
-      customer: users.filter(u => u.role === 'CUSTOMER').length,
-      vendor: users.filter(u => u.role === 'VENDOR').length,
-      kitchen: users.filter(u => u.role === 'KITCHEN').length,
-      admin: users.filter(u => u.role === 'ADMIN').length,
-      activeStaff: users.filter(u => u.role !== 'CUSTOMER' && u.isActive !== false).length,
+      customer: countUsers((group) => group.role === 'CUSTOMER'),
+      vendor: countUsers((group) => group.role === 'VENDOR'),
+      kitchen: countUsers((group) => group.role === 'KITCHEN'),
+      admin: countUsers((group) => group.role === 'ADMIN'),
+      activeStaff: countUsers((group) => group.role !== 'CUSTOMER' && group.isActive !== false),
     };
+    const usersCount = countUsers(() => true);
 
     const lowStockAlerts = [];
     const stockRecommendations = [];
@@ -265,13 +274,16 @@ const getDashboardStats = async (req, res) => {
     }));
 
     const itemAgg = {};
+    const menuItemsById = new Map(menuItems.map((item) => [item.id, item]));
     paidOrderItems.forEach((item) => {
-      const name = item.nameSnapshot || item.menuItem?.name || `Item #${item.menuItemId}`;
+      const menuItem = menuItemsById.get(item.menuItemId);
+      const name = item.nameSnapshot || menuItem?.name || `Item #${item.menuItemId}`;
+      const quantity = item._sum.quantity || 0;
       if (!itemAgg[name]) {
-        itemAgg[name] = { name, quantity: 0, revenue: 0, category: item.menuItem?.category || 'General' };
+        itemAgg[name] = { name, quantity: 0, revenue: 0, category: menuItem?.category || 'General' };
       }
-      itemAgg[name].quantity += item.quantity;
-      itemAgg[name].revenue += (item.priceSnapshot || 0) * item.quantity;
+      itemAgg[name].quantity += quantity;
+      itemAgg[name].revenue += (item.priceSnapshot || 0) * quantity;
     });
 
     const topItems = Object.values(itemAgg)
@@ -452,7 +464,7 @@ const getDashboardStats = async (req, res) => {
         totalOrdersCount: completedOrdersCount,
         averageOrderValue,
         activeOrdersCount,
-        usersCount: users.length,
+      usersCount,
         userStats,
         lowStockCount: lowStockAlerts.length,
         avgPrepTime,
@@ -469,7 +481,7 @@ const getDashboardStats = async (req, res) => {
       paymentBreakdown,
       lowStockAlerts,
       stockRecommendations,
-      recentOrders,
+      recentOrders: recentOrders.map(withTableLabel),
       categoryStats,
       topItems,
     };
@@ -1477,10 +1489,14 @@ const getCustomerList = async (req, res) => {
           select: {
             id: true,
             orderNumber: true,
+            tableId: true,
+            tableNumber: true,
+            tableLabel: true,
             total: true,
             status: true,
             paymentStatus: true,
             createdAt: true,
+            table: { select: { id: true, tableNumber: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -1615,7 +1631,7 @@ const getCustomerList = async (req, res) => {
         disputes: userDisputes,
         openDisputesCount: openDisputes.length,
         hasDisputes: userDisputes.length > 0,
-        recentOrders: c.orders.slice(0, 5),
+        recentOrders: c.orders.slice(0, 5).map(withTableLabel),
         recentSessions: c.sessions,
       };
     });
@@ -1923,7 +1939,17 @@ const getOrderStatusHistoryList = async (req, res) => {
       where,
       include: {
         order: {
-          select: { id: true, orderNumber: true, tableId: true, total: true, status: true, paymentMethod: true },
+          select: {
+            id: true,
+            orderNumber: true,
+            tableId: true,
+            tableNumber: true,
+            tableLabel: true,
+            table: { select: { id: true, tableNumber: true } },
+            total: true,
+            status: true,
+            paymentMethod: true,
+          },
         },
         changedByUser: {
           select: { id: true, name: true, email: true, role: true },
@@ -1933,7 +1959,10 @@ const getOrderStatusHistoryList = async (req, res) => {
       take: parseInt(limit, 10) || 50,
     });
 
-    return res.json({ history });
+    return res.json({ history: history.map((entry) => ({
+      ...entry,
+      order: entry.order ? withTableLabel(entry.order) : entry.order,
+    })) });
   } catch (error) {
     console.error('Get order status history list error:', error);
     return res.status(500).json({ error: 'Failed to retrieve order status history.' });

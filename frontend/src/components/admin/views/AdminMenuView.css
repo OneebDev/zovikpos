@@ -1,0 +1,83 @@
+.admin-menu-category-scroll {
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  cursor: grab;
+  padding: 2px 4px;
+}
+
+.admin-menu-category-scroll::-webkit-scrollbar,
+.admin-menu-filter-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-menu-category-scroll,
+.admin-menu-filter-pills {
+  scrollbar-width: none;
+}
+
+.admin-menu-category-scroll:active {
+  cursor: grabbing;
+}
+
+.admin-menu-category-pill {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  aspect-ratio: auto;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.admin-menu-category-pill:hover {
+  background: var(--surface-2);
+}
+
+.admin-menu-category-pill--active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.admin-menu-category-pill--active:hover {
+  background: var(--accent-soft);
+}
+
+.admin-menu-variant-row,
+.admin-menu-variant-details,
+.admin-menu-variant-actions {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.admin-menu-variant-price {
+  flex: 1 1 auto;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+  .admin-menu-variant-row {
+    flex-wrap: wrap;
+  }
+
+  .admin-menu-variant-details {
+    flex: 1 1 100%;
+  }
+
+  .admin-menu-variant-price {
+    flex: 1 1 auto;
+  }
+
+  .admin-menu-variant-actions {
+    flex: 0 0 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-menu-category-pill {
+    transition-duration: 0.01ms;
+  }
+}

@@ -1,5 +1,5 @@
-import ThemedSelect from '../../common/ThemedSelect';
-import { useState, useEffect, useMemo, useRef } from 'react';
+﻿import ThemedSelect from '../../common/ThemedSelect';
+import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Package,
@@ -32,186 +32,190 @@ import api from '../../../services/api';
 import { inferCategoryFromItemName } from '../../../utils/categoryHelper';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
 import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
-import AdminInventoryReceivingView from './AdminInventoryReceivingView';
-import AdminRecipeBuilderView from './AdminRecipeBuilderView';
-import AdminCostsMarginsView from './AdminCostsMarginsView';
-import AdminExpiryTrackingView from './AdminExpiryTrackingView';
-import AdminSuppliersView from './AdminSuppliersView';
-import AdminActivityLogsView from './AdminActivityLogsView';
+const AdminInventoryReceivingView = lazy(() => import('./AdminInventoryReceivingView'));
+const AdminRecipeBuilderView = lazy(() => import('./AdminRecipeBuilderView'));
+const AdminCostsMarginsView = lazy(() => import('./AdminCostsMarginsView'));
+const AdminExpiryTrackingView = lazy(() => import('./AdminExpiryTrackingView'));
+const AdminSuppliersView = lazy(() => import('./AdminSuppliersView'));
+const AdminActivityLogsView = lazy(() => import('./AdminActivityLogsView'));
+
+const InventorySectionFallback = () => (
+  <div className="min-h-[180px] rounded-2xl bg-[var(--surface-2)] animate-pulse" role="status" aria-label="Loading inventory section" />
+);
 
 // Preset catalog of 200+ standard restaurant/canteen ingredients with Urdu aliases
 const INGREDIENT_PRESETS = [
   // Meat & Protein
-  { label: '🍗 Chicken Breast', name: 'Chicken Breast', unit: 'KG', category: 'Meat & Protein', aliases: ['chicken', 'murghi', 'chiken', 'breast'] },
-  { label: '🍗 Chicken Boneless', name: 'Chicken Boneless', unit: 'KG', category: 'Meat & Protein', aliases: ['chicken', 'boneless', 'murghi'] },
-  { label: '🍗 Chicken Mince (Keema)', name: 'Chicken Mince', unit: 'KG', category: 'Meat & Protein', aliases: ['chicken keema', 'qima', 'qeema'] },
-  { label: '🍗 Whole Chicken', name: 'Whole Chicken', unit: 'KG', category: 'Meat & Protein', aliases: ['chicken', 'poora murgh'] },
-  { label: '🍗 Chicken Wings', name: 'Chicken Wings', unit: 'KG', category: 'Meat & Protein', aliases: ['wings', 'chicken'] },
-  { label: '🍗 Chicken Thighs', name: 'Chicken Thighs', unit: 'KG', category: 'Meat & Protein', aliases: ['thigh', 'chicken'] },
-  { label: '🥩 Beef Mince (Keema)', name: 'Beef Mince', unit: 'KG', category: 'Meat & Protein', aliases: ['beef keema', 'bada keema', 'qima', 'qeema'] },
-  { label: '🥩 Beef Boneless', name: 'Beef Boneless', unit: 'KG', category: 'Meat & Protein', aliases: ['beef', 'bada gosht'] },
-  { label: '🥩 Beef Boti / Stew Meat', name: 'Beef Boti', unit: 'KG', category: 'Meat & Protein', aliases: ['beef boti', 'pasanday'] },
-  { label: '🥩 Mutton / Lamb Meat', name: 'Mutton Meat', unit: 'KG', category: 'Meat & Protein', aliases: ['mutton', 'bakra', 'gosht', 'lamb'] },
-  { label: '🥩 Mutton Mince', name: 'Mutton Mince', unit: 'KG', category: 'Meat & Protein', aliases: ['mutton keema', 'bakra keema'] },
-  { label: '🐟 Fish Fillet', name: 'Fish Fillet', unit: 'KG', category: 'Meat & Protein', aliases: ['machli', 'fish', 'surmai', 'rahu'] },
-  { label: '🦐 Prawns / Shrimp', name: 'Prawns', unit: 'KG', category: 'Meat & Protein', aliases: ['jhinga', 'prawn', 'shrimp'] },
-  { label: '🥚 Fresh Eggs', name: 'Eggs', unit: 'DOZEN', category: 'Meat & Protein', aliases: ['anda', 'anday', 'egg'] },
-  { label: '🥓 Seekh Kebab Mix', name: 'Seekh Kebab Meat', unit: 'KG', category: 'Meat & Protein', aliases: ['kebab', 'kabab'] },
-  { label: '🥩 Beef Burger Patties', name: 'Beef Burger Patties', unit: 'PCS', category: 'Meat & Protein', aliases: ['patty', 'burger patty'] },
-  { label: '🍗 Chicken Burger Patties', name: 'Chicken Patties', unit: 'PCS', category: 'Meat & Protein', aliases: ['chicken patty'] },
+  { label: 'ðŸ— Chicken Breast', name: 'Chicken Breast', unit: 'KG', category: 'Meat & Protein', aliases: ['chicken', 'murghi', 'chiken', 'breast'] },
+  { label: 'ðŸ— Chicken Boneless', name: 'Chicken Boneless', unit: 'KG', category: 'Meat & Protein', aliases: ['chicken', 'boneless', 'murghi'] },
+  { label: 'ðŸ— Chicken Mince (Keema)', name: 'Chicken Mince', unit: 'KG', category: 'Meat & Protein', aliases: ['chicken keema', 'qima', 'qeema'] },
+  { label: 'ðŸ— Whole Chicken', name: 'Whole Chicken', unit: 'KG', category: 'Meat & Protein', aliases: ['chicken', 'poora murgh'] },
+  { label: 'ðŸ— Chicken Wings', name: 'Chicken Wings', unit: 'KG', category: 'Meat & Protein', aliases: ['wings', 'chicken'] },
+  { label: 'ðŸ— Chicken Thighs', name: 'Chicken Thighs', unit: 'KG', category: 'Meat & Protein', aliases: ['thigh', 'chicken'] },
+  { label: 'ðŸ¥© Beef Mince (Keema)', name: 'Beef Mince', unit: 'KG', category: 'Meat & Protein', aliases: ['beef keema', 'bada keema', 'qima', 'qeema'] },
+  { label: 'ðŸ¥© Beef Boneless', name: 'Beef Boneless', unit: 'KG', category: 'Meat & Protein', aliases: ['beef', 'bada gosht'] },
+  { label: 'ðŸ¥© Beef Boti / Stew Meat', name: 'Beef Boti', unit: 'KG', category: 'Meat & Protein', aliases: ['beef boti', 'pasanday'] },
+  { label: 'ðŸ¥© Mutton / Lamb Meat', name: 'Mutton Meat', unit: 'KG', category: 'Meat & Protein', aliases: ['mutton', 'bakra', 'gosht', 'lamb'] },
+  { label: 'ðŸ¥© Mutton Mince', name: 'Mutton Mince', unit: 'KG', category: 'Meat & Protein', aliases: ['mutton keema', 'bakra keema'] },
+  { label: 'ðŸŸ Fish Fillet', name: 'Fish Fillet', unit: 'KG', category: 'Meat & Protein', aliases: ['machli', 'fish', 'surmai', 'rahu'] },
+  { label: 'ðŸ¦ Prawns / Shrimp', name: 'Prawns', unit: 'KG', category: 'Meat & Protein', aliases: ['jhinga', 'prawn', 'shrimp'] },
+  { label: 'ðŸ¥š Fresh Eggs', name: 'Eggs', unit: 'DOZEN', category: 'Meat & Protein', aliases: ['anda', 'anday', 'egg'] },
+  { label: 'ðŸ¥“ Seekh Kebab Mix', name: 'Seekh Kebab Meat', unit: 'KG', category: 'Meat & Protein', aliases: ['kebab', 'kabab'] },
+  { label: 'ðŸ¥© Beef Burger Patties', name: 'Beef Burger Patties', unit: 'PCS', category: 'Meat & Protein', aliases: ['patty', 'burger patty'] },
+  { label: 'ðŸ— Chicken Burger Patties', name: 'Chicken Patties', unit: 'PCS', category: 'Meat & Protein', aliases: ['chicken patty'] },
 
   // Vegetables
-  { label: '🥔 Aloo (Potatoes)', name: 'Potatoes', unit: 'KG', category: 'Vegetables', aliases: ['aloo', 'patato', 'potatos'] },
-  { label: '🧅 Pyaz (Onions)', name: 'Onions', unit: 'KG', category: 'Vegetables', aliases: ['pyaz', 'pyaaz', 'onion'] },
-  { label: '🍅 Tamatar (Tomatoes)', name: 'Tomatoes', unit: 'KG', category: 'Vegetables', aliases: ['tamatar', 'tomato', 'tamatar'] },
-  { label: '🧄 Lehsan (Garlic)', name: 'Garlic', unit: 'KG', category: 'Vegetables', aliases: ['lehsan', 'lahsan', 'garlic'] },
-  { label: '🫚 Adrak (Ginger)', name: 'Ginger', unit: 'KG', category: 'Vegetables', aliases: ['adrak', 'ginger'] },
-  { label: '🌶 Hari Mirch (Green Chillies)', name: 'Green Chillies', unit: 'KG', category: 'Vegetables', aliases: ['hari mirch', 'green chilli', 'mirch'] },
-  { label: '🍋 Leemon (Lemons)', name: 'Lemons', unit: 'KG', category: 'Vegetables', aliases: ['lemon', 'limbu', 'leemun'] },
-  { label: '🌿 Hara Dhania (Coriander Leaves)', name: 'Coriander Leaves', unit: 'KG', category: 'Vegetables', aliases: ['dhania', 'coriander', 'hara dhaniya'] },
-  { label: '🌿 Podina (Mint Leaves)', name: 'Mint Leaves', unit: 'KG', category: 'Vegetables', aliases: ['pudina', 'podina', 'mint'] },
-  { label: '🫑 Shimla Mirch (Capsicum)', name: 'Capsicum', unit: 'KG', category: 'Vegetables', aliases: ['shimla mirch', 'bell pepper', 'capsicum'] },
-  { label: '🥕 Gajar (Carrots)', name: 'Carrots', unit: 'KG', category: 'Vegetables', aliases: ['gajar', 'carrot'] },
-  { label: '🥒 Kheera (Cucumber)', name: 'Cucumber', unit: 'KG', category: 'Vegetables', aliases: ['kheera', 'cucumber'] },
-  { label: '🥬 Band Gobhi (Cabbage)', name: 'Cabbage', unit: 'KG', category: 'Vegetables', aliases: ['cabbage', 'gobhi', 'patta gobhi'] },
-  { label: '🥦 Phool Gobhi (Cauliflower)', name: 'Cauliflower', unit: 'KG', category: 'Vegetables', aliases: ['cauliflower', 'cauli'] },
-  { label: '🍆 Baingan (Eggplant / Brinjal)', name: 'Eggplant', unit: 'KG', category: 'Vegetables', aliases: ['baingan', 'brinjal'] },
-  { label: '🫛 Matar (Green Peas)', name: 'Green Peas', unit: 'KG', category: 'Vegetables', aliases: ['matar', 'peas'] },
-  { label: '🫛 Bhindi (Ladyfinger / Okra)', name: 'Lady Finger', unit: 'KG', category: 'Vegetables', aliases: ['bhindi', 'okra'] },
-  { label: '🍄 Mushrooms', name: 'Mushrooms', unit: 'KG', category: 'Vegetables', aliases: ['khumbi', 'mushroom'] },
-  { label: '🌱 Palak (Spinach)', name: 'Spinach', unit: 'KG', category: 'Vegetables', aliases: ['palak', 'spinach'] },
-  { label: '🫛 Lobia / Beans', name: 'Green Beans', unit: 'KG', category: 'Vegetables', aliases: ['phalia', 'lobia'] },
+  { label: 'ðŸ¥” Aloo (Potatoes)', name: 'Potatoes', unit: 'KG', category: 'Vegetables', aliases: ['aloo', 'patato', 'potatos'] },
+  { label: 'ðŸ§… Pyaz (Onions)', name: 'Onions', unit: 'KG', category: 'Vegetables', aliases: ['pyaz', 'pyaaz', 'onion'] },
+  { label: 'ðŸ… Tamatar (Tomatoes)', name: 'Tomatoes', unit: 'KG', category: 'Vegetables', aliases: ['tamatar', 'tomato', 'tamatar'] },
+  { label: 'ðŸ§„ Lehsan (Garlic)', name: 'Garlic', unit: 'KG', category: 'Vegetables', aliases: ['lehsan', 'lahsan', 'garlic'] },
+  { label: 'ðŸ«š Adrak (Ginger)', name: 'Ginger', unit: 'KG', category: 'Vegetables', aliases: ['adrak', 'ginger'] },
+  { label: 'ðŸŒ¶ Hari Mirch (Green Chillies)', name: 'Green Chillies', unit: 'KG', category: 'Vegetables', aliases: ['hari mirch', 'green chilli', 'mirch'] },
+  { label: 'ðŸ‹ Leemon (Lemons)', name: 'Lemons', unit: 'KG', category: 'Vegetables', aliases: ['lemon', 'limbu', 'leemun'] },
+  { label: 'ðŸŒ¿ Hara Dhania (Coriander Leaves)', name: 'Coriander Leaves', unit: 'KG', category: 'Vegetables', aliases: ['dhania', 'coriander', 'hara dhaniya'] },
+  { label: 'ðŸŒ¿ Podina (Mint Leaves)', name: 'Mint Leaves', unit: 'KG', category: 'Vegetables', aliases: ['pudina', 'podina', 'mint'] },
+  { label: 'ðŸ«‘ Shimla Mirch (Capsicum)', name: 'Capsicum', unit: 'KG', category: 'Vegetables', aliases: ['shimla mirch', 'bell pepper', 'capsicum'] },
+  { label: 'ðŸ¥• Gajar (Carrots)', name: 'Carrots', unit: 'KG', category: 'Vegetables', aliases: ['gajar', 'carrot'] },
+  { label: 'ðŸ¥’ Kheera (Cucumber)', name: 'Cucumber', unit: 'KG', category: 'Vegetables', aliases: ['kheera', 'cucumber'] },
+  { label: 'ðŸ¥¬ Band Gobhi (Cabbage)', name: 'Cabbage', unit: 'KG', category: 'Vegetables', aliases: ['cabbage', 'gobhi', 'patta gobhi'] },
+  { label: 'ðŸ¥¦ Phool Gobhi (Cauliflower)', name: 'Cauliflower', unit: 'KG', category: 'Vegetables', aliases: ['cauliflower', 'cauli'] },
+  { label: 'ðŸ† Baingan (Eggplant / Brinjal)', name: 'Eggplant', unit: 'KG', category: 'Vegetables', aliases: ['baingan', 'brinjal'] },
+  { label: 'ðŸ«› Matar (Green Peas)', name: 'Green Peas', unit: 'KG', category: 'Vegetables', aliases: ['matar', 'peas'] },
+  { label: 'ðŸ«› Bhindi (Ladyfinger / Okra)', name: 'Lady Finger', unit: 'KG', category: 'Vegetables', aliases: ['bhindi', 'okra'] },
+  { label: 'ðŸ„ Mushrooms', name: 'Mushrooms', unit: 'KG', category: 'Vegetables', aliases: ['khumbi', 'mushroom'] },
+  { label: 'ðŸŒ± Palak (Spinach)', name: 'Spinach', unit: 'KG', category: 'Vegetables', aliases: ['palak', 'spinach'] },
+  { label: 'ðŸ«› Lobia / Beans', name: 'Green Beans', unit: 'KG', category: 'Vegetables', aliases: ['phalia', 'lobia'] },
 
   // Dry Goods & Grains
-  { label: '🍚 Basmati Rice', name: 'Basmati Rice', unit: 'KG', category: 'Dry Goods', aliases: ['rice', 'chawal', 'basmati'] },
-  { label: '🍚 Sella Rice (Biryani)', name: 'Sella Rice', unit: 'KG', category: 'Dry Goods', aliases: ['sella', 'chawal', 'biryani rice'] },
-  { label: '🌾 Aata (Wheat Flour)', name: 'Wheat Flour', unit: 'KG', category: 'Dry Goods', aliases: ['aata', 'flour', 'gundum'] },
-  { label: '🫙 Maida (Refined Flour)', name: 'Maida', unit: 'KG', category: 'Dry Goods', aliases: ['maida', 'refined flour'] },
-  { label: '🫙 Suji (Semolina)', name: 'Suji', unit: 'KG', category: 'Dry Goods', aliases: ['suji', 'semolina'] },
-  { label: '🫓 Besan (Gram Flour)', name: 'Besan', unit: 'KG', category: 'Dry Goods', aliases: ['besan', 'chana flour'] },
-  { label: '🫘 Chana Dal', name: 'Chana Dal', unit: 'KG', category: 'Dry Goods', aliases: ['dal chana', 'chana dal'] },
-  { label: '🫘 Moong Dal', name: 'Moong Dal', unit: 'KG', category: 'Dry Goods', aliases: ['dal moong'] },
-  { label: '🫘 Masoor Dal', name: 'Masoor Dal', unit: 'KG', category: 'Dry Goods', aliases: ['dal masoor', 'kaali dal'] },
-  { label: '🫘 Mash Dal', name: 'Mash Dal', unit: 'KG', category: 'Dry Goods', aliases: ['dal mash', 'white dal'] },
-  { label: '🫘 Safaid Chana (Chickpeas)', name: 'White Chickpeas', unit: 'KG', category: 'Dry Goods', aliases: ['chana', 'chhole', 'kabuli chana'] },
-  { label: '🫘 Kaala Chana', name: 'Black Chickpeas', unit: 'KG', category: 'Dry Goods', aliases: ['kaala chana'] },
-  { label: '🫙 Cheeni (Sugar)', name: 'Sugar', unit: 'KG', category: 'Dry Goods', aliases: ['sugar', 'cheeni', 'shakar'] },
-  { label: '🫙 Gur (Jaggery)', name: 'Jaggery', unit: 'KG', category: 'Dry Goods', aliases: ['gur', 'gud'] },
-  { label: '🍜 Noodles / Pasta', name: 'Pasta Noodles', unit: 'KG', category: 'Dry Goods', aliases: ['noodles', 'pasta', 'macaroni', 'spaghetti'] },
-  { label: '🍞 Bread Crumbs', name: 'Bread Crumbs', unit: 'KG', category: 'Dry Goods', aliases: ['breadcrumbs', 'crum'] },
-  { label: '🌾 Cornflour', name: 'Cornflour', unit: 'KG', category: 'Dry Goods', aliases: ['corn starch', 'cornflour'] },
+  { label: 'ðŸš Basmati Rice', name: 'Basmati Rice', unit: 'KG', category: 'Dry Goods', aliases: ['rice', 'chawal', 'basmati'] },
+  { label: 'ðŸš Sella Rice (Biryani)', name: 'Sella Rice', unit: 'KG', category: 'Dry Goods', aliases: ['sella', 'chawal', 'biryani rice'] },
+  { label: 'ðŸŒ¾ Aata (Wheat Flour)', name: 'Wheat Flour', unit: 'KG', category: 'Dry Goods', aliases: ['aata', 'flour', 'gundum'] },
+  { label: 'ðŸ«™ Maida (Refined Flour)', name: 'Maida', unit: 'KG', category: 'Dry Goods', aliases: ['maida', 'refined flour'] },
+  { label: 'ðŸ«™ Suji (Semolina)', name: 'Suji', unit: 'KG', category: 'Dry Goods', aliases: ['suji', 'semolina'] },
+  { label: 'ðŸ«“ Besan (Gram Flour)', name: 'Besan', unit: 'KG', category: 'Dry Goods', aliases: ['besan', 'chana flour'] },
+  { label: 'ðŸ«˜ Chana Dal', name: 'Chana Dal', unit: 'KG', category: 'Dry Goods', aliases: ['dal chana', 'chana dal'] },
+  { label: 'ðŸ«˜ Moong Dal', name: 'Moong Dal', unit: 'KG', category: 'Dry Goods', aliases: ['dal moong'] },
+  { label: 'ðŸ«˜ Masoor Dal', name: 'Masoor Dal', unit: 'KG', category: 'Dry Goods', aliases: ['dal masoor', 'kaali dal'] },
+  { label: 'ðŸ«˜ Mash Dal', name: 'Mash Dal', unit: 'KG', category: 'Dry Goods', aliases: ['dal mash', 'white dal'] },
+  { label: 'ðŸ«˜ Safaid Chana (Chickpeas)', name: 'White Chickpeas', unit: 'KG', category: 'Dry Goods', aliases: ['chana', 'chhole', 'kabuli chana'] },
+  { label: 'ðŸ«˜ Kaala Chana', name: 'Black Chickpeas', unit: 'KG', category: 'Dry Goods', aliases: ['kaala chana'] },
+  { label: 'ðŸ«™ Cheeni (Sugar)', name: 'Sugar', unit: 'KG', category: 'Dry Goods', aliases: ['sugar', 'cheeni', 'shakar'] },
+  { label: 'ðŸ«™ Gur (Jaggery)', name: 'Jaggery', unit: 'KG', category: 'Dry Goods', aliases: ['gur', 'gud'] },
+  { label: 'ðŸœ Noodles / Pasta', name: 'Pasta Noodles', unit: 'KG', category: 'Dry Goods', aliases: ['noodles', 'pasta', 'macaroni', 'spaghetti'] },
+  { label: 'ðŸž Bread Crumbs', name: 'Bread Crumbs', unit: 'KG', category: 'Dry Goods', aliases: ['breadcrumbs', 'crum'] },
+  { label: 'ðŸŒ¾ Cornflour', name: 'Cornflour', unit: 'KG', category: 'Dry Goods', aliases: ['corn starch', 'cornflour'] },
 
   // Dairy & Refrigerated
-  { label: '🥛 Doodh (Fresh Milk)', name: 'Milk', unit: 'L', category: 'Dairy', aliases: ['doodh', 'milk', 'tetra pak'] },
-  { label: '🥛 TetraPak Milk (Full Cream)', name: 'TetraPak Milk', unit: 'PACK', category: 'Dairy', aliases: ['olpers', 'nestle', 'milk pack'] },
-  { label: '🧀 Mozzarella Cheese', name: 'Mozzarella Cheese', unit: 'KG', category: 'Dairy', aliases: ['cheese', 'pizza cheese'] },
-  { label: '🧀 Cheddar Cheese Block', name: 'Cheddar Cheese', unit: 'KG', category: 'Dairy', aliases: ['cheddar', 'cheese'] },
-  { label: '🧀 Cheese Slices', name: 'Cheese Slices', unit: 'PACK', category: 'Dairy', aliases: ['slice cheese', 'burger cheese'] },
-  { label: '🧈 Makhan (Butter)', name: 'Butter', unit: 'KG', category: 'Dairy', aliases: ['makhan', 'butter', 'blue band'] },
-  { label: '🍦 Fresh Cream (Malai)', name: 'Fresh Cream', unit: 'L', category: 'Dairy', aliases: ['cream', 'malai', 'milkpak cream'] },
-  { label: '🥛 Dahi (Yogurt)', name: 'Yogurt', unit: 'KG', category: 'Dairy', aliases: ['dahi', 'yogurt', 'curd'] },
-  { label: '🧈 Desi Ghee', name: 'Desi Ghee', unit: 'KG', category: 'Dairy', aliases: ['ghee', 'asli ghee', 'desi ghee'] },
-  { label: '🧀 Paneer (Cottage Cheese)', name: 'Paneer', unit: 'KG', category: 'Dairy', aliases: ['paneer', 'cottage cheese'] },
-  { label: '🥛 Condensed Milk', name: 'Condensed Milk', unit: 'PACK', category: 'Dairy', aliases: ['condensed milk', 'can milk'] },
+  { label: 'ðŸ¥› Doodh (Fresh Milk)', name: 'Milk', unit: 'L', category: 'Dairy', aliases: ['doodh', 'milk', 'tetra pak'] },
+  { label: 'ðŸ¥› TetraPak Milk (Full Cream)', name: 'TetraPak Milk', unit: 'PACK', category: 'Dairy', aliases: ['olpers', 'nestle', 'milk pack'] },
+  { label: 'ðŸ§€ Mozzarella Cheese', name: 'Mozzarella Cheese', unit: 'KG', category: 'Dairy', aliases: ['cheese', 'pizza cheese'] },
+  { label: 'ðŸ§€ Cheddar Cheese Block', name: 'Cheddar Cheese', unit: 'KG', category: 'Dairy', aliases: ['cheddar', 'cheese'] },
+  { label: 'ðŸ§€ Cheese Slices', name: 'Cheese Slices', unit: 'PACK', category: 'Dairy', aliases: ['slice cheese', 'burger cheese'] },
+  { label: 'ðŸ§ˆ Makhan (Butter)', name: 'Butter', unit: 'KG', category: 'Dairy', aliases: ['makhan', 'butter', 'blue band'] },
+  { label: 'ðŸ¦ Fresh Cream (Malai)', name: 'Fresh Cream', unit: 'L', category: 'Dairy', aliases: ['cream', 'malai', 'milkpak cream'] },
+  { label: 'ðŸ¥› Dahi (Yogurt)', name: 'Yogurt', unit: 'KG', category: 'Dairy', aliases: ['dahi', 'yogurt', 'curd'] },
+  { label: 'ðŸ§ˆ Desi Ghee', name: 'Desi Ghee', unit: 'KG', category: 'Dairy', aliases: ['ghee', 'asli ghee', 'desi ghee'] },
+  { label: 'ðŸ§€ Paneer (Cottage Cheese)', name: 'Paneer', unit: 'KG', category: 'Dairy', aliases: ['paneer', 'cottage cheese'] },
+  { label: 'ðŸ¥› Condensed Milk', name: 'Condensed Milk', unit: 'PACK', category: 'Dairy', aliases: ['condensed milk', 'can milk'] },
 
   // Cooking Oil & Fats
-  { label: '🛢️ Cooking Oil (Ghee/Oil)', name: 'Cooking Oil', unit: 'L', category: 'Sauces & Condiments', aliases: ['oil', 'tel', 'pakwan oil', 'dalda'] },
-  { label: '🛢️ Banaspati Ghee', name: 'Banaspati Ghee', unit: 'KG', category: 'Sauces & Condiments', aliases: ['ghee', 'dalda ghee'] },
-  { label: '🛢️ Mustard Oil (Sarson)', name: 'Mustard Oil', unit: 'L', category: 'Sauces & Condiments', aliases: ['sarson ka tel', 'mustard oil'] },
-  { label: '🫒 Olive Oil', name: 'Olive Oil', unit: 'L', category: 'Sauces & Condiments', aliases: ['zaitoon', 'olive oil'] },
+  { label: 'ðŸ›¢ï¸ Cooking Oil (Ghee/Oil)', name: 'Cooking Oil', unit: 'L', category: 'Sauces & Condiments', aliases: ['oil', 'tel', 'pakwan oil', 'dalda'] },
+  { label: 'ðŸ›¢ï¸ Banaspati Ghee', name: 'Banaspati Ghee', unit: 'KG', category: 'Sauces & Condiments', aliases: ['ghee', 'dalda ghee'] },
+  { label: 'ðŸ›¢ï¸ Mustard Oil (Sarson)', name: 'Mustard Oil', unit: 'L', category: 'Sauces & Condiments', aliases: ['sarson ka tel', 'mustard oil'] },
+  { label: 'ðŸ«’ Olive Oil', name: 'Olive Oil', unit: 'L', category: 'Sauces & Condiments', aliases: ['zaitoon', 'olive oil'] },
 
   // Sauces & Condiments
-  { label: '🧃 Tomato Ketchup', name: 'Tomato Ketchup', unit: 'KG', category: 'Sauces & Condiments', aliases: ['ketchup', 'tomato sauce', 'sauce'] },
-  { label: '🧴 Mayonnaise', name: 'Mayonnaise', unit: 'KG', category: 'Sauces & Condiments', aliases: ['mayo', 'mayonnaise', 'garlic mayo'] },
-  { label: '🌶 Chilli Garlic Sauce', name: 'Chilli Garlic Sauce', unit: 'KG', category: 'Sauces & Condiments', aliases: ['chilli sauce', 'sauce'] },
-  { label: '🧴 Soy Sauce', name: 'Soy Sauce', unit: 'L', category: 'Sauces & Condiments', aliases: ['soya sauce', 'soy'] },
-  { label: '🧴 Vinegar (Sirka)', name: 'Vinegar', unit: 'L', category: 'Sauces & Condiments', aliases: ['sirka', 'vinegar'] },
-  { label: '🌶 Hot Sauce / Sriracha', name: 'Hot Sauce', unit: 'L', category: 'Sauces & Condiments', aliases: ['hot sauce', 'sriracha'] },
-  { label: '🍯 Mustard Sauce / Paste', name: 'Mustard Paste', unit: 'KG', category: 'Sauces & Condiments', aliases: ['mustard', 'rai'] },
-  { label: '🧴 BBQ Sauce', name: 'BBQ Sauce', unit: 'KG', category: 'Sauces & Condiments', aliases: ['barbecue sauce', 'bbq'] },
-  { label: '🍕 Pizza Sauce', name: 'Pizza Sauce', unit: 'KG', category: 'Sauces & Condiments', aliases: ['pizza sauce', 'marinara'] },
-  { label: '🫙 Imli Chutney (Tamarind)', name: 'Imli Chutney', unit: 'KG', category: 'Sauces & Condiments', aliases: ['imli', 'tamarind chutney'] },
+  { label: 'ðŸ§ƒ Tomato Ketchup', name: 'Tomato Ketchup', unit: 'KG', category: 'Sauces & Condiments', aliases: ['ketchup', 'tomato sauce', 'sauce'] },
+  { label: 'ðŸ§´ Mayonnaise', name: 'Mayonnaise', unit: 'KG', category: 'Sauces & Condiments', aliases: ['mayo', 'mayonnaise', 'garlic mayo'] },
+  { label: 'ðŸŒ¶ Chilli Garlic Sauce', name: 'Chilli Garlic Sauce', unit: 'KG', category: 'Sauces & Condiments', aliases: ['chilli sauce', 'sauce'] },
+  { label: 'ðŸ§´ Soy Sauce', name: 'Soy Sauce', unit: 'L', category: 'Sauces & Condiments', aliases: ['soya sauce', 'soy'] },
+  { label: 'ðŸ§´ Vinegar (Sirka)', name: 'Vinegar', unit: 'L', category: 'Sauces & Condiments', aliases: ['sirka', 'vinegar'] },
+  { label: 'ðŸŒ¶ Hot Sauce / Sriracha', name: 'Hot Sauce', unit: 'L', category: 'Sauces & Condiments', aliases: ['hot sauce', 'sriracha'] },
+  { label: 'ðŸ¯ Mustard Sauce / Paste', name: 'Mustard Paste', unit: 'KG', category: 'Sauces & Condiments', aliases: ['mustard', 'rai'] },
+  { label: 'ðŸ§´ BBQ Sauce', name: 'BBQ Sauce', unit: 'KG', category: 'Sauces & Condiments', aliases: ['barbecue sauce', 'bbq'] },
+  { label: 'ðŸ• Pizza Sauce', name: 'Pizza Sauce', unit: 'KG', category: 'Sauces & Condiments', aliases: ['pizza sauce', 'marinara'] },
+  { label: 'ðŸ«™ Imli Chutney (Tamarind)', name: 'Imli Chutney', unit: 'KG', category: 'Sauces & Condiments', aliases: ['imli', 'tamarind chutney'] },
 
   // Spices & Masalas
-  { label: '🧂 Namak (Salt)', name: 'Salt', unit: 'KG', category: 'Spices', aliases: ['namak', 'salt'] },
-  { label: '🌶 Lal Mirch Powder', name: 'Red Chilli Powder', unit: 'KG', category: 'Spices', aliases: ['lal mirch', 'red chilli'] },
-  { label: '🌶 Lal Mirch Flakes (Kuti)', name: 'Red Chilli Flakes', unit: 'KG', category: 'Spices', aliases: ['kuti mirch', 'chilli flakes'] },
-  { label: '🟡 Haldi Powder (Turmeric)', name: 'Turmeric Powder', unit: 'KG', category: 'Spices', aliases: ['haldi', 'turmeric'] },
-  { label: '🫙 Garam Masala Powder', name: 'Garam Masala', unit: 'KG', category: 'Spices', aliases: ['garam masala', 'pisa masala'] },
-  { label: '🫘 Zeera (Cumin Seeds)', name: 'Cumin Seeds', unit: 'KG', category: 'Spices', aliases: ['zeera', 'zira', 'cumin'] },
-  { label: '🫘 Sabut Dhania (Coriander)', name: 'Coriander Seeds', unit: 'KG', category: 'Spices', aliases: ['sabut dhania', 'coriander seeds'] },
-  { label: '⚫ Kaali Mirch (Black Pepper)', name: 'Black Pepper Powder', unit: 'KG', category: 'Spices', aliases: ['kaali mirch', 'black pepper'] },
-  { label: '🫙 Biryani Masala Box', name: 'Biryani Masala', unit: 'PACK', category: 'Spices', aliases: ['biryani masala', 'shan biryani'] },
-  { label: '🫙 Karahi Masala Box', name: 'Karahi Masala', unit: 'PACK', category: 'Spices', aliases: ['karahi masala', 'shan karahi'] },
-  { label: '🫙 Tikka Masala Box', name: 'Tikka Masala', unit: 'PACK', category: 'Spices', aliases: ['tikka masala'] },
-  { label: '🫙 Chaat Masala', name: 'Chaat Masala', unit: 'KG', category: 'Spices', aliases: ['chaat masala'] },
-  { label: '🫙 Kasuri Methi', name: 'Kasuri Methi', unit: 'KG', category: 'Spices', aliases: ['methi', 'kasuri methi'] },
-  { label: '🫙 Cinnamon Stick (Darchini)', name: 'Cinnamon Sticks', unit: 'KG', category: 'Spices', aliases: ['darchini', 'cinnamon'] },
-  { label: '🫙 Elaichi (Green Cardamom)', name: 'Green Cardamom', unit: 'KG', category: 'Spices', aliases: ['elaichi', 'chhoti elaichi', 'cardamom'] },
-  { label: '🫙 Badi Elaichi (Black Cardamom)', name: 'Black Cardamom', unit: 'KG', category: 'Spices', aliases: ['badi elaichi'] },
-  { label: '🫙 Laung (Cloves)', name: 'Cloves', unit: 'KG', category: 'Spices', aliases: ['laung', 'cloves'] },
-  { label: '🫙 Tez Patta (Bay Leaves)', name: 'Bay Leaves', unit: 'KG', category: 'Spices', aliases: ['tez patta', 'bay leaf'] },
+  { label: 'ðŸ§‚ Namak (Salt)', name: 'Salt', unit: 'KG', category: 'Spices', aliases: ['namak', 'salt'] },
+  { label: 'ðŸŒ¶ Lal Mirch Powder', name: 'Red Chilli Powder', unit: 'KG', category: 'Spices', aliases: ['lal mirch', 'red chilli'] },
+  { label: 'ðŸŒ¶ Lal Mirch Flakes (Kuti)', name: 'Red Chilli Flakes', unit: 'KG', category: 'Spices', aliases: ['kuti mirch', 'chilli flakes'] },
+  { label: 'ðŸŸ¡ Haldi Powder (Turmeric)', name: 'Turmeric Powder', unit: 'KG', category: 'Spices', aliases: ['haldi', 'turmeric'] },
+  { label: 'ðŸ«™ Garam Masala Powder', name: 'Garam Masala', unit: 'KG', category: 'Spices', aliases: ['garam masala', 'pisa masala'] },
+  { label: 'ðŸ«˜ Zeera (Cumin Seeds)', name: 'Cumin Seeds', unit: 'KG', category: 'Spices', aliases: ['zeera', 'zira', 'cumin'] },
+  { label: 'ðŸ«˜ Sabut Dhania (Coriander)', name: 'Coriander Seeds', unit: 'KG', category: 'Spices', aliases: ['sabut dhania', 'coriander seeds'] },
+  { label: 'âš« Kaali Mirch (Black Pepper)', name: 'Black Pepper Powder', unit: 'KG', category: 'Spices', aliases: ['kaali mirch', 'black pepper'] },
+  { label: 'ðŸ«™ Biryani Masala Box', name: 'Biryani Masala', unit: 'PACK', category: 'Spices', aliases: ['biryani masala', 'shan biryani'] },
+  { label: 'ðŸ«™ Karahi Masala Box', name: 'Karahi Masala', unit: 'PACK', category: 'Spices', aliases: ['karahi masala', 'shan karahi'] },
+  { label: 'ðŸ«™ Tikka Masala Box', name: 'Tikka Masala', unit: 'PACK', category: 'Spices', aliases: ['tikka masala'] },
+  { label: 'ðŸ«™ Chaat Masala', name: 'Chaat Masala', unit: 'KG', category: 'Spices', aliases: ['chaat masala'] },
+  { label: 'ðŸ«™ Kasuri Methi', name: 'Kasuri Methi', unit: 'KG', category: 'Spices', aliases: ['methi', 'kasuri methi'] },
+  { label: 'ðŸ«™ Cinnamon Stick (Darchini)', name: 'Cinnamon Sticks', unit: 'KG', category: 'Spices', aliases: ['darchini', 'cinnamon'] },
+  { label: 'ðŸ«™ Elaichi (Green Cardamom)', name: 'Green Cardamom', unit: 'KG', category: 'Spices', aliases: ['elaichi', 'chhoti elaichi', 'cardamom'] },
+  { label: 'ðŸ«™ Badi Elaichi (Black Cardamom)', name: 'Black Cardamom', unit: 'KG', category: 'Spices', aliases: ['badi elaichi'] },
+  { label: 'ðŸ«™ Laung (Cloves)', name: 'Cloves', unit: 'KG', category: 'Spices', aliases: ['laung', 'cloves'] },
+  { label: 'ðŸ«™ Tez Patta (Bay Leaves)', name: 'Bay Leaves', unit: 'KG', category: 'Spices', aliases: ['tez patta', 'bay leaf'] },
 
   // Bakery & Bread
-  { label: '🍞 Burger Buns (Regular)', name: 'Burger Buns', unit: 'PCS', category: 'Bakery', aliases: ['bun', 'burger bun'] },
-  { label: '🍞 Burger Buns (Sesame)', name: 'Sesame Burger Buns', unit: 'PCS', category: 'Bakery', aliases: ['sesame bun', 'bun'] },
-  { label: '🍞 Sandwich Bread (Large)', name: 'Sandwich Bread', unit: 'PACK', category: 'Bakery', aliases: ['bread', 'double roti'] },
-  { label: '🫓 Shawarma Pita Bread', name: 'Pita Bread', unit: 'PCS', category: 'Bakery', aliases: ['shawarma bread', 'pita'] },
-  { label: '🫓 Naan Bread (Plain)', name: 'Naan', unit: 'PCS', category: 'Bakery', aliases: ['naan', 'roti'] },
-  { label: '🫓 Paratha (Frozen/Fresh)', name: 'Paratha', unit: 'PCS', category: 'Bakery', aliases: ['paratha', 'roll paratha'] },
-  { label: '🍕 Pizza Crust / Base (Medium)', name: 'Pizza Dough Base', unit: 'PCS', category: 'Bakery', aliases: ['pizza base', 'dough'] },
-  { label: '🥐 Croissants', name: 'Croissants', unit: 'PCS', category: 'Bakery', aliases: ['croissant'] },
+  { label: 'ðŸž Burger Buns (Regular)', name: 'Burger Buns', unit: 'PCS', category: 'Bakery', aliases: ['bun', 'burger bun'] },
+  { label: 'ðŸž Burger Buns (Sesame)', name: 'Sesame Burger Buns', unit: 'PCS', category: 'Bakery', aliases: ['sesame bun', 'bun'] },
+  { label: 'ðŸž Sandwich Bread (Large)', name: 'Sandwich Bread', unit: 'PACK', category: 'Bakery', aliases: ['bread', 'double roti'] },
+  { label: 'ðŸ«“ Shawarma Pita Bread', name: 'Pita Bread', unit: 'PCS', category: 'Bakery', aliases: ['shawarma bread', 'pita'] },
+  { label: 'ðŸ«“ Naan Bread (Plain)', name: 'Naan', unit: 'PCS', category: 'Bakery', aliases: ['naan', 'roti'] },
+  { label: 'ðŸ«“ Paratha (Frozen/Fresh)', name: 'Paratha', unit: 'PCS', category: 'Bakery', aliases: ['paratha', 'roll paratha'] },
+  { label: 'ðŸ• Pizza Crust / Base (Medium)', name: 'Pizza Dough Base', unit: 'PCS', category: 'Bakery', aliases: ['pizza base', 'dough'] },
+  { label: 'ðŸ¥ Croissants', name: 'Croissants', unit: 'PCS', category: 'Bakery', aliases: ['croissant'] },
 
   // Beverages & Chai
-  { label: '☕ Chai Patti (Everyday/Supreme)', name: 'Tea Leaves', unit: 'KG', category: 'Beverages', aliases: ['chai patti', 'tea', 'tapal', 'lipton'] },
-  { label: '☕ Coffee Powder (Instant)', name: 'Coffee Powder', unit: 'KG', category: 'Beverages', aliases: ['coffee', 'nescafe'] },
-  { label: '☕ Coffee Beans (Espresso)', name: 'Coffee Beans', unit: 'KG', category: 'Beverages', aliases: ['coffee beans', 'espresso'] },
-  { label: '🥤 Cold Drink Cans (Assorted)', name: 'Cold Drinks 250ml', unit: 'PCS', category: 'Beverages', aliases: ['pepsi', 'coke', '7up', 'sprite', 'cold drink'] },
-  { label: '🥤 Cold Drink 1.5L Bottles', name: 'Cold Drinks 1.5L', unit: 'BOTTLE', category: 'Beverages', aliases: ['bottle', 'cold drink bottle'] },
-  { label: '💧 Mineral Water Bottles (500ml)', name: 'Water Bottles 500ml', unit: 'PCS', category: 'Beverages', aliases: ['water', 'paani', 'nestle pure life'] },
-  { label: '💧 Mineral Water Can (19L)', name: 'Water Can 19L', unit: 'BOTTLE', category: 'Beverages', aliases: ['water 19l', 'chiller water'] },
-  { label: '🧃 Fruit Juices (Pack)', name: 'Fruit Juices', unit: 'PACK', category: 'Beverages', aliases: ['juice', 'nestle juice', 'shezan'] },
-  { label: '🍧 Rooh Afza / Jam-e-Shirin', name: 'Rooh Afza Syrup', unit: 'BOTTLE', category: 'Beverages', aliases: ['rooh afza', 'jam e shirin', 'red syrup'] },
-  { label: '🍋 Lemonade Concentrate', name: 'Lemon Syrup', unit: 'BOTTLE', category: 'Beverages', aliases: ['lemonade', 'limca'] },
+  { label: 'â˜• Chai Patti (Everyday/Supreme)', name: 'Tea Leaves', unit: 'KG', category: 'Beverages', aliases: ['chai patti', 'tea', 'tapal', 'lipton'] },
+  { label: 'â˜• Coffee Powder (Instant)', name: 'Coffee Powder', unit: 'KG', category: 'Beverages', aliases: ['coffee', 'nescafe'] },
+  { label: 'â˜• Coffee Beans (Espresso)', name: 'Coffee Beans', unit: 'KG', category: 'Beverages', aliases: ['coffee beans', 'espresso'] },
+  { label: 'ðŸ¥¤ Cold Drink Cans (Assorted)', name: 'Cold Drinks 250ml', unit: 'PCS', category: 'Beverages', aliases: ['pepsi', 'coke', '7up', 'sprite', 'cold drink'] },
+  { label: 'ðŸ¥¤ Cold Drink 1.5L Bottles', name: 'Cold Drinks 1.5L', unit: 'BOTTLE', category: 'Beverages', aliases: ['bottle', 'cold drink bottle'] },
+  { label: 'ðŸ’§ Mineral Water Bottles (500ml)', name: 'Water Bottles 500ml', unit: 'PCS', category: 'Beverages', aliases: ['water', 'paani', 'nestle pure life'] },
+  { label: 'ðŸ’§ Mineral Water Can (19L)', name: 'Water Can 19L', unit: 'BOTTLE', category: 'Beverages', aliases: ['water 19l', 'chiller water'] },
+  { label: 'ðŸ§ƒ Fruit Juices (Pack)', name: 'Fruit Juices', unit: 'PACK', category: 'Beverages', aliases: ['juice', 'nestle juice', 'shezan'] },
+  { label: 'ðŸ§ Rooh Afza / Jam-e-Shirin', name: 'Rooh Afza Syrup', unit: 'BOTTLE', category: 'Beverages', aliases: ['rooh afza', 'jam e shirin', 'red syrup'] },
+  { label: 'ðŸ‹ Lemonade Concentrate', name: 'Lemon Syrup', unit: 'BOTTLE', category: 'Beverages', aliases: ['lemonade', 'limca'] },
 
   // Packaging & Disposables
-  { label: '📦 Burger Box (Paperboard)', name: 'Burger Boxes', unit: 'PCS', category: 'Packaging', aliases: ['burger box', 'packaging'] },
-  { label: '📦 Pizza Boxes (12 inch)', name: 'Pizza Boxes 12 inch', unit: 'PCS', category: 'Packaging', aliases: ['pizza box', 'box'] },
-  { label: '🥤 Hot Drink Cups 8oz (Paper)', name: 'Paper Tea Cups 8oz', unit: 'PCS', category: 'Packaging', aliases: ['chai cup', 'paper cup'] },
-  { label: '🥤 Cold Drink Cups & Lids 16oz', name: 'Beverage Cups 16oz', unit: 'PCS', category: 'Packaging', aliases: ['cold cup', 'plastic cup'] },
-  { label: '🥡 Takeaway Food Containers (Plastic)', name: 'Food Containers 750ml', unit: 'PCS', category: 'Packaging', aliases: ['dabba', 'container', 'packing box'] },
-  { label: '🛍️ Shopping Bags (Biodegradable)', name: 'Shopper Bags', unit: 'KG', category: 'Packaging', aliases: ['shopper', 'polythene', 'bag'] },
-  { label: '🧻 Tissue Paper Napkins', name: 'Tissue Napkins', unit: 'PACK', category: 'Packaging', aliases: ['tissue', 'tissue paper'] },
-  { label: '🥖 Butter Paper Roll / Sheets', name: 'Butter Paper', unit: 'PACK', category: 'Packaging', aliases: ['butter paper', 'wrap paper'] },
-  { label: '🍙 Aluminum Foil Roll', name: 'Aluminum Foil', unit: 'ROLL', category: 'Packaging', aliases: ['foil paper', 'silver foil'] },
-  { label: '🥤 Drinking Straws (Paper/Plastic)', name: 'Straws', unit: 'PACK', category: 'Packaging', aliases: ['straw', 'straws'] },
+  { label: 'ðŸ“¦ Burger Box (Paperboard)', name: 'Burger Boxes', unit: 'PCS', category: 'Packaging', aliases: ['burger box', 'packaging'] },
+  { label: 'ðŸ“¦ Pizza Boxes (12 inch)', name: 'Pizza Boxes 12 inch', unit: 'PCS', category: 'Packaging', aliases: ['pizza box', 'box'] },
+  { label: 'ðŸ¥¤ Hot Drink Cups 8oz (Paper)', name: 'Paper Tea Cups 8oz', unit: 'PCS', category: 'Packaging', aliases: ['chai cup', 'paper cup'] },
+  { label: 'ðŸ¥¤ Cold Drink Cups & Lids 16oz', name: 'Beverage Cups 16oz', unit: 'PCS', category: 'Packaging', aliases: ['cold cup', 'plastic cup'] },
+  { label: 'ðŸ¥¡ Takeaway Food Containers (Plastic)', name: 'Food Containers 750ml', unit: 'PCS', category: 'Packaging', aliases: ['dabba', 'container', 'packing box'] },
+  { label: 'ðŸ›ï¸ Shopping Bags (Biodegradable)', name: 'Shopper Bags', unit: 'KG', category: 'Packaging', aliases: ['shopper', 'polythene', 'bag'] },
+  { label: 'ðŸ§» Tissue Paper Napkins', name: 'Tissue Napkins', unit: 'PACK', category: 'Packaging', aliases: ['tissue', 'tissue paper'] },
+  { label: 'ðŸ¥– Butter Paper Roll / Sheets', name: 'Butter Paper', unit: 'PACK', category: 'Packaging', aliases: ['butter paper', 'wrap paper'] },
+  { label: 'ðŸ™ Aluminum Foil Roll', name: 'Aluminum Foil', unit: 'ROLL', category: 'Packaging', aliases: ['foil paper', 'silver foil'] },
+  { label: 'ðŸ¥¤ Drinking Straws (Paper/Plastic)', name: 'Straws', unit: 'PACK', category: 'Packaging', aliases: ['straw', 'straws'] },
 
   // Kitchen Supplies & Cleaning
-  { label: '🧼 Dishwashing Liquid (Vim/Lemon)', name: 'Dishwash Soap', unit: 'L', category: 'Kitchen Supplies', aliases: ['vim', 'sabun', 'dishwash'] },
-  { label: '🧽 Sponge Scrubber Pads', name: 'Scrubber Sponge', unit: 'PCS', category: 'Kitchen Supplies', aliases: ['sponge', 'scrubber', 'khurchan'] },
-  { label: '🧤 Disposable Plastic Gloves', name: 'Kitchen Gloves', unit: 'BOX', category: 'Kitchen Supplies', aliases: ['gloves', 'dastanay'] },
-  { label: '🧹 Mop / Cleaning Cloth', name: 'Cleaning Cloth', unit: 'PCS', category: 'Kitchen Supplies', aliases: ['poocha', 'cloth', 'duster'] },
+  { label: 'ðŸ§¼ Dishwashing Liquid (Vim/Lemon)', name: 'Dishwash Soap', unit: 'L', category: 'Kitchen Supplies', aliases: ['vim', 'sabun', 'dishwash'] },
+  { label: 'ðŸ§½ Sponge Scrubber Pads', name: 'Scrubber Sponge', unit: 'PCS', category: 'Kitchen Supplies', aliases: ['sponge', 'scrubber', 'khurchan'] },
+  { label: 'ðŸ§¤ Disposable Plastic Gloves', name: 'Kitchen Gloves', unit: 'BOX', category: 'Kitchen Supplies', aliases: ['gloves', 'dastanay'] },
+  { label: 'ðŸ§¹ Mop / Cleaning Cloth', name: 'Cleaning Cloth', unit: 'PCS', category: 'Kitchen Supplies', aliases: ['poocha', 'cloth', 'duster'] },
 
   // Desserts & Sweets
-  { label: '🍫 Chocolate Syrup (Hershey)', name: 'Chocolate Syrup', unit: 'BOTTLE', category: 'Desserts', aliases: ['chocolate sauce', 'syrup'] },
-  { label: '🍨 Vanilla Ice Cream Tub (2L)', name: 'Vanilla Ice Cream', unit: 'BOX', category: 'Desserts', aliases: ['icecream', 'ice cream'] },
-  { label: '🍫 Cocoa Powder', name: 'Cocoa Powder', unit: 'KG', category: 'Desserts', aliases: ['cocoa', 'coco powder'] },
-  { label: '🧁 Chocolate Chips', name: 'Chocolate Chips', unit: 'KG', category: 'Desserts', aliases: ['choco chips'] },
-  { label: '🍓 Strawberry Jam / Topping', name: 'Strawberry Jam', unit: 'KG', category: 'Desserts', aliases: ['jam', 'strawberry'] }
+  { label: 'ðŸ« Chocolate Syrup (Hershey)', name: 'Chocolate Syrup', unit: 'BOTTLE', category: 'Desserts', aliases: ['chocolate sauce', 'syrup'] },
+  { label: 'ðŸ¨ Vanilla Ice Cream Tub (2L)', name: 'Vanilla Ice Cream', unit: 'BOX', category: 'Desserts', aliases: ['icecream', 'ice cream'] },
+  { label: 'ðŸ« Cocoa Powder', name: 'Cocoa Powder', unit: 'KG', category: 'Desserts', aliases: ['cocoa', 'coco powder'] },
+  { label: 'ðŸ§ Chocolate Chips', name: 'Chocolate Chips', unit: 'KG', category: 'Desserts', aliases: ['choco chips'] },
+  { label: 'ðŸ“ Strawberry Jam / Topping', name: 'Strawberry Jam', unit: 'KG', category: 'Desserts', aliases: ['jam', 'strawberry'] }
 ];
 
 const QUICK_PICK_GROUPS = [
-  { label: 'Meat & Protein', icon: '🍗', category: 'Meat & Protein' },
-  { label: 'Vegetables & Herbs', icon: '🥬', category: 'Vegetables' },
-  { label: 'Dry Goods & Rice', icon: '🌾', category: 'Dry Goods' },
-  { label: 'Dairy & Cheese', icon: '🧀', category: 'Dairy' },
-  { label: 'Sauces & Condiments', icon: '🛢️', category: 'Sauces & Condiments' },
-  { label: 'Spices & Masala', icon: '🌶', category: 'Spices' },
-  { label: 'Bakery & Bread', icon: '🍞', category: 'Bakery' },
-  { label: 'Beverages & Tea', icon: '☕', category: 'Beverages' },
-  { label: 'Packaging & Disposable', icon: '📦', category: 'Packaging' },
-  { label: 'Kitchen & Cleaning', icon: '🧼', category: 'Kitchen Supplies' },
-  { label: 'Desserts & Sweets', icon: '🍫', category: 'Desserts' },
+  { label: 'Meat & Protein', icon: 'ðŸ—', category: 'Meat & Protein' },
+  { label: 'Vegetables & Herbs', icon: 'ðŸ¥¬', category: 'Vegetables' },
+  { label: 'Dry Goods & Rice', icon: 'ðŸŒ¾', category: 'Dry Goods' },
+  { label: 'Dairy & Cheese', icon: 'ðŸ§€', category: 'Dairy' },
+  { label: 'Sauces & Condiments', icon: 'ðŸ›¢ï¸', category: 'Sauces & Condiments' },
+  { label: 'Spices & Masala', icon: 'ðŸŒ¶', category: 'Spices' },
+  { label: 'Bakery & Bread', icon: 'ðŸž', category: 'Bakery' },
+  { label: 'Beverages & Tea', icon: 'â˜•', category: 'Beverages' },
+  { label: 'Packaging & Disposable', icon: 'ðŸ“¦', category: 'Packaging' },
+  { label: 'Kitchen & Cleaning', icon: 'ðŸ§¼', category: 'Kitchen Supplies' },
+  { label: 'Desserts & Sweets', icon: 'ðŸ«', category: 'Desserts' },
 ];
 
 // Quantity Formatter helper (no unnecessary trailing decimals, e.g. 164.4 KG or 300 PCS)
@@ -230,7 +234,7 @@ const sumInventorySubtotals = (rows, getQuantity = row => row.stockLevel ?? row.
 
 const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, focusRequest, onFocusHandled }) => {
   const [activeTab, setActiveTab] = useState('CATALOG');
-  const [, setSummary] = useState(null);
+  const [hasVisitedReceiving, setHasVisitedReceiving] = useState(false);
 
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
@@ -263,10 +267,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
   const [adjReason, setAdjReason] = useState('');
 
   // Modal / Recipe / Supplier state
-  const [, setMenuItemsList] = useState([]);
-  const [, setMarginsList] = useState([]);
   const [suppliersList, setSuppliersList] = useState([]);
-  const [, setExpiringList] = useState([]);
   const [receivingsList, setReceivingsList] = useState([]);
 
   // Add New Item Modal State
@@ -578,7 +579,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       setImportedItems(prev => prev.map(i => i.id === card.id ? { ...i, isNewItem: false, saved: true, catalogMatchName: card.name } : i));
       if (showToast) showToast(`"${card.name}" saved to catalog! (Stock: 0)`, 'success');
       if (onRefresh) onRefresh();
-      fetchSummary();
     } catch (err) {
       if (showToast) showToast(err.response?.data?.error || 'Failed to save item', 'error');
     }
@@ -622,7 +622,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       setCatalogImportResult({ summary, results, total: itemsPayload.length });
       if (showToast) showToast(`Import summary: ${summary.total ?? itemsPayload.length} total, ${summary.imported ?? summary.savedCount ?? 0} imported, ${summary.duplicates ?? 0} duplicates skipped, ${summary.failed ?? summary.failedCount ?? 0} failed.`, (summary.failed ?? summary.failedCount ?? 0) ? 'warning' : 'success');
       if (onRefresh) onRefresh();
-      fetchSummary();
     } catch (err) {
       if (showToast) showToast(err.response?.data?.error || 'Failed to save items', 'error');
     } finally {
@@ -916,7 +915,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       }));
       if (showToast) showToast(`"${item.name}" saved to catalog!`, 'success');
       if (onRefresh) onRefresh();
-      fetchSummary();
     } catch (err) {
       if (showToast) showToast(err.response?.data?.error || 'Failed to save item', 'error');
     }
@@ -1361,7 +1359,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       setCatalogImportResult({ summary, results, total: itemsPayload.length });
       if (showToast) showToast(`Import summary: ${summary.total ?? itemsPayload.length} total, ${summary.imported ?? summary.savedCount ?? 0} imported, ${summary.duplicates ?? 0} duplicates skipped, ${summary.failed ?? summary.failedCount ?? 0} failed.`, (summary.failed ?? summary.failedCount ?? 0) ? 'warning' : 'success');
       if (onRefresh) onRefresh();
-      fetchSummary();
     } catch (err) {
       if (showToast) showToast(err.response?.data?.error || 'Failed to save card items', 'error');
     } finally {
@@ -1429,7 +1426,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       setCatalogImportResult({ summary, results, total: allUnsaved.length });
       if (showToast) showToast(`Import summary: ${summary.total ?? allUnsaved.length} total, ${summary.imported ?? summary.savedCount ?? 0} imported, ${summary.duplicates ?? 0} duplicates skipped, ${summary.failed ?? summary.failedCount ?? 0} failed.`, (summary.failed ?? summary.failedCount ?? 0) ? 'warning' : 'success');
       if (onRefresh) onRefresh();
-      fetchSummary();
     } catch (err) {
       if (showToast) showToast(err.response?.data?.error || 'Failed to save all items', 'error');
     } finally {
@@ -1438,7 +1434,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
     }
   };
 
-  // Save Draft (supplier-wise) from Add Ingredient modal → /inventory/receivings DRAFT
+  // Save Draft (supplier-wise) from Add Ingredient modal â†’ /inventory/receivings DRAFT
   // Draft save does NOT add items to catalog immediately.
   // Known catalog items go in `items[]`; truly new items go in `draftNewItems[]`.
   // New items are materialized into catalog+stock only when confirmed from Receiving History.
@@ -1451,7 +1447,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       item: (card.items || []).find(entry => entry.name?.trim() && !(Number.parseFloat(entry.stockLevel ?? entry.quantity) > 0))
     })).find(entry => entry.item);
     if (invalidPrimaryItem || invalidAdditional) {
-      const label = invalidPrimaryItem ? `Card #1 item “${invalidPrimaryItem.name.trim()}”` : `Card #${invalidAdditional.cardNumber} item “${invalidAdditional.item.name.trim()}”`;
+      const label = invalidPrimaryItem ? `Card #1 item â€œ${invalidPrimaryItem.name.trim()}â€` : `Card #${invalidAdditional.cardNumber} item â€œ${invalidAdditional.item.name.trim()}â€`;
       const message = `${label} needs a quantity greater than zero. No supplier drafts were saved; correct the quantity and try again.`;
       setDraftSaveResult({ success: false, message });
       showToast?.(message, 'error');
@@ -1462,7 +1458,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
     let draftCount = 0;
     let draftAttempts = 0;
     try {
-      // ── Step 1: Fetch existing inventory to resolve IDs ──
+      // â”€â”€ Step 1: Fetch existing inventory to resolve IDs â”€â”€
       const invRes = await api.get('/inventory');
       const freshInventory = invRes.data?.items || invRes.data || [];
       const findId = (name) => {
@@ -1470,7 +1466,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
         return match?.id || null;
       };
 
-      // ── Step 2: Card #1 draft ──
+      // â”€â”€ Step 2: Card #1 draft â”€â”€
       const card1ValidItems = ingredientCards.filter(c => c.name && c.name.trim());
       if (card1ValidItems.length > 0) {
         const card1KnownItems = [];
@@ -1520,7 +1516,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
         }
       }
 
-      // ── Step 3: Additional delivery card drafts ──
+      // â”€â”€ Step 3: Additional delivery card drafts â”€â”€
       for (const card of additionalDeliveryCards) {
         const cardKnownItems = [];
         const cardNewItems = [];
@@ -1605,7 +1601,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
         if (showToast) showToast('No items with valid quantities found to save as draft.', 'warning');
       }
       if (onRefresh) onRefresh();
-      fetchSummary();
     } catch (err) {
       const reason = err.response?.data?.error || 'Draft could not be saved.';
       if (draftCount > 0) {
@@ -1646,7 +1641,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
   };
 
   // Save Draft for a SINGLE supplier card (Card #1 or any additional card)
-  // Known catalog items → items[]; new/unsaved items → draftNewItems[] (deferred to confirm).
+  // Known catalog items â†’ items[]; new/unsaved items â†’ draftNewItems[] (deferred to confirm).
   const handleSaveDraftSingleCard = async (cardId) => {
     if (draftSaveLock.current || savingDraft || bulkSavingCatalog) return;
     const isCard1 = cardId === 'card-1';
@@ -1655,7 +1650,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
     const invalidItem = rawItems.find(item => item.name?.trim() && !(Number.parseFloat(item.stockLevel ?? item.quantity) > 0));
     if (invalidItem) {
       const cardLabel = isCard1 ? 'Card #1' : `Card #${additionalDeliveryCards.findIndex(c => c.id === cardId) + 2}`;
-      const message = `${cardLabel} item “${invalidItem.name.trim()}” needs a quantity greater than zero. This draft was not saved.`;
+      const message = `${cardLabel} item â€œ${invalidItem.name.trim()}â€ needs a quantity greater than zero. This draft was not saved.`;
       setDraftSaveResult({ success: false, message });
       showToast?.(message, 'error');
       return;
@@ -1739,7 +1734,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       );
       setDraftSaveResult({ success: true, message: `Draft saved for ${cardLabel}. Stock has not changed.` });
       if (onRefresh) onRefresh();
-      fetchSummary();
     } catch (err) {
       setDraftSaveResult({ success: false, message: err.response?.data?.error || 'Draft could not be saved. Your entered data has been kept.' });
       if (showToast) showToast(err.response?.data?.error || 'Failed to save draft. Please try again.', 'error');
@@ -1749,67 +1743,31 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
     }
   };
 
-  const fetchSummary = async () => {
-    try {
-      const res = await api.get('/inventory/summary');
-      if (res.data) setSummary(res.data);
-    } catch (err) {
-      console.warn('Fetch summary error:', err.message);
-    }
-  };
-
-  const fetchMargins = async () => {
-    try {
-      const res = await api.get('/inventory/recipes/margins');
-      if (res.data?.margins) setMarginsList(res.data.margins);
-    } catch (err) {
-      console.warn('Fetch margins error:', err.message);
-    }
-  };
-
-  const fetchSuppliers = async () => {
+  const fetchSuppliers = useCallback(async () => {
     try {
       const res = await api.get('/inventory/suppliers');
       if (res.data?.suppliers) setSuppliersList(res.data.suppliers);
     } catch (err) {
       console.warn('Fetch suppliers error:', err.message);
     }
-  };
+  }, []);
 
-  const fetchExpiring = async () => {
-    try {
-      const res = await api.get('/inventory/expiring');
-      if (res.data?.items) setExpiringList(res.data.items);
-    } catch (err) {
-      console.warn('Fetch expiring error:', err.message);
-    }
-  };
-
-  const fetchMenuItems = async () => {
-    try {
-      const res = await api.get('/menu?all=true');
-      if (res.data?.items) setMenuItemsList(res.data.items);
-    } catch (err) {
-      console.warn('Fetch menu items error:', err.message);
-    }
-  };
-
-  const fetchReceivings = async () => {
+  const fetchReceivings = useCallback(async () => {
     try {
       const res = await api.get('/inventory/receivings');
       if (res.data?.receivings) setReceivingsList(res.data.receivings);
     } catch (err) {
       console.warn('Fetch receivings error:', err.message);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchSummary();
     fetchSuppliers();
     fetchReceivings();
-    if (activeTab === 'MARGINS' || activeTab === 'RECIPES') fetchMargins();
-    if (activeTab === 'EXPIRY') fetchExpiring();
-    if (activeTab === 'RECIPES') fetchMenuItems();
+  }, [fetchReceivings, fetchSuppliers]);
+
+  useEffect(() => {
+    if (activeTab === 'STOCK_IN') setHasVisitedReceiving(true);
   }, [activeTab]);
 
   // Compute status & stats for all items in inventory
@@ -1924,7 +1882,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       if (showToast) showToast(`Updated "${editingItem.name}" in catalog!`);
       setEditingItem(null);
       if (onRefresh) onRefresh();
-      fetchSummary();
     } catch (err) {
       if (showToast) showToast(err.response?.data?.error || 'Failed to update item', 'error');
     }
@@ -1950,7 +1907,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       setAdjQty('');
       setAdjReason('');
       if (onRefresh) onRefresh();
-      fetchSummary();
     } catch (err) {
       if (showToast) showToast(err.response?.data?.error || 'Adjustment failed', 'error');
     }
@@ -2018,7 +1974,6 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
         setSelectedItemForDetails(null);
       }
       if (onRefresh) onRefresh();
-      fetchSummary();
     } catch (err) {
       console.error('Delete inventory error:', err);
       const msg = err.response?.data?.error || 'Failed to delete item(s).';
@@ -2059,7 +2014,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-[var(--card-bg)] border border-[var(--border-color)] p-4 sm:p-6 rounded-3xl shadow-sm">
         <div className="min-w-0 flex-1">
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
-            <span className="p-2 rounded-2xl bg-orange-500/10 text-orange-400">📦</span>
+            <span className="p-2 rounded-2xl bg-orange-500/10 text-orange-400">ðŸ“¦</span>
             Inventory
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
@@ -2234,7 +2189,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                 <button
                   type="button"
                   onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-3 text-[var(--text-muted)] hover:text-[var(--text-main)]"
+                  className="absolute right-3 top-3 text-[var(--text-muted)] hover:text-[var(--text-main)] icon-btn"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -2366,8 +2321,8 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   onChange={(e) => setSortBy(e.target.value)}
                   className="px-3 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] cursor-pointer"
                 >
-                  <option value="NAME_ASC">Item Name A–Z</option>
-                  <option value="NAME_DESC">Item Name Z–A</option>
+                  <option value="NAME_ASC">Item Name Aâ€“Z</option>
+                  <option value="NAME_DESC">Item Name Zâ€“A</option>
                   <option value="LOW_STOCK_FIRST">Low Stock First</option>
                   <option value="OVERSTOCK_FIRST">Overstock First</option>
                   <option value="STOCK_LOW_TO_HIGH">Lowest Stock</option>
@@ -2496,7 +2451,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
 
                             {/* Cost per Unit */}
                             <td className="p-4 font-mono font-black text-emerald-400">
-                              {item.costPrice > 0 ? `Rs. ${item.costPrice} / ${item.unit}` : '—'}
+                              {item.costPrice > 0 ? `Rs. ${item.costPrice} / ${item.unit}` : 'â€”'}
                             </td>
 
                             {/* Status Badge */}
@@ -2532,7 +2487,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                 <button
                                   type="button"
                                   onClick={() => setEditingItem(item)}
-                                  className="p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer border border-orange-500/20"
+                                  className="p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer border border-orange-500/20 icon-btn"
                                   title="Edit Catalog Item"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
@@ -2540,7 +2495,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteItem(item.id, item.name)}
-                                  className="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer border border-rose-500/20"
+                                  className="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer border border-rose-500/20 icon-btn"
                                   title="Delete Item"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -2627,7 +2582,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                           <button
                             type="button"
                             onClick={() => handleDeleteItem(item.id, item.name)}
-                            className="p-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                            className="p-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 icon-btn"
                             title="Delete Item"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -2642,7 +2597,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
               {/* Pagination Controls */}
               <div className="flex flex-col sm:flex-row justify-between items-center gap-3 bg-[var(--card-bg)] p-4 rounded-3xl border border-[var(--border-color)] text-xs">
                 <span className="text-[var(--text-muted)]">
-                  Showing <strong className="text-[var(--text-main)]">{(currentPage - 1) * itemsPerPage + 1}–{Math.min(filteredAndSortedStock.length, currentPage * itemsPerPage)}</strong> of <strong className="text-[var(--text-main)]">{filteredAndSortedStock.length}</strong> items
+                  Showing <strong className="text-[var(--text-main)]">{(currentPage - 1) * itemsPerPage + 1}â€“{Math.min(filteredAndSortedStock.length, currentPage * itemsPerPage)}</strong> of <strong className="text-[var(--text-main)]">{filteredAndSortedStock.length}</strong> items
                 </span>
 
                 <div className="flex items-center space-x-2">
@@ -2650,7 +2605,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                     type="button"
                     disabled={currentPage === 1}
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    className="p-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] disabled:opacity-40"
+                    className="p-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] disabled:opacity-40 icon-btn"
                   >
                     <ChevronLeft className="w-4 h-4 text-[var(--text-main)]" />
                   </button>
@@ -2661,7 +2616,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                     type="button"
                     disabled={currentPage === totalPages}
                     onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    className="p-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] disabled:opacity-40"
+                    className="p-2 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] disabled:opacity-40 icon-btn"
                   >
                     <ChevronRight className="w-4 h-4 text-[var(--text-main)]" />
                   </button>
@@ -2674,76 +2629,90 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
       )}
 
       {/* TAB 2: STOCK IN RECEIVING (Kept mounted to preserve scanned invoice and review table state across tabs) */}
-      <div className={activeTab === 'STOCK_IN' ? 'block' : 'hidden'}>
-        <AdminInventoryReceivingView
-          inventory={inventory}
-          suppliers={suppliersList}
-          onRefresh={onRefresh}
-          showToast={showToast}
-        />
-      </div>
+      {hasVisitedReceiving && (
+        <div className={activeTab === 'STOCK_IN' ? 'block' : 'hidden'}>
+          <Suspense fallback={<InventorySectionFallback />}>
+            <AdminInventoryReceivingView
+              inventory={inventory}
+              suppliers={suppliersList}
+              onRefresh={onRefresh}
+              showToast={showToast}
+            />
+          </Suspense>
+        </div>
+      )}
 
       {/* TAB 3: RECIPES */}
       {activeTab === 'RECIPES' && (
-        <AdminRecipeBuilderView
-          inventory={stockList}
-          onRefresh={onRefresh}
-          showToast={showToast}
-          onOpenAddIngredientModal={() => setShowAddItemModal(true)}
-        />
+        <Suspense fallback={<InventorySectionFallback />}>
+          <AdminRecipeBuilderView
+            inventory={stockList}
+            onRefresh={onRefresh}
+            showToast={showToast}
+            onOpenAddIngredientModal={() => setShowAddItemModal(true)}
+          />
+        </Suspense>
       )}
 
       {/* TAB 4: COSTS & MARGINS */}
       {activeTab === 'MARGINS' && (
-        <AdminCostsMarginsView
-          inventory={stockList}
-          showToast={showToast}
-          onNavigateToRecipes={() => setActiveTab('RECIPES')}
-        />
+        <Suspense fallback={<InventorySectionFallback />}>
+          <AdminCostsMarginsView
+            inventory={stockList}
+            showToast={showToast}
+            onNavigateToRecipes={() => setActiveTab('RECIPES')}
+          />
+        </Suspense>
       )}
 
       {/* TAB 5: EXPIRY TRACKING */}
       {activeTab === 'EXPIRY' && (
-        <AdminExpiryTrackingView
-          inventory={stockList}
-          receivings={receivingsList}
-          onOpenAdjustmentModal={(item) => setSelectedItemForAdjustment(item)}
-          onRefresh={() => { fetchReceivings(); fetchSummary(); onRefresh?.(); }}
-          showToast={showToast}
-        />
+        <Suspense fallback={<InventorySectionFallback />}>
+          <AdminExpiryTrackingView
+            inventory={stockList}
+            receivings={receivingsList}
+            onOpenAdjustmentModal={(item) => setSelectedItemForAdjustment(item)}
+            onRefresh={() => { fetchReceivings(); onRefresh?.(); }}
+            showToast={showToast}
+          />
+        </Suspense>
       )}
 
       {/* TAB 6: SUPPLIERS */}
       {activeTab === 'SUPPLIERS' && (
-        <AdminSuppliersView
-          suppliers={suppliersList}
-          inventory={stockList}
-          receivings={receivingsList}
-          onRefresh={() => { fetchSuppliers(); fetchReceivings(); if (onRefresh) onRefresh(); }}
-          showToast={showToast}
-        />
+        <Suspense fallback={<InventorySectionFallback />}>
+          <AdminSuppliersView
+            suppliers={suppliersList}
+            inventory={stockList}
+            receivings={receivingsList}
+            onRefresh={() => { fetchSuppliers(); fetchReceivings(); if (onRefresh) onRefresh(); }}
+            showToast={showToast}
+          />
+        </Suspense>
       )}
 
       {/* TAB 7: ACTIVITY LOGS */}
       {activeTab === 'LOGS' && (
-        <AdminActivityLogsView
-          logs={logs}
-          receivings={receivingsList}
-          onRefresh={() => { fetchReceivings(); onRefresh?.(); }}
-          showToast={showToast}
-        />
+        <Suspense fallback={<InventorySectionFallback />}>
+          <AdminActivityLogsView
+            logs={logs}
+            receivings={receivingsList}
+            onRefresh={() => { fetchReceivings(); onRefresh?.(); }}
+            showToast={showToast}
+          />
+        </Suspense>
       )}
 
-      {/* Quick Adjustment Modal — Portal to document.body for true screen centering */}
+      {/* Quick Adjustment Modal â€” Portal to document.body for true screen centering */}
       {selectedItemForAdjustment && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-scale-up my-auto">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <h3 className="text-base font-black text-[var(--text-main)] flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-amber-400" />
                 Adjust Stock: {selectedItemForAdjustment.name}
               </h3>
-              <button onClick={() => setSelectedItemForAdjustment(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-muted)] cursor-pointer">
+              <button onClick={() => setSelectedItemForAdjustment(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-muted)] cursor-pointer icon-btn">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -2805,16 +2774,16 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
         document.body
       )}
 
-      {/* Item Details Modal — Portal to document.body for true screen centering */}
+      {/* Item Details Modal â€” Portal to document.body for true screen centering */}
       {selectedItemForDetails && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-scale-up my-auto">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <div>
                 <h3 className="text-base font-black text-[var(--text-main)]">{selectedItemForDetails.name}</h3>
                 <span className="text-[10px] text-orange-400 font-bold uppercase">{selectedItemForDetails.category || 'General'}</span>
               </div>
-              <button onClick={() => setSelectedItemForDetails(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-muted)] cursor-pointer">
+              <button onClick={() => setSelectedItemForDetails(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-muted)] cursor-pointer icon-btn">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -2823,7 +2792,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
               <div>Current Stock: <strong className="text-orange-400 font-mono">{selectedItemForDetails.stockLevel} {selectedItemForDetails.unit}</strong></div>
               <div>Minimum Threshold: <strong className="text-[var(--text-muted)] font-mono">{selectedItemForDetails.minThreshold} {selectedItemForDetails.unit}</strong></div>
               <div>Cost per Unit: <strong className="text-emerald-400 font-mono">Rs. {selectedItemForDetails.costPrice || 0} / {selectedItemForDetails.unit}</strong></div>
-              <div>Supplier: <strong className="text-[var(--text-main)]">{selectedItemForDetails.supplier?.name || '—'}</strong></div>
+              <div>Supplier: <strong className="text-[var(--text-main)]">{selectedItemForDetails.supplier?.name || 'â€”'}</strong></div>
             </div>
 
             <div className="flex justify-end space-x-2 pt-2 border-t border-[var(--border-color)]">
@@ -2838,7 +2807,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
 
       {/* Edit Catalog Item Modal */}
       {editingItem && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-scale-up my-auto">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <div>
@@ -2853,7 +2822,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
               <button
                 type="button"
                 onClick={() => setEditingItem(null)}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer border border-[var(--border-color)]"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] hover:bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer border border-[var(--border-color)] icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2989,9 +2958,9 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
         document.body
       )}
 
-      {/* Add New Item Modal — Professional 4-Card Interface (Card A: Presets, Card B: Import, Card C: Review, Card D: Manual) */}
+      {/* Add New Item Modal â€” Professional 4-Card Interface (Card A: Presets, Card B: Import, Card C: Review, Card D: Manual) */}
       {showAddItemModal && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] bg-[var(--glass-bg-subtle)] backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
           <div className="min-w-0 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-5xl w-full p-3 sm:p-6 space-y-4 shadow-2xl animate-scale-up my-auto max-h-[92dvh] flex flex-col overflow-hidden">
 
             {/* Modal Header */}
@@ -2999,7 +2968,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
               <div className="flex min-w-0 items-start justify-between gap-2">
                 <div className="min-w-0">
                 <h3 className="text-base sm:text-lg font-black text-[var(--text-main)] font-display flex items-center gap-2">
-                  <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">📦</span>
+                  <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">ðŸ“¦</span>
                   Add New Ingredient Item
                 </h3>
                 <p className="text-[11px] leading-relaxed text-[var(--text-muted)] mt-0.5">
@@ -3010,7 +2979,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   type="button"
                   onClick={() => setShowAddItemModal(false)}
                   aria-label="Close add ingredient form"
-                  className="shrink-0 p-1 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                  className="shrink-0 p-1 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -3030,21 +2999,21 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   onClick={() => setActiveAddTab('PRESETS')}
                   className={`min-w-0 px-2 sm:px-3 py-1.5 sm:py-1 rounded-xl transition-all cursor-pointer whitespace-nowrap ${activeAddTab === 'PRESETS' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
                 >
-                  ⚡ Presets
+                  âš¡ Presets
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('IMPORT')}
                   className={`min-w-0 px-2 sm:px-3 py-1.5 sm:py-1 rounded-xl transition-all cursor-pointer whitespace-nowrap ${activeAddTab === 'IMPORT' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
                 >
-                  📤 Import
+                  ðŸ“¤ Import
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveAddTab('MANUAL')}
                   className={`min-w-0 px-2 sm:px-3 py-1.5 sm:py-1 rounded-xl transition-all cursor-pointer whitespace-nowrap ${activeAddTab === 'MANUAL' ? 'bg-orange-500 text-white shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
                 >
-                  ✍️ Manual Form
+                  âœï¸ Manual Form
                 </button>
               </div>
             </div>
@@ -3059,7 +3028,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                 <div className="min-w-0 bg-[var(--bg-color)]/70 border border-[var(--border-color)] p-3 sm:p-4 rounded-2xl space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--border-color)]/60 pb-2.5">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="p-1 rounded-lg bg-orange-500/10 text-orange-400 font-bold">⚡ Card A</span>
+                      <span className="p-1 rounded-lg bg-orange-500/10 text-orange-400 font-bold">âš¡ Card A</span>
                       <h4 className="min-w-0 font-black text-[11px] sm:text-xs text-[var(--text-main)] uppercase tracking-wider">
                         Quick Pick Presets (Click to Auto-Fill):
                       </h4>
@@ -3094,11 +3063,11 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                             : 'bg-[var(--bg-color)] text-[var(--text-main)] hover:bg-orange-500/10 border border-[var(--border-color)]'
                         }`}
                       >
-                        <span>📋 Card #1</span>
+                        <span>ðŸ“‹ Card #1</span>
                         <span className="min-w-0 break-words text-[10px] opacity-80 sm:truncate sm:max-w-44">
                           ({suppliersList.find(s => String(s.id) === String(newItem.supplierId))?.name || 'Local / Supplier 1'})
                         </span>
-                        {activeTargetCardId === 'card-1' && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
+                        {activeTargetCardId === 'card-1' && <span className="w-1.5 h-1.5 rounded-full bg-[var(--glass-bg-strong)] animate-pulse"></span>}
                       </button>
 
                       {/* Additional Delivery Cards Selector Pills */}
@@ -3113,11 +3082,11 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               : 'bg-[var(--bg-color)] text-[var(--text-main)] hover:bg-orange-500/10 border border-[var(--border-color)]'
                           }`}
                         >
-                          <span>🏢 Card #{cIdx + 2}</span>
+                          <span>ðŸ¢ Card #{cIdx + 2}</span>
                           <span className="min-w-0 break-words text-[10px] opacity-80 sm:truncate sm:max-w-44">
                             ({card.supplierName || 'Different Supplier'})
                           </span>
-                          {activeTargetCardId === card.id && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
+                          {activeTargetCardId === card.id && <span className="w-1.5 h-1.5 rounded-full bg-[var(--glass-bg-strong)] animate-pulse"></span>}
                         </button>
                       ))}
 
@@ -3163,7 +3132,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               <span>{group.label}</span>
                               <span className="text-[9px] font-normal text-[var(--text-muted)]">({filtered.length})</span>
                             </span>
-                            <span className="text-[10px] text-[var(--text-muted)] font-mono">{isExpanded ? '▲' : '▼'}</span>
+                            <span className="text-[10px] text-[var(--text-muted)] font-mono">{isExpanded ? 'â–²' : 'â–¼'}</span>
                           </button>
 
                           {isExpanded && (
@@ -3182,7 +3151,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                     }`}
                                   >
                                     <span className="min-w-0 flex-1 break-words">{preset.label}</span>
-                                    {exists && <span className="shrink-0 text-[9px] text-emerald-400 font-extrabold">✓ In Stock</span>}
+                                    {exists && <span className="shrink-0 text-[9px] text-emerald-400 font-extrabold">âœ“ In Stock</span>}
                                   </button>
                                 );
                               })}
@@ -3202,7 +3171,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                 <div className="min-w-0 bg-[var(--bg-color)]/70 border border-[var(--border-color)] p-3 sm:p-4 rounded-2xl space-y-3">
                   <div className="flex min-w-0 flex-col items-start gap-2 border-b border-[var(--border-color)]/60 pb-2.5 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex min-w-0 flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:gap-2">
-                      <span className="shrink-0 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 font-bold">📥 Card B</span>
+                      <span className="shrink-0 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 font-bold">ðŸ“¥ Card B</span>
                       <h4 className="min-w-0 break-words leading-snug font-black text-xs text-[var(--text-main)] uppercase tracking-wider">
                         Import Items (Excel, CSV, Image, PDF):
                       </h4>
@@ -3280,7 +3249,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                           className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-600 border border-orange-500/35 font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
                           {savingDraft ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                          <span>{savingDraft ? 'Saving drafts…' : 'Save All Deliveries to Draft'}</span>
+                          <span>{savingDraft ? 'Saving draftsâ€¦' : 'Save All Deliveries to Draft'}</span>
                         </button>
                         {(ingredientCards.some(c => c.isNewItem && !c.saved && c.name?.trim()) || additionalDeliveryCards.some(card => (card.items || []).some(i => i.isNewItem && !i.saved && i.name?.trim()))) && <button
                           type="button"
@@ -3289,7 +3258,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                           className="w-full sm:w-auto px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-black text-xs transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
                           {catalogSaveScope === 'all' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                          <span>{bulkSavingCatalog && catalogSaveScope === 'all' ? 'Saving items…' : `Save All New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length + additionalDeliveryCards.reduce((count, card) => count + (card.items || []).filter(i => i.isNewItem && !i.saved && i.name?.trim()).length, 0)}`}</span>
+                          <span>{bulkSavingCatalog && catalogSaveScope === 'all' ? 'Saving itemsâ€¦' : `Save All New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length + additionalDeliveryCards.reduce((count, card) => count + (card.items || []).filter(i => i.isNewItem && !i.saved && i.name?.trim()).length, 0)}`}</span>
                         </button>
                         }
                       </div>
@@ -3306,10 +3275,10 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                     {/* Header Bar: Card #1, Summary Metrics & Action Buttons */}
                     <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-[var(--border-color)]/60 pb-3">
                       <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-2.5">
-                        <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400 font-bold shrink-0">📋 Card #1</span>
+                        <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400 font-bold shrink-0">ðŸ“‹ Card #1</span>
                         <div className="min-w-0 w-full sm:w-auto">
                           <h4 className="min-w-0 break-words leading-snug font-black text-xs text-[var(--text-main)] uppercase tracking-wider flex flex-wrap items-center gap-2">
-                            <span>Delivery Card #1 — Supplier &amp; Items</span>
+                            <span>Delivery Card #1 â€” Supplier &amp; Items</span>
                             {suppliersList.find(s => String(s.id) === String(newItem.supplierId))?.name && (
                               <span className="max-w-full break-words px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-500/15 text-orange-400 border border-orange-500/20">
                                 {suppliersList.find(s => String(s.id) === String(newItem.supplierId)).name}
@@ -3335,7 +3304,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                           title="Click to route all Quick Pick Presets into Card #1"
                         >
                           <Target className="w-3.5 h-3.5" />
-                          <span>{activeTargetCardId === 'card-1' ? '● Target for Presets' : 'Add Presets Here'}</span>
+                          <span>{activeTargetCardId === 'card-1' ? 'â— Target for Presets' : 'Add Presets Here'}</span>
                         </button>
 
                         <button
@@ -3380,7 +3349,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                         <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
                           Internal Reference
                         </label>
-                        <div className="relative flex items-center">
+                        <div className="field-action-control">
                           <input
                             type="text"
                             value={newItem.sku || ''}
@@ -3389,14 +3358,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               setNewItem(prev => ({ ...prev, sku: val }));
                               setIngredientCards(prev => prev.map(c => ({ ...c, sku: val })));
                             }}
-                            placeholder="Click 🔄 to generate..."
-                            className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                            placeholder="Click ðŸ”„ to generate..."
+                            className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
                           />
                           <button
                             type="button"
                             onClick={generateAutoSKU}
                             title="Generate Reference"
-                            className="absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer"
+                            className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer icon-btn icon-btn--32"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
@@ -3407,7 +3376,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                         <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
                           Shipment Batch
                         </label>
-                        <div className="relative flex items-center">
+                        <div className="field-action-control">
                           <input
                             type="text"
                             value={newItem.batchNumber || ''}
@@ -3416,14 +3385,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               setNewItem(prev => ({ ...prev, batchNumber: val }));
                               setIngredientCards(prev => prev.map(c => ({ ...c, batchNumber: val })));
                             }}
-                            placeholder="Click 🔄 to generate..."
-                            className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                            placeholder="Click ðŸ”„ to generate..."
+                            className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
                           />
                           <button
                             type="button"
                             onClick={generateAutoBatch}
                             title="Generate Batch #"
-                            className="absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer"
+                            className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer icon-btn icon-btn--32"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
@@ -3434,7 +3403,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                         <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
                           Supplier Invoice # (Optional)
                         </label>
-                        <div className="relative flex items-center">
+                        <div className="field-action-control">
                           <input
                             type="text"
                             value={newItem.supplierInvoiceNumber || ''}
@@ -3443,14 +3412,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               setNewItem(prev => ({ ...prev, supplierInvoiceNumber: val }));
                               setIngredientCards(prev => prev.map(c => ({ ...c, supplierInvoiceNumber: val })));
                             }}
-                            placeholder="Click 🔄 to generate..."
-                            className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-orange-500"
+                            placeholder="Click ðŸ”„ to generate..."
+                            className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-orange-500"
                           />
                           <button
                             type="button"
                             onClick={generateAutoInvoiceNum}
                             title="Generate Supplier Invoice #"
-                            className="absolute right-1.5 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 cursor-pointer"
+                            className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 cursor-pointer icon-btn icon-btn--32"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
@@ -3557,7 +3526,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                         if (matches.length === 0) {
                                           return (
                                             <div className="p-3 text-center text-[var(--text-muted)] text-[11px]">
-                                              No preset matching "<span className="text-[var(--text-main)] font-semibold">{card.name}</span>". Custom ingredient will be created! ✨
+                                              No preset matching "<span className="text-[var(--text-main)] font-semibold">{card.name}</span>". Custom ingredient will be created! âœ¨
                                             </div>
                                           );
                                         }
@@ -3589,7 +3558,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                                 <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-[var(--bg-color)] text-orange-400 border border-orange-500/20">
                                                   {item.unit}
                                                 </span>
-                                                {exists && <span className="text-[10px] text-emerald-400 font-extrabold">✓ In Stock</span>}
+                                                {exists && <span className="text-[10px] text-emerald-400 font-extrabold">âœ“ In Stock</span>}
                                               </div>
                                             </button>
                                           );
@@ -3637,7 +3606,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveIngredientCard(card.id)}
-                                  className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer border border-rose-500/20"
+                                  className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer border border-rose-500/20 icon-btn"
                                   title="Remove item"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -3780,7 +3749,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                           <Save className="mr-1.5 inline h-4 w-4" />Save Draft
                         </button>
                         {ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
-                          {catalogSaveScope === 'card-1' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'card-1' ? 'Saving…' : `Save New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length})`}
+                          {catalogSaveScope === 'card-1' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'card-1' ? 'Savingâ€¦' : `Save New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length})`}
                         </button>}
                       </div>
                     </div>}
@@ -3808,11 +3777,11 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-[var(--border-color)]/60 pb-3">
                               <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-2.5">
                             <span className="p-1.5 rounded-xl bg-orange-500/15 text-orange-300 font-bold shrink-0">
-                              🏢 Card #{cardIdx + 2}
+                              ðŸ¢ Card #{cardIdx + 2}
                             </span>
                             <div className="min-w-0 w-full sm:w-auto">
                               <h4 className="min-w-0 break-words leading-snug font-black text-xs text-[var(--text-main)] uppercase tracking-wider flex flex-wrap items-center gap-2">
-                                <span>Delivery Card #{cardIdx + 2} — Supplier &amp; Items</span>
+                                <span>Delivery Card #{cardIdx + 2} â€” Supplier &amp; Items</span>
                                 {cardSupplier?.name && (
                                   <span className="max-w-full break-words px-2 py-0.5 rounded-md text-[10px] font-black bg-orange-500/15 text-orange-300 border border-orange-500/20">
                                     {cardSupplier.name}
@@ -3841,7 +3810,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               title="Click to route all Quick Pick Presets into this delivery card"
                             >
                               <Target className="w-3.5 h-3.5" />
-                              <span>{isTargetActive ? '● Target for Presets' : 'Send Presets Here'}</span>
+                              <span>{isTargetActive ? 'â— Target for Presets' : 'Send Presets Here'}</span>
                             </button>
 
                             {/* Clear All button */}
@@ -3904,7 +3873,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                             <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
                               Internal Reference
                             </label>
-                            <div className="relative flex items-center">
+                            <div className="field-action-control">
                               <input
                                 type="text"
                                 value={card.receivingRef || ''}
@@ -3912,14 +3881,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                   const val = e.target.value;
                                   setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, receivingRef: val } : c));
                                 }}
-                                placeholder="Click 🔄 to generate..."
-                                className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                                placeholder="Click ðŸ”„ to generate..."
+                                className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
                               />
                               <button
                                 type="button"
                                 onClick={() => generateAutoRefForCard(card.id)}
                                 title="Generate Reference"
-                                className="absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer"
+                                className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer icon-btn icon-btn--32"
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />
                               </button>
@@ -3930,7 +3899,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                             <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
                               Shipment Batch
                             </label>
-                            <div className="relative flex items-center">
+                            <div className="field-action-control">
                               <input
                                 type="text"
                                 value={card.batchNumber || ''}
@@ -3938,14 +3907,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                   const val = e.target.value;
                                   setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, batchNumber: val } : c));
                                 }}
-                                placeholder="Click 🔄 to generate..."
-                                className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                                placeholder="Click ðŸ”„ to generate..."
+                                className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
                               />
                               <button
                                 type="button"
                                 onClick={() => generateAutoBatchForCard(card.id)}
                                 title="Generate Batch #"
-                                className="absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer"
+                                className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer icon-btn icon-btn--32"
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />
                               </button>
@@ -3956,7 +3925,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                             <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
                               Supplier Invoice # (Optional)
                             </label>
-                            <div className="relative flex items-center">
+                            <div className="field-action-control">
                               <input
                                 type="text"
                                 value={card.supplierInvoiceNumber || ''}
@@ -3965,13 +3934,13 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                   setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, supplierInvoiceNumber: val } : c));
                                 }}
                                 placeholder="e.g. INV-45892"
-                                className="w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-orange-500"
+                                className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-orange-500"
                               />
                               <button
                                 type="button"
                                 onClick={() => generateAutoInvoiceForCard(card.id)}
                                 title="Generate Invoice #"
-                                className="absolute right-1.5 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 cursor-pointer"
+                                className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 cursor-pointer icon-btn icon-btn--32"
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />
                               </button>
@@ -4078,7 +4047,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                             if (matches.length === 0) {
                                               return (
                                                 <div className="p-3 text-center text-[var(--text-muted)] text-[11px]">
-                                                  No preset matching "<span className="text-[var(--text-main)] font-semibold">{item.name}</span>". Custom ingredient will be created! ✨
+                                                  No preset matching "<span className="text-[var(--text-main)] font-semibold">{item.name}</span>". Custom ingredient will be created! âœ¨
                                                 </div>
                                               );
                                             }
@@ -4110,7 +4079,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                                     <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-[var(--bg-color)] text-orange-300 border border-orange-500/20">
                                                       {preset.unit}
                                                     </span>
-                                                    {exists && <span className="text-[10px] text-emerald-400 font-extrabold">✓ In Stock</span>}
+                                                    {exists && <span className="text-[10px] text-emerald-400 font-extrabold">âœ“ In Stock</span>}
                                                   </div>
                                                 </button>
                                               );
@@ -4158,7 +4127,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                                     <button
                                       type="button"
                                       onClick={() => handleAdditionalCardRemoveItem(card.id, item.id)}
-                                      className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer border border-rose-500/20"
+                                      className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer border border-rose-500/20 icon-btn"
                                       title="Remove item"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -4301,7 +4270,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                               <Save className="mr-1.5 inline h-4 w-4" />Save Draft
                             </button>
                             {newItemsCount > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
-                              {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Saving…' : `Save New Item Names (${newItemsCount})`}
+                              {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Savingâ€¦' : `Save New Item Names (${newItemsCount})`}
                             </button>}
                           </div>
                         </div>}
@@ -4396,7 +4365,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
               <button
                 type="button"
                 onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -4424,7 +4393,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                 {/* Newly Scanned Delivery Box */}
                 <div className="space-y-1.5 sm:pl-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Detected Delivery — Card #{additionalDeliveryCards.length + 2}</span>
+                    <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Detected Delivery â€” Card #{additionalDeliveryCards.length + 2}</span>
                     <span className="text-[10px] text-orange-400 font-bold">{pendingUploadData?.newRows?.length || pendingUploadRows?.length || 0} items</span>
                   </div>
                   <p className="font-extrabold text-orange-300 truncate" title={pendingUploadData?.supplierName}>
@@ -4577,7 +4546,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   ? 'This saves only this supplier card as a separate draft in Receiving History. New items stay in the draft, and stock and catalog will not change until the receiving is confirmed.'
                   : `This saves each supplier delivery separately (${additionalDeliveryCards.length + 1} delivery cards). New items stay in their drafts; stock and catalog will not change until a receiving is confirmed.`)
                 : (pendingAddSaveAction.cardId
-                  ? 'This saves only this card’s new item names to the inventory catalog with zero stock. Receiving quantities are not posted.'
+                  ? 'This saves only this cardâ€™s new item names to the inventory catalog with zero stock. Receiving quantities are not posted.'
                   : 'This saves new item names from the current deliveries to the inventory catalog with zero stock. Receiving quantities are not posted.')}
             </p>
             <div className="mt-5 flex justify-end gap-2">
@@ -4633,3 +4602,4 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
 };
 
 export default AdminInventoryView;
+

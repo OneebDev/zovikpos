@@ -286,6 +286,7 @@ const regenerateTableQR = async (req, res) => {
 
     const baseUrl = getDynamicBaseUrl(req);
     const tableUrl = `${baseUrl.replace(/\/$/, '')}/customer/table/${encodeURIComponent(newQrToken)}`;
+    warnIfQrHostMismatch(tableUrl);
     const qrDataUrl = await QRCode.toDataURL(tableUrl, {
       errorCorrectionLevel: 'H',
       margin: 2,
@@ -314,13 +315,22 @@ const regenerateTableQR = async (req, res) => {
  * Helper to get dynamic base URL from request, headers, or incoming client host (never hardcoded)
  */
 const getDynamicBaseUrl = (req) => {
-  if (req.query.baseUrl) {
-    return req.query.baseUrl.replace(/\/$/, '');
-  }
-  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, '');
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.trim().replace(/\/+$/, '');
   let host = req.headers['x-forwarded-host'] || req.headers.host || req.hostname || 'localhost';
   host = host.split(':')[0];
   return `http://${host}:5173`;
+};
+
+const warnIfQrHostMismatch = (tableUrl) => {
+  const configuredFrontend = String(process.env.FRONTEND_URL || '').trim();
+  if (!configuredFrontend) return;
+  try {
+    if (new URL(tableUrl).origin !== new URL(configuredFrontend).origin) {
+      console.warn(`[ZOVIKPOS] Generated table QR host does not match FRONTEND_URL (${configuredFrontend}).`);
+    }
+  } catch {
+    console.warn('[ZOVIKPOS] Could not verify the generated table QR URL against FRONTEND_URL.');
+  }
 };
 
 const getTableQRCard = async (req, res) => {
@@ -338,6 +348,7 @@ const getTableQRCard = async (req, res) => {
     }
 
     const tableUrl = `${baseUrl.replace(/\/$/, '')}/customer/table/${encodeURIComponent(table.qrToken)}`;
+    warnIfQrHostMismatch(tableUrl);
 
     const qrDataUrl = await QRCode.toDataURL(tableUrl, {
       errorCorrectionLevel: 'H',
@@ -378,6 +389,7 @@ const getBatchTableQRCards = async (req, res) => {
     const qrCards = [];
     for (const table of tables) {
       const tableUrl = `${baseUrl.replace(/\/$/, '')}/customer/table/${encodeURIComponent(table.qrToken)}`;
+      warnIfQrHostMismatch(tableUrl);
       const qrDataUrl = await QRCode.toDataURL(tableUrl, {
         errorCorrectionLevel: 'H',
         margin: 2,

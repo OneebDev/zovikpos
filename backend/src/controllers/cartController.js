@@ -1,5 +1,34 @@
 const { prisma } = require('../config/db');
 const { convertUnit } = require('../utils/unitConverter');
+const { isPhysicalTable } = require('../utils/tableLabel');
+
+const getPhysicalCustomerSession = async (sessionId) => prisma.session.findUnique({
+  where: { id: sessionId },
+  select: {
+    status: true,
+    expiresAt: true,
+    tableId: true,
+    table: { select: { id: true, isActive: true, tableNumber: true, branchId: true, qrToken: true } },
+  },
+});
+
+const requireActivePhysicalSession = async (sessionId, res) => {
+  const session = await getPhysicalCustomerSession(sessionId);
+  if (!session || session.status !== 'ACTIVE') {
+    res.status(403).json({ error: 'Your table session is unavailable. Scan the QR code attached to your table to continue.', code: 'TABLE_SESSION_REQUIRED' });
+    return null;
+  }
+  if (!session.tableId || !isPhysicalTable(session.table)) {
+    res.status(403).json({ error: 'Scan the QR code attached to your table before using the cart.', code: 'TABLE_SESSION_REQUIRED' });
+    return null;
+  }
+  if (new Date() > new Date(session.expiresAt)) {
+    await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } });
+    res.status(403).json({ error: 'Your dining session has expired due to inactivity. Please scan the QR code again to start a new session.', code: 'TABLE_SESSION_REQUIRED' });
+    return null;
+  }
+  return session;
+};
 
 /**
  * Helper to ensure a cart exists for a session
@@ -67,14 +96,7 @@ const getCart = async (req, res) => {
 
   try {
     // Check session is still active
-    const session = await prisma.session.findUnique({ where: { id: sessionId }, select: { status: true, expiresAt: true } });
-    if (!session || session.status !== 'ACTIVE') {
-      return res.status(403).json({ error: 'Your dining session has expired. Please scan the QR code again to start a new session.' });
-    }
-    if (new Date() > new Date(session.expiresAt)) {
-      await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } });
-      return res.status(403).json({ error: 'Your dining session has expired due to inactivity. Please scan the QR code again to start a new session.' });
-    }
+    if (!await requireActivePhysicalSession(sessionId, res)) return;
 
     const cart = await getOrCreateCart(sessionId);
 
@@ -135,14 +157,7 @@ const addItemToCart = async (req, res) => {
 
   try {
     // Check session is still active
-    const session = await prisma.session.findUnique({ where: { id: sessionId }, select: { status: true, expiresAt: true } });
-    if (!session || session.status !== 'ACTIVE') {
-      return res.status(403).json({ error: 'Your dining session has expired. Please scan the QR code again to start a new session.' });
-    }
-    if (new Date() > new Date(session.expiresAt)) {
-      await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } });
-      return res.status(403).json({ error: 'Your dining session has expired due to inactivity. Please scan the QR code again to start a new session.' });
-    }
+    if (!await requireActivePhysicalSession(sessionId, res)) return;
 
     const menuItem = await prisma.menuItem.findUnique({
       where: { id: parseInt(menuItemId, 10) },
@@ -219,14 +234,7 @@ const updateCartItem = async (req, res) => {
 
   try {
     // Check session is still active
-    const session = await prisma.session.findUnique({ where: { id: sessionId }, select: { status: true, expiresAt: true } });
-    if (!session || session.status !== 'ACTIVE') {
-      return res.status(403).json({ error: 'Your dining session has expired. Please scan the QR code again to start a new session.' });
-    }
-    if (new Date() > new Date(session.expiresAt)) {
-      await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } });
-      return res.status(403).json({ error: 'Your dining session has expired due to inactivity. Please scan the QR code again to start a new session.' });
-    }
+    if (!await requireActivePhysicalSession(sessionId, res)) return;
 
     const cart = await getOrCreateCart(sessionId);
     const parsedId = parseInt(itemId, 10);
@@ -293,14 +301,7 @@ const removeCartItem = async (req, res) => {
 
   try {
     // Check session is still active
-    const session = await prisma.session.findUnique({ where: { id: sessionId }, select: { status: true, expiresAt: true } });
-    if (!session || session.status !== 'ACTIVE') {
-      return res.status(403).json({ error: 'Your dining session has expired. Please scan the QR code again to start a new session.' });
-    }
-    if (new Date() > new Date(session.expiresAt)) {
-      await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } });
-      return res.status(403).json({ error: 'Your dining session has expired due to inactivity. Please scan the QR code again to start a new session.' });
-    }
+    if (!await requireActivePhysicalSession(sessionId, res)) return;
 
     const cart = await getOrCreateCart(sessionId);
     const parsedId = parseInt(itemId, 10);
@@ -334,14 +335,7 @@ const clearCart = async (req, res) => {
 
   try {
     // Check session is still active
-    const session = await prisma.session.findUnique({ where: { id: sessionId }, select: { status: true, expiresAt: true } });
-    if (!session || session.status !== 'ACTIVE') {
-      return res.status(403).json({ error: 'Your dining session has expired. Please scan the QR code again to start a new session.' });
-    }
-    if (new Date() > new Date(session.expiresAt)) {
-      await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } });
-      return res.status(403).json({ error: 'Your dining session has expired due to inactivity. Please scan the QR code again to start a new session.' });
-    }
+    if (!await requireActivePhysicalSession(sessionId, res)) return;
 
     const cart = await getOrCreateCart(sessionId);
     await prisma.cartItem.deleteMany({

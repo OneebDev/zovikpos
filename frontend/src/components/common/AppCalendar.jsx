@@ -240,7 +240,7 @@ const AppCalendar = ({
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-200"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-200 icon-btn"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -271,18 +271,18 @@ const AppCalendar = ({
             <button
               onClick={() => setCurrentView(VIEW_MONTH)}
               title="Month View"
-              className={`p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={['icon-btn', (`p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 currentView === VIEW_MONTH ? 'bg-orange-500 text-stone-950' : 'text-stone-400 hover:text-stone-200'
-              }`}
+              }`)].filter(Boolean).join(' ')}
             >
               <Grid3X3 className="w-4 h-4" />
             </button>
             <button
               onClick={() => setCurrentView(VIEW_AGENDA)}
               title="Agenda / Timeline List"
-              className={`p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={['icon-btn', (`p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 currentView === VIEW_AGENDA ? 'bg-orange-500 text-stone-950' : 'text-stone-400 hover:text-stone-200'
-              }`}
+              }`)].filter(Boolean).join(' ')}
             >
               <List className="w-4 h-4" />
             </button>
@@ -292,7 +292,7 @@ const AppCalendar = ({
           <div className="flex items-center space-x-1 bg-stone-900 border border-stone-800 rounded-xl p-0.5">
             <button
               onClick={prevPeriod}
-              className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors cursor-pointer icon-btn"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -304,7 +304,7 @@ const AppCalendar = ({
             </button>
             <button
               onClick={nextPeriod}
-              className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors cursor-pointer icon-btn"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -555,7 +555,7 @@ const AppCalendar = ({
               </h4>
               <button
                 onClick={() => setSelectedEventModal(null)}
-                className="p-1 rounded-lg hover:bg-stone-800 text-stone-400"
+                className="p-1 rounded-lg hover:bg-stone-800 text-stone-400 icon-btn"
               >
                 <X className="w-4 h-4" />
               </button>

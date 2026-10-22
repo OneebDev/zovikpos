@@ -1,4 +1,4 @@
-import  { useState, useMemo } from 'react';
+﻿import  { useState, useMemo } from 'react';
 import {
   Bell,
   Package,
@@ -82,7 +82,7 @@ const AdminNotificationsView = ({ stats, orders = [], onNavigate }) => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-4 sm:p-6 rounded-2xl shadow-xl">
+      <div className="glass-card p-4 sm:p-6">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Bell className="w-5 h-5 text-orange-400 shrink-0" />
@@ -140,7 +140,7 @@ const AdminNotificationsView = ({ stats, orders = [], onNavigate }) => {
                     onClick={() => onNavigate(n.targetTab, n.targetContext)}
                     className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold text-xs transition-all shadow-md cursor-pointer"
                   >
-                    Inspect →
+                    Inspect â†’
                   </button>
                   <button
                     onClick={() => handleResolve(n.id)}
@@ -199,3 +199,4 @@ const AdminNotificationsView = ({ stats, orders = [], onNavigate }) => {
 };
 
 export default AdminNotificationsView;
+

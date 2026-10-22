@@ -1,0 +1,56 @@
+.app-error-fallback {
+  box-sizing: border-box;
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.app-error-fallback__content {
+  display: flex;
+  width: min(100%, 420px);
+  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+
+.app-error-fallback__mark {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  border-radius: 18px;
+  color: var(--text-on-accent);
+  background: var(--accent-gradient);
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.app-error-fallback__brand { color: var(--accent); letter-spacing: .08em; }
+.app-error-fallback h1 { margin: 8px 0 0; color: var(--text); font-size: 22px; }
+.app-error-fallback p { margin: 0; color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
+.app-error-fallback button {
+  min-width: 140px;
+  min-height: 48px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: var(--radius-button);
+  color: var(--text-on-accent);
+  background: var(--accent-gradient);
+  font: 700 14px/1 var(--font-body);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.app-error-fallback button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.app-error-fallback .app-error-fallback__link {
+  min-height: 44px;
+  margin-top: 0;
+  padding: 0 12px;
+  color: var(--accent);
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
