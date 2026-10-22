@@ -431,7 +431,7 @@ body:has(.customer-tracking-page),
 .customer-tracking-loading__intro > div { display: grid; gap: 3px; }
 .customer-tracking-loading__intro strong { font-size: 13px; font-weight: 800; letter-spacing: .08em; }
 .customer-tracking-loading__intro > div > span { color: var(--text-muted); font-size: 13px; }
-.customer-tracking-loading__logo { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 14px; background: var(--accent-gradient); color: var(--text-on-accent); font-size: 21px; font-weight: 800; animation: tracking-logo-pulse 1.8s ease-in-out infinite; }
+.customer-tracking-loading__logo { display: block; width: 42px; height: 42px; border-radius: 14px; object-fit: contain; animation: tracking-logo-pulse 1.8s ease-in-out infinite; }
 .customer-tracking-loading__progress { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 4px; padding: 0; color: var(--text-muted); font-size: 11px; list-style: none; }
 .customer-tracking-loading__progress li { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .customer-tracking-loading__progress li + li::before { width: 16px; height: 1px; background: var(--border); content: ''; }

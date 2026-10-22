@@ -16,6 +16,7 @@ import {
   Keyboard,
 } from 'lucide-react';
 import DemoStatusBadge from './DemoStatusBadge';
+import AppBackground from './common/AppBackground';
 import { isOrderDeletedEvent, mergeOrderList, mergeOrderRecord, orderStoreFromList, removeDeletedOrders, stableOrderSort } from '../utils/liveOrderStore';
 
 const KitchenDashboard = ({ user }) => {
@@ -303,10 +304,8 @@ const KitchenDashboard = ({ user }) => {
   }).length;
 
   return (
-    <div className="responsive-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] p-4 sm:p-6 flex flex-col space-y-5 relative overflow-x-hidden transition-colors duration-300 font-sans">
-      {/* Background neon flares */}
-      <div className="absolute top-0 left-0 w-[400px] h-[400px] bg-amber-500/5 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-orange-500/3 rounded-full blur-[140px] pointer-events-none" />
+    <div className="responsive-shell staff-theme-root staff-kitchen-root min-h-screen text-[var(--text-main)] p-4 sm:p-6 flex flex-col space-y-5 relative overflow-x-hidden transition-colors duration-300 font-sans">
+      <AppBackground />
 
       {/* Visual flash alert for new orders */}
       {newOrderAlert && (
@@ -335,7 +334,7 @@ const KitchenDashboard = ({ user }) => {
       )}
 
       {/* ── LIVE KDS STATS & ACTION TOOLBAR ─────────────────────────────────── */}
-      <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-4 rounded-2xl shadow-xl flex flex-wrap items-center justify-between gap-4 relative z-10">
+      <div className="staff-kitchen-toolbar bg-[var(--card-bg)] border border-[var(--border-color)] p-4 rounded-2xl shadow-xl flex flex-wrap items-center justify-between gap-4 relative z-10">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center space-x-2">
             <span className="w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
@@ -371,6 +370,7 @@ const KitchenDashboard = ({ user }) => {
 
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
+            aria-label={soundEnabled ? 'Mute audio alerts' : 'Enable audio alerts'}
             className={`p-2 rounded-xl border transition-all cursor-pointer icon-btn ${
               soundEnabled
                 ? 'bg-orange-500/15 border-orange-500/30 text-orange-300'

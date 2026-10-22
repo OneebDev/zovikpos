@@ -124,9 +124,9 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
         unit: it.unit || it.inventoryItem?.unit || 'PCS',
         unitCost: parseFloat(it.unitCost) || parseFloat(it.inventoryItem?.costPrice) || 0,
         totalCost: parseFloat(it.totalCost) || (parseFloat(it.quantity) || 0) * (parseFloat(it.unitCost) || 0),
-        batchNumber: it.batchNumber || rcv.batchNumber || 'â€”',
-        expiryDate: it.expiryDate ? new Date(it.expiryDate).toLocaleDateString() : 'â€”',
-        sku: it.inventoryItem?.sku || 'â€”'
+        batchNumber: it.batchNumber || rcv.batchNumber || '—',
+        expiryDate: it.expiryDate ? new Date(it.expiryDate).toLocaleDateString() : '—',
+        sku: it.inventoryItem?.sku || '—'
       }));
 
       receivingGroups.set(groupKey, {
@@ -139,7 +139,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
         timeFormatted: createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         supplierName: supName,
         userName: rcv.receivedBy?.name || rcv.receivedByName || rcv.user?.name || 'Admin User',
-        invoiceNumber: rcv.invoiceNumber || 'â€”',
+        invoiceNumber: rcv.invoiceNumber || '—',
         receivingNumber: rcv.receivingNumber || `RCV-${rcv.id}`,
         batchNumber: rcv.batchNumber || (items.length > 0 && items.every(i => i.batchNumber === items[0].batchNumber) ? items[0].batchNumber : 'Multiple Batches'),
         items: items,
@@ -182,9 +182,9 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
           unit,
           unitCost: costPerUnit,
           totalCost: lineCost,
-          batchNumber: log.batchNumber || log.receiving?.batchNumber || 'â€”',
-          expiryDate: log.expiryDate ? new Date(log.expiryDate).toLocaleDateString() : 'â€”',
-          sku: log.inventoryItem?.sku || 'â€”'
+          batchNumber: log.batchNumber || log.receiving?.batchNumber || '—',
+          expiryDate: log.expiryDate ? new Date(log.expiryDate).toLocaleDateString() : '—',
+          sku: log.inventoryItem?.sku || '—'
         };
 
         if (groupKey && receivingGroups.has(groupKey)) {
@@ -208,9 +208,9 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
             timeFormatted: createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             supplierName: supName,
             userName,
-            invoiceNumber: log.receiving?.invoiceNumber || (refMatch && refMatch[1].startsWith('INV') ? refMatch[1] : 'â€”'),
+            invoiceNumber: log.receiving?.invoiceNumber || (refMatch && refMatch[1].startsWith('INV') ? refMatch[1] : '—'),
             receivingNumber: log.receiving?.receivingNumber || (refMatch ? refMatch[1] : `RCV-${log.receivingId || log.id}`),
-            batchNumber: log.batchNumber || log.receiving?.batchNumber || 'â€”',
+            batchNumber: log.batchNumber || log.receiving?.batchNumber || '—',
             items: [itemLine],
             totalItemsCount: 1,
             totalCost: lineCost,
@@ -229,9 +229,9 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
             timeFormatted: createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             supplierName: supName,
             userName,
-            invoiceNumber: 'â€”',
+            invoiceNumber: '—',
             receivingNumber: `RCV-LOG-${log.id}`,
-            batchNumber: log.batchNumber || 'â€”',
+            batchNumber: log.batchNumber || '—',
             items: [itemLine],
             totalItemsCount: 1,
             totalCost: lineCost,
@@ -265,7 +265,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
           totalCost: actualLineCost,
           batchNumber: batchNum || 'Legacy Stock',
           supplierName: supName || 'Legacy / Market Stock',
-          invoiceNumber: invNum || 'â€”',
+          invoiceNumber: invNum || '—',
           batchRemaining: batchRem,
           reason: reason || 'Recipe stock deduction'
         };
@@ -313,7 +313,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
             tableInfo: log.order ? resolveTableLabel(log.order) : (log.order?.customerEmail ? `Customer: ${log.order.customerEmail}` : null),
             orderedProducts: orderedProducts,
             orderedProductsSummary: orderedProducts.length > 0
-              ? orderedProducts.map(p => `${p.name} Ã— ${p.quantity}`).join(', ')
+              ? orderedProducts.map(p => `${p.name} × ${p.quantity}`).join(', ')
               : (reason.includes(':') ? reason.split(':')[1]?.trim() : 'POS Menu Item Orders'),
             ingredients: [
               {
@@ -347,7 +347,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
           unit,
           reference: log.reference || `ADJ-${log.id}`,
           reason: reason || `${type} adjustment`,
-          batchNumber: log.batchNumber || 'â€”',
+          batchNumber: log.batchNumber || '—',
           badgeColor: type === 'RESTORATION' ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' : 'text-amber-400 bg-amber-500/10 border-amber-500/20',
           icon: AlertTriangle,
           rawLog: log,
@@ -485,7 +485,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-card p-5 sm:p-6">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
-            <span className="p-2 rounded-2xl bg-purple-500/10 text-purple-400">ðŸ“œ</span>
+            <span className="p-2 rounded-2xl bg-purple-500/10 text-purple-400">📜</span>
             Inventory &amp; Activity Logs
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -706,14 +706,14 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
                         {/* Collapsed KPI summary badges */}
                         <div className="flex flex-wrap items-center gap-2.5 text-[11px] font-mono text-[var(--text-muted)] pt-0.5">
                           <span className="bg-[var(--card-bg)] px-2 py-0.5 rounded-lg border border-[var(--border-color)] text-[var(--text-main)] font-bold">
-                            ðŸ“¦ Items: <strong className="text-emerald-400">{act.totalItemsCount}</strong>
+                            📦 Items: <strong className="text-emerald-400">{act.totalItemsCount}</strong>
                           </span>
                           {act.totalCost > 0 && (
                             <span className="bg-[var(--card-bg)] px-2 py-0.5 rounded-lg border border-[var(--border-color)] text-[var(--text-main)] font-bold">
-                              ðŸ’° Total: <strong className="text-amber-400 font-mono">PKR {Math.round(act.totalCost).toLocaleString()}</strong>
+                              💰 Total: <strong className="text-amber-400 font-mono">PKR {Math.round(act.totalCost).toLocaleString()}</strong>
                             </span>
                           )}
-                          {act.invoiceNumber && act.invoiceNumber !== 'â€”' && (
+                          {act.invoiceNumber && act.invoiceNumber !== '—' && (
                             <span className="bg-[var(--card-bg)] px-2 py-0.5 rounded-lg border border-[var(--border-color)] text-[var(--text-main)]">
                               Invoice: <strong className="text-emerald-300 font-bold">{act.invoiceNumber}</strong>
                             </span>
@@ -721,7 +721,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
                           <span className="bg-[var(--card-bg)] px-2 py-0.5 rounded-lg border border-[var(--border-color)] text-[var(--text-main)]">
                             Ref: <strong>{act.receivingNumber}</strong>
                           </span>
-                          {act.batchNumber && act.batchNumber !== 'â€”' && (
+                          {act.batchNumber && act.batchNumber !== '—' && (
                             <span className="bg-[var(--card-bg)] px-2 py-0.5 rounded-lg border border-[var(--border-color)] text-[var(--text-main)]">
                               Batch: <strong className="text-orange-400 font-bold">{act.batchNumber}</strong>
                             </span>
@@ -807,10 +807,10 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
                                   {item.unit}
                                 </td>
                                 <td className="py-2.5 px-3 text-right text-[var(--text-muted)]">
-                                  {item.unitCost > 0 ? `PKR ${item.unitCost.toFixed(2)}` : 'â€”'}
+                                  {item.unitCost > 0 ? `PKR ${item.unitCost.toFixed(2)}` : '—'}
                                 </td>
                                 <td className="py-2.5 px-3 text-right font-bold text-amber-400">
-                                  {item.totalCost > 0 ? `PKR ${Math.round(item.totalCost).toLocaleString()}` : 'â€”'}
+                                  {item.totalCost > 0 ? `PKR ${Math.round(item.totalCost).toLocaleString()}` : '—'}
                                 </td>
                                 <td className="py-2.5 px-3 text-orange-400 font-bold">
                                   {item.batchNumber}
@@ -884,7 +884,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
 
                         <div className="flex flex-wrap items-center gap-2.5 text-[11px] font-mono text-[var(--text-muted)] pt-0.5">
                           <span className="bg-[var(--card-bg)] px-2 py-0.5 rounded-lg border border-[var(--border-color)] text-[var(--text-main)] font-bold">
-                            ðŸ§ª Ingredients Deducted: <strong className="text-purple-400">{act.totalIngredientsCount}</strong>
+                            🧪 Ingredients Deducted: <strong className="text-purple-400">{act.totalIngredientsCount}</strong>
                           </span>
                           {unitSummaryStr && (
                             <span className="bg-[var(--card-bg)] px-2 py-0.5 rounded-lg border border-[var(--border-color)] text-[var(--text-main)]">
@@ -946,7 +946,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
                           <span className="text-[10px] font-black uppercase text-[var(--text-muted)]">Order Items:</span>
                           {act.orderedProducts.map((p, pIdx) => (
                             <span key={pIdx} className="px-2 py-0.5 rounded-lg bg-[var(--card-bg)] text-[var(--text-main)] font-bold border border-[var(--border-color)]">
-                              {p.name} <span className="text-purple-400 font-mono">Ã— {p.quantity}</span>
+                              {p.name} <span className="text-purple-400 font-mono">× {p.quantity}</span>
                             </span>
                           ))}
                         </div>
@@ -996,11 +996,11 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
                                         <td colSpan="2" className="py-2 px-3 text-xs text-[var(--text-muted)] font-sans italic">
                                           Multi-batch FIFO deduction
                                         </td>
-                                        <td className="py-2 px-3 text-right text-[var(--text-muted)]">â€”</td>
+                                        <td className="py-2 px-3 text-right text-[var(--text-muted)]">—</td>
                                         <td className="py-2 px-3 text-right font-black text-amber-400">
                                           PKR {ing.totalCost.toFixed(2)}
                                         </td>
-                                        <td className="py-2 px-3 text-right text-[var(--text-muted)]">â€”</td>
+                                        <td className="py-2 px-3 text-right text-[var(--text-muted)]">—</td>
                                       </tr>
                                       {/* Sub-rows for each batch */}
                                       {ing.batches.map((b, bIdx) => (
@@ -1019,18 +1019,18 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
                                           </td>
                                           <td className="py-1.5 px-3 text-[var(--text-muted)] font-sans">
                                             <span className="font-bold text-[var(--text-main)]">{b.supplierName}</span>
-                                            {b.invoiceNumber && b.invoiceNumber !== 'â€”' && (
+                                            {b.invoiceNumber && b.invoiceNumber !== '—' && (
                                               <span className="text-[10px] text-emerald-400 block font-mono">Inv: {b.invoiceNumber}</span>
                                             )}
                                           </td>
                                           <td className="py-1.5 px-3 text-right text-[var(--text-muted)]">
-                                            {b.unitCost > 0 ? `PKR ${b.unitCost.toFixed(2)}` : 'â€”'}
+                                            {b.unitCost > 0 ? `PKR ${b.unitCost.toFixed(2)}` : '—'}
                                           </td>
                                           <td className="py-1.5 px-3 text-right font-bold text-amber-400">
-                                            {b.totalCost > 0 ? `PKR ${b.totalCost.toFixed(2)}` : 'â€”'}
+                                            {b.totalCost > 0 ? `PKR ${b.totalCost.toFixed(2)}` : '—'}
                                           </td>
                                           <td className="py-1.5 px-3 text-right text-emerald-400 font-bold">
-                                            {b.batchRemaining !== null ? `${b.batchRemaining} ${b.unit}` : 'â€”'}
+                                            {b.batchRemaining !== null ? `${b.batchRemaining} ${b.unit}` : '—'}
                                           </td>
                                         </tr>
                                       ))}
@@ -1055,18 +1055,18 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
                                           </td>
                                           <td className="py-2.5 px-3 text-[var(--text-muted)] font-sans">
                                             <span className="font-bold text-[var(--text-main)]">{b.supplierName || 'Legacy / Market Stock'}</span>
-                                            {b.invoiceNumber && b.invoiceNumber !== 'â€”' && (
+                                            {b.invoiceNumber && b.invoiceNumber !== '—' && (
                                               <span className="text-[10px] text-emerald-400 block font-mono">Inv: {b.invoiceNumber}</span>
                                             )}
                                           </td>
                                           <td className="py-2.5 px-3 text-right text-[var(--text-muted)]">
-                                            {b.unitCost > 0 ? `PKR ${b.unitCost.toFixed(2)}` : 'â€”'}
+                                            {b.unitCost > 0 ? `PKR ${b.unitCost.toFixed(2)}` : '—'}
                                           </td>
                                           <td className="py-2.5 px-3 text-right font-bold text-amber-400">
-                                            {b.totalCost > 0 ? `PKR ${b.totalCost.toFixed(2)}` : 'â€”'}
+                                            {b.totalCost > 0 ? `PKR ${b.totalCost.toFixed(2)}` : '—'}
                                           </td>
                                           <td className="py-2.5 px-3 text-right text-emerald-400 font-bold">
-                                            {b.batchRemaining !== null ? `${b.batchRemaining} ${b.unit}` : 'â€”'}
+                                            {b.batchRemaining !== null ? `${b.batchRemaining} ${b.unit}` : '—'}
                                           </td>
                                         </tr>
                                       );
@@ -1114,7 +1114,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
 
                     <div className="flex flex-wrap items-center gap-3 text-[10px] text-[var(--text-muted)] font-mono">
                       <span>Ref: <strong>{act.reference}</strong></span>
-                      {act.batchNumber && act.batchNumber !== 'â€”' && (
+                      {act.batchNumber && act.batchNumber !== '—' && (
                         <span>Batch: <strong className="text-orange-400">{act.batchNumber}</strong></span>
                       )}
                       {act.reason && (
@@ -1245,7 +1245,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
         onConfirm={handleConfirmDeleteLog}
         title={deleteTarget?.label ? 'Delete Selected Inventory Logs' : 'Delete Inventory Log'}
         message="This permanently removes the selected inventory log record(s) from the activity history."
-        itemName={deleteTarget?.label || (deleteTarget?.actionLabel ? `${deleteTarget.actionLabel} Â· ${deleteTarget.itemName || deleteTarget.orderNumber || deleteTarget.receivingNumber || ''}` : '')}
+        itemName={deleteTarget?.label || (deleteTarget?.actionLabel ? `${deleteTarget.actionLabel} · ${deleteTarget.itemName || deleteTarget.orderNumber || deleteTarget.receivingNumber || ''}` : '')}
         itemCount={logIdsForActivity(deleteTarget).length}
         isBulk={logIdsForActivity(deleteTarget).length > 1}
         confirmButtonText={logIdsForActivity(deleteTarget).length > 1 ? `Delete ${logIdsForActivity(deleteTarget).length} Logs` : 'Delete Log'}

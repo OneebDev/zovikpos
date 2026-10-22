@@ -265,7 +265,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 glass-card p-5 sm:p-6">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
-            <span className="p-2 rounded-2xl bg-amber-500/10 text-amber-400">ðŸ’°</span>
+            <span className="p-2 rounded-2xl bg-amber-500/10 text-amber-400">💰</span>
             Costs & Margins
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -308,13 +308,13 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
         <div className="bg-[var(--card-bg)]/60 border border-[var(--border-color)] p-4 rounded-2xl space-y-1">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] block">Average Food Cost</span>
           <div className="text-2xl font-black text-amber-400 font-mono">{summary.avgFoodCost}%</div>
-          <div className="text-[10px] text-[var(--text-muted)]">Target benchmark: 30%â€“35%</div>
+          <div className="text-[10px] text-[var(--text-muted)]">Target benchmark: 30%"“35%</div>
         </div>
 
         <div className="bg-[var(--card-bg)]/60 border border-[var(--border-color)] p-4 rounded-2xl space-y-1">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] block">Best Margin</span>
           <div className="text-base font-black text-emerald-400 truncate">
-            {summary.bestMarginItem ? `${summary.bestMarginItem.name}` : 'â€”'}
+            {summary.bestMarginItem ? `${summary.bestMarginItem.name}` : '—'}
           </div>
           <div className="text-[10px] text-emerald-400 font-mono font-bold">
             {summary.bestMarginItem ? `${summary.bestMarginItem.marginPct.toFixed(1)}% Gross Margin` : 'No recipe yet'}
@@ -324,7 +324,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
         <div className="bg-[var(--card-bg)]/60 border border-[var(--border-color)] p-4 rounded-2xl space-y-1">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] block">Highest Cost Item</span>
           <div className="text-base font-black text-rose-400 truncate">
-            {summary.highestCostItem ? `${summary.highestCostItem.name}` : 'â€”'}
+            {summary.highestCostItem ? `${summary.highestCostItem.name}` : '—'}
           </div>
           <div className="text-[10px] text-rose-400 font-mono font-bold">
             {summary.highestCostItem ? `Rs. ${summary.highestCostItem.recipeCost.toFixed(2)} Recipe Cost` : 'No recipe yet'}
@@ -395,7 +395,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
         ) : (
           <div className="overflow-x-auto">
             <table className="inventory-single-row-table w-full min-w-max text-left text-xs divide-y divide-[var(--border-color)]">
-              <thead className="bg-[var(--bg-color)]/80 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]">
+              <thead className=" text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]" style={{ background: 'var(--table-header-bg)' }}>
                 <tr>
                   {selectionMode && <th className="py-3.5 pl-4 pr-2 w-8">
                     <input
@@ -430,7 +430,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 shrink-0">
-                            ðŸ”
+                            <Utensils className="h-4 w-4" aria-hidden="true" />
                           </div>
                           <div>
                             <strong className="text-[var(--text-main)] block">{item.name}</strong>
@@ -444,7 +444,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
                       </td>
 
                       <td className="py-3 px-4 font-mono font-bold text-amber-400">
-                        {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.recipeCost.toFixed(2)}` : 'â€”'}
+                        {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.recipeCost.toFixed(2)}` : '—'}
                       </td>
 
                       <td className="py-3 px-4 font-mono font-bold">
@@ -453,12 +453,12 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
                             {item.foodCostPct.toFixed(1)}%
                           </span>
                         ) : (
-                          'â€”'
+                          '—'
                         )}
                       </td>
 
                       <td className="py-3 px-4 font-mono font-bold text-emerald-400">
-                        {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.grossMargin.toFixed(2)}` : 'â€”'}
+                        {item.hasRecipe && item.recipeCost > 0 ? `Rs. ${item.grossMargin.toFixed(2)}` : '—'}
                       </td>
 
                       <td className="py-3 px-4">
@@ -547,7 +547,7 @@ const AdminCostsMarginsView = ({ inventory = [], showToast, onNavigateToRecipes 
             <div className="grid grid-cols-2 gap-3 bg-[var(--bg-color)] p-4 rounded-2xl text-xs font-mono font-bold">
               <div>Selling Price: <strong className="text-[var(--text-main)]">Rs. {selectedItemDetails.price}</strong></div>
               <div>Current Recipe Cost: <strong className="text-amber-400">Rs. {selectedItemDetails.recipeCost.toFixed(2)}</strong></div>
-              <div>Food Cost %: <strong className="text-emerald-400">{selectedItemDetails.foodCostPct > 0 ? `${selectedItemDetails.foodCostPct.toFixed(1)}%` : 'â€”'}</strong></div>
+              <div>Food Cost %: <strong className="text-emerald-400">{selectedItemDetails.foodCostPct > 0 ? `${selectedItemDetails.foodCostPct.toFixed(1)}%` : '—'}</strong></div>
               <div>Gross Margin: <strong className="text-emerald-400">Rs. {selectedItemDetails.grossMargin.toFixed(2)}</strong></div>
             </div>
 

@@ -1,4 +1,4 @@
-﻿import  { useState, useMemo } from 'react';
+import  { useState, useMemo } from 'react';
 import {
   Bell,
   Package,
@@ -127,24 +127,24 @@ const AdminNotificationsView = ({ stats, orders = [], onNavigate }) => {
                 {n.type === 'STOCK' ? <Package className="w-5 h-5 text-amber-400" /> : <CreditCard className="w-5 h-5 text-orange-400" />}
               </div>
               <div className="min-w-0 flex-1">
-                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
-                  n.severity === 'CRITICAL' ? 'bg-rose-500 text-white' : 'bg-amber-500/20 text-amber-400'
+                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                  n.severity === 'CRITICAL' ? 'bg-rose-600 text-white shadow-sm' : 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30'
                 }`}>
                   {n.severity}
                 </span>
-                <h3 className="text-sm font-extrabold text-[var(--text-main)] mt-1">{n.title}</h3>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">{n.description}</p>
-                <span className="text-[10px] text-[var(--text-muted)] mt-1 block">{n.timestamp}</span>
+                <h3 className="text-sm font-extrabold text-[var(--text-1)] mt-1">{n.title}</h3>
+                <p className="text-xs text-[var(--text-2)] mt-0.5 leading-relaxed">{n.description}</p>
+                <span className="text-[11px] text-[var(--text-3)] mt-1 block font-medium">{n.timestamp}</span>
                 <div className="flex flex-wrap items-center gap-2 mt-4">
                   <button
                     onClick={() => onNavigate(n.targetTab, n.targetContext)}
                     className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold text-xs transition-all shadow-md cursor-pointer"
                   >
-                    Inspect â†’
+                    Inspect →
                   </button>
                   <button
                     onClick={() => handleResolve(n.id)}
-                    className="px-3.5 py-1.5 bg-[var(--bg-color)] hover:bg-[var(--border-color)] text-[var(--text-muted)] font-bold text-xs rounded-xl border border-[var(--border-color)] transition-all cursor-pointer"
+                    className="px-3.5 py-1.5 bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--text-1)] font-bold text-xs rounded-xl border border-[var(--border-1)] transition-all cursor-pointer shadow-sm"
                   >
                     Mark Resolved
                   </button>

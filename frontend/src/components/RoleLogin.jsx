@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import { Lock, Mail, Flame, CreditCard, ShieldCheck, User, AlertCircle, ArrowRight, ArrowLeft, Eye, EyeOff, Zap } from 'lucide-react';
+import AppBackground from './common/AppBackground';
+import { Lock, Mail, Flame, CreditCard, ShieldCheck, User, AlertCircle, ArrowRight, Eye, EyeOff, Zap, Sun, Moon } from 'lucide-react';
 
 const ROLE_CONFIGS = {
   KITCHEN: {
@@ -61,6 +62,17 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [isDark, setIsDark] = useState(() => {
+    return document.documentElement.classList.contains('dark') || localStorage.getItem('theme') !== 'light';
+  });
+
+  const toggleTheme = () => {
+    const nextDark = !isDark;
+    setIsDark(nextDark);
+    document.documentElement.classList.toggle('dark', nextDark);
+    localStorage.setItem('theme', nextDark ? 'dark' : 'light');
+  };
+
   React.useEffect(() => {
     setEmail('');
     setPassword('');
@@ -106,22 +118,25 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
   };
 
   return (
-    <div className="responsive-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] flex items-center justify-center p-4 sm:p-6 relative overflow-hidden transition-colors duration-300">
-      {/* Background Ambient Glows */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] sm:w-[600px] h-[500px] sm:h-[600px] bg-orange-500/10 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-10 right-10 w-[300px] sm:w-[400px] h-[300px] sm:h-[400px] bg-amber-500/5 rounded-full blur-[120px] pointer-events-none" />
+    <div className="responsive-shell staff-theme-root staff-login-root min-h-screen text-[var(--text-main)] flex items-center justify-center p-4 sm:p-6 relative overflow-hidden transition-colors duration-300">
+      <AppBackground />
 
-      <div className="w-full max-w-md bg-[var(--card-bg)]/90 backdrop-blur-2xl border border-[var(--border-color)] p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6 relative z-10 animate-fade-in">
+      <div className="staff-login-card w-full max-w-md p-6 sm:p-8 rounded-3xl space-y-6 relative z-10 animate-fade-in">
 
         {/* Top Branding & Navigation */}
-        <div className="flex items-center justify-between pb-2 border-b border-[var(--border-color)]">
-          <Link to="/customer" className="inline-flex items-center space-x-1.5 text-xs text-[var(--text-muted)] hover:text-orange-500 transition-colors font-semibold">
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Menu</span>
-          </Link>
+        <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-orange-500 bg-orange-500/10 border border-orange-500/20 px-2.5 py-1 rounded-full">
-            {config.badgeText}
+            {roleType === 'ADMIN' ? 'Admin' : roleType === 'KITCHEN' ? 'Kitchen' : 'Cashier'}
           </span>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="staff-login-theme-toggle w-8 h-8 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            title="Toggle Theme"
+            aria-label="Toggle Theme"
+          >
+            {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-400" />}
+          </button>
         </div>
 
         {/* Header */}
@@ -160,7 +175,7 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
                 className="w-full bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl px-4 py-3 pl-10 text-xs sm:text-sm text-[var(--text-main)] placeholder-[var(--text-muted)] focus:outline-none focus:border-orange-500 transition-all"
                 required
               />
-              <Mail className="w-4 h-4 text-[var(--text-muted)] absolute left-3.5 top-3.5 sm:top-4" />
+              <Mail className="w-4 h-4 text-[var(--text-muted)] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
 
@@ -174,17 +189,19 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl px-4 py-3 pl-10 pr-10 text-xs sm:text-sm text-[var(--text-main)] placeholder-[var(--text-muted)] focus:outline-none focus:border-orange-500 transition-all"
+                className="w-full bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl px-4 py-3 pl-10 pr-14 text-xs sm:text-sm text-[var(--text-main)] placeholder-[var(--text-muted)] focus:outline-none focus:border-orange-500 transition-all"
                 required
               />
-              <Lock className="w-4 h-4 text-[var(--text-muted)] absolute left-3.5 top-3.5 sm:top-4" />
+              <Lock className="w-4 h-4 text-[var(--text-muted)] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-3.5 sm:top-4 text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+                className="staff-login-eye-btn"
                 title={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
           </div>
@@ -218,7 +235,7 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
 
         {/* Mode Guidance & Testing Quick Fill Shortcut */}
         <div className="border-t border-[var(--border-color)] pt-4 space-y-3">
-          <div className="p-2.5 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[10px] text-[var(--text-muted)] space-y-1">
+          <div className="staff-login-note p-2.5 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[10px] text-[var(--text-muted)] space-y-1">
             <span className="font-bold text-emerald-600 dark:text-emerald-400 block">🟢 Real Account (Full Access)</span>
             <span>Real accounts have full write access.</span>
 

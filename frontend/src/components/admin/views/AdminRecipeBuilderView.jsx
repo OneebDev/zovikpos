@@ -1,9 +1,19 @@
-﻿import ThemedSelect from '../../common/ThemedSelect';
+import ThemedSelect from '../../common/ThemedSelect';
 import  { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import api from '../../../services/api';
+import api, { resolveBackendUrl } from '../../../services/api';
+
+const resolveImageUrl = (url) => {
+  if (!url || typeof url !== 'string' || url.trim() === '') return null;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('/uploads/')) {
+    return `${resolveBackendUrl()}${trimmed}`;
+  }
+  return trimmed;
+};
 import {
   Utensils,
+  BookOpen,
   Search,
   Plus,
   Edit3,
@@ -450,7 +460,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 glass-card p-5 sm:p-6">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
-            <span className="p-2 rounded-2xl bg-orange-500/10 text-orange-400">ðŸ“–</span>
+            <span className="inline-flex p-2 rounded-2xl bg-orange-500/10 text-orange-400"><BookOpen className="h-5 w-5" aria-hidden="true" /></span>
             Recipe Builder
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -591,7 +601,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
         ) : (
           <div className="overflow-x-auto">
             <table className="inventory-single-row-table w-full min-w-[960px] text-left text-xs divide-y divide-[var(--border-color)]">
-              <thead className="bg-[var(--bg-color)] text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border-color)]">
+              <thead className=" text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border-color)]" style={{ background: 'var(--table-header-bg)' }}>
                 <tr>
                   {selectionMode && <th className="py-3.5 pl-4 pr-2 w-10 text-center">
                     <input
@@ -632,11 +642,21 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                       {/* Item Name */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center font-bold text-orange-400 shrink-0">
+                          <div className="w-8 h-8 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center font-bold text-orange-400 shrink-0 overflow-hidden">
                             {item.imageUrl ? (
-                              <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover rounded-xl" />
+                              <img
+                                src={resolveImageUrl(item.imageUrl)}
+                                alt={item.name}
+                                className="w-full h-full object-cover rounded-xl"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  if (e.currentTarget.parentElement) {
+                                    e.currentTarget.parentElement.innerText = '🍔';
+                                  }
+                                }}
+                              />
                             ) : (
-                              'ðŸ”'
+                              '🍔'
                             )}
                           </div>
                           <div>
@@ -671,7 +691,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
 
                       {/* Recipe Cost */}
                       <td className="py-3 px-4 font-mono font-bold text-amber-500 dark:text-amber-400 text-right">
-                        {cost > 0 ? `Rs. ${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'â€”'}
+                        {cost > 0 ? `Rs. ${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                       </td>
 
                       {/* Food Cost % */}
@@ -681,7 +701,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                             {foodCostPct}%
                           </span>
                         ) : (
-                          <span className="text-[var(--text-muted)]">â€”</span>
+                          <span className="text-[var(--text-muted)]">—</span>
                         )}
                       </td>
 
@@ -761,7 +781,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
         />
       )}
 
-      {/* 5. FULL RECIPE EDITOR MODAL â€” Portal to document.body for true screen centering */}
+      {/* 5. FULL RECIPE EDITOR MODAL — Portal to document.body for true screen centering */}
       {activeEditorItem && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-[var(--glass-bg-subtle)] p-2 backdrop-blur-md sm:p-4">
           <div className="my-auto flex max-h-[96dvh] min-h-0 w-full min-w-0 max-w-3xl flex-col space-y-3 overflow-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] p-3 shadow-2xl animate-scale-up sm:max-h-[92vh] sm:space-y-4 sm:p-6">
@@ -769,8 +789,22 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
             {/* Modal Header */}
             <div className="flex shrink-0 items-start justify-between gap-2 border-b border-[var(--border-color)] pb-3.5">
               <div className="flex min-w-0 items-start gap-2 sm:items-center sm:gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-orange-500/20 bg-orange-500/10 text-lg sm:h-10 sm:w-10 sm:text-xl">
-                  ðŸ•
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-orange-500/20 bg-orange-500/10 text-lg sm:h-10 sm:w-10 sm:text-xl overflow-hidden">
+                  {activeEditorItem.imageUrl ? (
+                    <img
+                      src={resolveImageUrl(activeEditorItem.imageUrl)}
+                      alt={activeEditorItem.name}
+                      className="w-full h-full object-cover rounded-2xl"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        if (e.currentTarget.parentElement) {
+                          e.currentTarget.parentElement.innerText = '🍕';
+                        }
+                      }}
+                    />
+                  ) : (
+                    '🍕'
+                  )}
                 </div>
                 <div className="min-w-0">
                   <h3 className="break-words text-sm font-black text-[var(--text-main)] font-display sm:text-base">
@@ -778,11 +812,11 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                   </h3>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-[var(--text-muted)] sm:gap-3 sm:text-[11px]">
                     <span>Category: <strong className="text-[var(--text-main)]">{activeEditorItem.category || 'General'}</strong></span>
-                    <span className="hidden sm:inline">â€¢</span>
+                    <span className="hidden sm:inline">•</span>
                     <span>Selling Price: <strong className="text-orange-400">Rs. {activeEditorItem.price}</strong></span>
                     {activeEditorItem.prepTime && (
                       <span>
-                        <span className="mr-2 hidden sm:inline">â€¢</span>
+                        <span className="mr-2 hidden sm:inline">•</span>
                         <span>Prep Time: <strong>{activeEditorItem.prepTime} min</strong></span>
                       </span>
                     )}
@@ -805,7 +839,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
               {/* Menu Item Step Selector */}
               <div className="bg-[var(--bg-color)]/60 border border-[var(--border-color)] p-3 rounded-2xl space-y-2">
                 <label className="block font-extrabold text-[var(--text-main)] uppercase tracking-wider text-[10px]">
-                  Step 1 â€” Menu Item Selection
+                  Step 1 — Menu Item Selection
                 </label>
                 <ThemedSelect
                   value={activeEditorItem.id}
@@ -817,7 +851,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                 >
                   {menuItems.map(m => (
                     <option key={m.id} value={m.id}>
-                      {m.name} â€” Rs.{m.price} ({m.category || 'General'})
+                      {m.name} — Rs.{m.price} ({m.category || 'General'})
                     </option>
                   ))}
                 </ThemedSelect>
@@ -827,7 +861,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
               <div className="flex flex-col items-start justify-between gap-2 pt-1 sm:flex-row sm:items-center">
                 <div>
                   <h4 className="font-black text-[var(--text-main)] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                    <span>ðŸ“¦ Recipe Ingredients</span>
+                    <span>📦 Recipe Ingredients</span>
                     <span className="text-[10px] text-[var(--text-muted)] font-normal lowercase">({editorIngredients.length} ingredients mapped)</span>
                   </h4>
                 </div>
@@ -839,7 +873,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                   className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600/20 to-pink-600/20 hover:from-purple-600/30 hover:to-pink-600/30 text-purple-300 border border-purple-500/30 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-purple-500/10"
                 >
                   <Sparkles className={`w-3.5 h-3.5 text-pink-400 ${isAiLoading ? 'animate-spin' : ''}`} />
-                  <span>{isAiLoading ? 'AI Analyzing...' : 'âœ¨ AI Suggest Ingredients'}</span>
+                  <span>{isAiLoading ? 'AI Analyzing...' : 'AI Suggest Ingredients'}</span>
                 </button>
               </div>
 
@@ -848,7 +882,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                 {editorIngredients.length === 0 ? (
                   <div className="p-6 text-center text-[var(--text-muted)] space-y-1">
                     <p className="font-bold">No ingredients added to this recipe yet.</p>
-                    <p className="text-[11px]">Search & select from inventory below or click "âœ¨ AI Suggest Ingredients".</p>
+                    <p className="text-[11px]">Search & select from inventory below or click "AI Suggest Ingredients".</p>
                   </div>
                 ) : (
                   editorIngredients.map((ing, idx) => {
@@ -867,7 +901,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
                             <span className="font-extrabold text-[var(--text-main)] text-xs">{inv?.name || `ID #${ing.inventoryItemId}`}</span>
                             {ing.isAiSuggested && (
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                                âœ¨ AI Suggested
+                                AI Suggested
                               </span>
                             )}
                             {!inv && (
@@ -879,7 +913,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
 
                           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] text-[var(--text-muted)] font-mono">
                             <span>Catalog Unit: <strong>{invUnit}</strong></span>
-                            <span>â€¢</span>
+                            <span>•</span>
                             <span>Unit Cost: <strong>Rs.{unitCost} / {invUnit}</strong></span>
                           </div>
                         </div>
@@ -1122,7 +1156,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
         document.body
       )}
 
-      {/* 6. DUPLICATE RECIPE MODAL â€” Portal to document.body for true screen centering */}
+      {/* 6. DUPLICATE RECIPE MODAL — Portal to document.body for true screen centering */}
       {duplicateSourceItem && createPortal(
         <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-scale-up">

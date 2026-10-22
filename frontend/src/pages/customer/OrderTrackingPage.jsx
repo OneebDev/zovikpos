@@ -248,7 +248,7 @@ const OrderTrackingPage = () => {
         </header>
         <div className="customer-tracking-loading" role="status" aria-live="polite" aria-busy="true">
           <div className="customer-tracking-loading__intro">
-            <span className="customer-tracking-loading__logo" aria-hidden="true">Z</span>
+            <img className="customer-tracking-loading__logo" src="/assets/zovikpos-mark.svg" alt="" aria-hidden="true" />
             <div>
               <strong>ZOVIKPOS</strong>
               <span>Loading your order...</span>

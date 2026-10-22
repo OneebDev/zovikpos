@@ -368,7 +368,7 @@ const AdminOrderStatusHistoryView = ({ showToast }) => {
         message={
           isBulkDeleting
             ? `Are you sure you want to permanently delete ${selectedHistoryIds.size} selected status history records? This cannot be undone.`
-            : `Are you sure you want to delete status history transition "${itemToDelete?.fromStatus || 'INITIAL'} â†’ ${itemToDelete?.toStatus}" for ${itemToDelete?.order?.orderNumber || 'this order'}?`
+            : `Are you sure you want to delete status history transition "${itemToDelete?.fromStatus || 'INITIAL'} → ${itemToDelete?.toStatus}" for ${itemToDelete?.order?.orderNumber || 'this order'}?`
         }
         itemCount={isBulkDeleting ? selectedHistoryIds.size : 1}
         itemName={isBulkDeleting ? `${selectedHistoryIds.size} History Records` : itemToDelete?.order?.orderNumber || 'Status History'}

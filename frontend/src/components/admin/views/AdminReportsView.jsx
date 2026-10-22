@@ -1,4 +1,4 @@
-﻿import ThemedSelect from '../../common/ThemedSelect';
+import ThemedSelect from '../../common/ThemedSelect';
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -579,7 +579,7 @@ const AdminReportsView = ({
             <div className="overflow-x-auto">
               <table className="w-full min-w-max text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
+                  <tr className="border-b border-[var(--border-color)] text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]" style={{ background: "var(--table-header-bg)" }}>
                     {selectionMode && <th className="p-4 w-10 text-center">
                       <input
                         type="checkbox"
@@ -720,7 +720,7 @@ const AdminReportsView = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
+                  <tr className="border-b border-[var(--border-color)] text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]" style={{ background: "var(--table-header-bg)" }}>
                     <th className="p-4">Menu Item</th>
                     <th className="p-4">Category</th>
                     <th className="p-4">Units Sold</th>
@@ -809,7 +809,7 @@ const AdminReportsView = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
+                  <tr className="border-b border-[var(--border-color)] text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]" style={{ background: "var(--table-header-bg)" }}>
                     <th className="p-4">Item Name</th>
                     <th className="p-4">Category</th>
                     <th className="p-4">Current Stock</th>
@@ -923,7 +923,7 @@ const AdminReportsView = ({
                           {item.nameSnapshot || item.menuItem?.name}
                         </strong>
                         <span className="text-[10px] text-[var(--text-muted)]">
-                          Rs. {item.priceSnapshot || item.menuItem?.price} Ã— {item.quantity}
+                          Rs. {item.priceSnapshot || item.menuItem?.price} � {item.quantity}
                         </span>
                       </div>
                       <span className="font-mono font-extrabold text-emerald-400">
@@ -976,4 +976,5 @@ const AdminReportsView = ({
 };
 
 export default AdminReportsView;
+
 

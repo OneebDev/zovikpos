@@ -205,7 +205,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 glass-card p-5 sm:p-6">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
-            <span className="p-2 rounded-2xl bg-sky-500/10 text-sky-400">ðŸ¢</span>
+            <span className="inline-flex p-2 rounded-2xl bg-orange-500/10 text-orange-500"><Building2 className="h-5 w-5" aria-hidden="true" /></span>
             Suppliers Management
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -227,7 +227,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
 
           <button
             onClick={openAddModal}
-            className={`${mobileActionWidth} flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-1 text-[10px] font-bold text-white shadow-lg transition-all cursor-pointer sm:h-auto sm:w-auto sm:gap-2 sm:px-4 sm:py-2.5 sm:text-xs`}
+            className={`${mobileActionWidth} flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-1 text-[10px] font-bold text-white shadow-lg transition-all cursor-pointer sm:h-auto sm:w-auto sm:gap-2 sm:px-4 sm:py-2.5 sm:text-xs`}
           >
             <Plus className="h-3.5 w-3.5 shrink-0 stroke-[3] sm:h-4 sm:w-4" />
             <span><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add Supplier</span></span>
@@ -251,7 +251,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
 
         <div className="bg-[var(--card-bg)]/60 border border-[var(--border-color)] p-4 rounded-2xl space-y-1">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] block">Used This Month</span>
-          <div className="text-2xl font-black text-sky-400 font-mono">{summary.usedThisMonth}</div>
+          <div className="text-2xl font-black text-orange-500 font-mono">{summary.usedThisMonth}</div>
           <div className="text-[10px] text-[var(--text-muted)]">Active in recent receivings</div>
         </div>
       </div>
@@ -288,7 +288,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
         ) : (
           <div className="overflow-x-auto">
             <table className="inventory-single-row-table w-full min-w-max text-left text-xs divide-y divide-[var(--border-color)]">
-              <thead className="bg-[var(--bg-color)]/80 text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]">
+              <thead className=" text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)]" style={{ background: 'var(--table-header-bg)' }}>
                 <tr>
                   {selectionMode && <th className="py-3.5 px-4 w-10 text-center">
                     <input
@@ -323,8 +323,8 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                       </td>}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center font-bold text-sky-400 shrink-0">
-                            ðŸ¢
+                          <div className="w-8 h-8 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 shrink-0">
+                            <Building2 className="h-4 w-4" aria-hidden="true" />
                           </div>
                           <div>
                             <strong className="text-[var(--text-main)] block">{s.name}</strong>
@@ -334,7 +334,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                       </td>
 
                       <td className="py-3.5 px-4 text-[var(--text-main)] font-semibold">
-                        {s.contactPerson || 'â€”'}
+                        {s.contactPerson || '—'}
                       </td>
 
                       <td className="py-3.5 px-4 font-mono text-[11px] text-[var(--text-muted)]">
@@ -352,13 +352,13 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                             </a>
                           </div>
                         ) : (
-                          <div>â€”</div>
+                          <div>—</div>
                         )}
-                        {s.email && <div className="text-[10px] text-sky-400">{s.email}</div>}
+                        {s.email && <div className="text-[10px] text-orange-400">{s.email}</div>}
                       </td>
 
                       <td className="py-3.5 px-4 text-center font-mono font-bold">
-                        <span className="px-2 py-0.5 rounded text-[11px] bg-sky-500/10 text-sky-400">
+                        <span className="px-2 py-0.5 rounded text-[11px] bg-orange-500/10 text-orange-400">
                           {suppliedItems.length} Items
                         </span>
                       </td>
@@ -379,7 +379,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                           </button>
                           <button
                             onClick={() => openEditModal(s)}
-                            className="p-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/20 font-bold transition-colors cursor-pointer icon-btn"
+                            className="p-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 font-bold transition-colors cursor-pointer icon-btn"
                             title="Edit Supplier"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
@@ -408,7 +408,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <h3 className="text-base font-black text-[var(--text-main)] flex items-center gap-2">
-                <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">ðŸ¢</span>
+                <span className="inline-flex p-1.5 rounded-xl bg-orange-500/10 text-orange-400"><Building2 className="h-4 w-4" aria-hidden="true" /></span>
                 {editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}
               </h3>
               <button onClick={() => setShowAddModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] icon-btn">
@@ -512,7 +512,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <div>
                 <h3 className="text-base font-black text-[var(--text-main)]">{selectedSupplierDetails.name}</h3>
-                <span className="text-[10px] text-sky-400 font-bold uppercase">Contact: {selectedSupplierDetails.contactPerson || 'Not Provided'}</span>
+                <span className="text-[10px] text-orange-400 font-bold uppercase">Contact: {selectedSupplierDetails.contactPerson || 'Not Provided'}</span>
               </div>
               <button onClick={() => setSelectedSupplierDetails(null)} className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] icon-btn">
                 <X className="w-5 h-5" />
@@ -521,9 +521,9 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
 
             {/* Contact Details */}
             <div className="grid grid-cols-2 gap-3 bg-[var(--bg-color)] p-4 rounded-2xl text-xs font-mono">
-              <div>Phone: <strong className="text-[var(--text-main)]">{selectedSupplierDetails.phone || 'â€”'}</strong></div>
-              <div>Email: <strong className="text-[var(--text-main)]">{selectedSupplierDetails.email || 'â€”'}</strong></div>
-              <div className="col-span-2">Address: <strong className="text-[var(--text-muted)]">{selectedSupplierDetails.address || 'â€”'}</strong></div>
+              <div>Phone: <strong className="text-[var(--text-main)]">{selectedSupplierDetails.phone || '—'}</strong></div>
+              <div>Email: <strong className="text-[var(--text-main)]">{selectedSupplierDetails.email || '—'}</strong></div>
+              <div className="col-span-2">Address: <strong className="text-[var(--text-muted)]">{selectedSupplierDetails.address || '—'}</strong></div>
             </div>
 
             {/* Supplied Items */}
@@ -534,7 +534,7 @@ const AdminSuppliersView = ({ suppliers = [], inventory = [], receivings = [], o
                   const items = inventory.filter(i => String(i.supplierId) === String(selectedSupplierDetails.id));
                   if (items.length === 0) return <span className="text-[11px] text-[var(--text-muted)]">No inventory items linked to this supplier yet.</span>;
                   return items.map((inv, idx) => (
-                    <span key={idx} className="px-2.5 py-1 rounded-lg bg-[var(--card-bg)] text-[11px] font-bold text-sky-400 border border-[var(--border-color)]">
+                    <span key={idx} className="px-2.5 py-1 rounded-lg bg-[var(--card-bg)] text-[11px] font-bold text-orange-400 border border-[var(--border-color)]">
                       {inv.name} ({inv.stockLevel} {inv.unit})
                     </span>
                   ));

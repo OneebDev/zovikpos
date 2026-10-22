@@ -777,7 +777,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
         </div>
       </div>
 
-      {/* Menu Catalog Grid â€” Grouped by variant */}
+      {/* Menu Catalog Grid —” Grouped by variant */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 items-start">
         {filteredGrouped.map(({ groupKey, variants }) => {
           const primaryItem = variants[0];
@@ -870,7 +870,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                   </span>
                 </div>
 
-                {/* â”€â”€ Variants / Portions List â”€â”€ */}
+                {/* ──────────────────────────────────────────────── Variants / Portions List ──────────────────────────────────────────────── */}
                 <div className="space-y-1.5 pt-1">
                   <div className="flex justify-between items-center">
                     <p className="text-[9px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider">
@@ -956,11 +956,11 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
         })}
       </div>
 
-      {/* Add / Edit Item Modal â€” Portal to document.body for true screen centering */}
+      {/* Add / Edit Item Modal —” Portal to document.body for true screen centering */}
       {showItemModal && createPortal(
         <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-3 sm:p-6 overflow-hidden">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-2xl w-full shadow-2xl animate-scale-up max-h-[90vh] flex flex-col overflow-hidden">
-            {/* Modal Header â€” Fixed Top */}
+            {/* Modal Header —” Fixed Top */}
             <div className="flex flex-nowrap items-start justify-between gap-3 p-4 sm:p-5 border-b border-[var(--border-color)] shrink-0 bg-[var(--card-bg)] z-10">
               <div className="flex min-w-0 flex-1 items-center gap-2.5">
                 <div className="shrink-0 p-2 bg-orange-500/10 text-orange-400 rounded-xl border border-orange-500/20">
@@ -1147,7 +1147,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                 )}
               </div>
 
-              {/* â”€â”€ MULTI-VARIANT / PORTION SECTION â”€â”€ */}
+              {/* ──────────────────────────────────────────────── MULTI-VARIANT / PORTION SECTION ──────────────────────────────────────────────── */}
               <div className="p-3 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl space-y-2">
                 <div className="flex justify-between items-center">
                   <div>

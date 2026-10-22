@@ -1,0 +1,410 @@
+/* ================================================================
+   ZOVIKPOS - UNIFIED FLOATING SMOKED-GLASS THEME FOR STAFF PORTALS
+   (Cashier POS, Kitchen KDS, and Staff Role Logins)
+   Full feature parity with Admin floating glass design system.
+   ================================================================ */
+
+.staff-theme-root {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  color: var(--text-1);
+  --text-main: var(--text-1);
+  --text-muted: var(--text-3);
+  --text-secondary: var(--text-2);
+  --bg-color: var(--surface-inset);
+  --card-bg: var(--surface-card);
+  --border-color: var(--border-1);
+  --accent: #f97316;
+  --accent-2: #ea580c;
+  --accent-glow: rgba(249, 115, 22, 0.35);
+  background: transparent !important;
+}
+
+.dark .staff-theme-root,
+.staff-theme-root.dark {
+  --text-main: #f5f5f7;
+  --text-muted: rgba(255, 255, 255, 0.65);
+  --text-secondary: rgba(255, 255, 255, 0.80);
+  --bg-color: rgba(24, 21, 35, 0.75);
+  --card-bg: rgba(36, 32, 50, 0.78);
+  --border-color: rgba(255, 255, 255, 0.12);
+  --surface-panel: linear-gradient(145deg, rgba(32,30,42,0.88), rgba(18,16,26,0.92));
+  --surface-card: rgba(36, 32, 50, 0.78);
+  --surface-inset: rgba(24, 21, 35, 0.75);
+  --surface-modal: rgba(28, 25, 40, 0.94);
+  --field-bg: rgba(255, 255, 255, 0.08);
+  --field-border: rgba(255, 255, 255, 0.16);
+  --border-1: rgba(255, 255, 255, 0.12);
+  --border-2: rgba(255, 255, 255, 0.08);
+  color-scheme: dark;
+}
+
+/* Ensure background wallpaper, gradient, vignette & grain remain fully visible */
+.staff-theme-root > .app-bg {
+  z-index: -1;
+  display: block !important;
+}
+
+.staff-theme-root .app-bg__photo { display: block !important; }
+.staff-theme-root .app-bg__vignette { display: block !important; }
+.staff-theme-root .app-bg__grain { display: block !important; }
+.staff-theme-root .app-bg__overlay { display: block !important; }
+
+/* =====================================================================
+   STAFF THEME BACKGROUND (Shared across Login, Cashier, Kitchen)
+   ===================================================================== */
+.staff-theme-root {
+  --bg-image: url('/assets/login-bg.jpg');
+}
+
+.staff-theme-root .app-bg__photo {
+  background-image: url('/assets/login-bg.jpg') !important;
+  filter: blur(6px) saturate(125%) !important;
+  opacity: 0.35 !important;
+}
+
+.dark .staff-theme-root .app-bg__photo {
+  background-image: url('/assets/login-bg.jpg') !important;
+  filter: blur(5px) saturate(135%) brightness(0.85) !important;
+  opacity: 0.42 !important;
+}
+
+.staff-theme-root .app-bg__overlay {
+  background: rgba(248, 246, 243, 0.40) !important;
+}
+
+.dark .staff-theme-root .app-bg__overlay {
+  background: rgba(10, 8, 16, 0.58) !important;
+}
+
+.staff-theme-root .app-bg__vignette {
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(0, 0, 0, 0.35) 100%) !important;
+}
+
+.dark .staff-theme-root .app-bg__vignette {
+  background: radial-gradient(ellipse at center, transparent 25%, rgba(0, 0, 0, 0.70) 100%) !important;
+}
+
+.staff-login-root {
+  padding: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+}
+
+.staff-login-card {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border: 1px solid rgba(15, 23, 42, 0.12) !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(32px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(150%) !important;
+  border-radius: 28px !important;
+  color-scheme: light;
+}
+
+/* DARK MODE card */
+.dark .staff-login-card {
+  background: rgba(30, 26, 44, 0.90) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
+  color-scheme: dark;
+}
+
+/* LIGHT MODE inputs in login card */
+.staff-login-card input,
+.staff-login-card select,
+.staff-login-card textarea {
+  min-height: 46px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid rgba(15, 23, 42, 0.15) !important;
+  color: #0f172a !important;
+  border-radius: 14px !important;
+  transition: all 0.2s ease !important;
+  color-scheme: light;
+}
+
+.staff-login-card input::placeholder {
+  color: #64748b !important;
+}
+
+/* DARK MODE inputs in login card */
+.dark .staff-login-card input,
+.dark .staff-login-card select,
+.dark .staff-login-card textarea {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  color: #f5f5f7 !important;
+  color-scheme: dark;
+}
+
+.dark .staff-login-card input::placeholder {
+  color: rgba(255, 255, 255, 0.42) !important;
+}
+
+/* Focus state - shared */
+.staff-login-card input:focus,
+.staff-login-card select:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
+  outline: none !important;
+}
+
+/* Submit button */
+.staff-login-card button[type="submit"] {
+  color: #ffffff !important;
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%) !important;
+  border: 1px solid rgba(255, 160, 100, 0.30) !important;
+  box-shadow: 0 8px 24px rgba(249, 115, 22, 0.35) !important;
+  border-radius: 14px !important;
+  font-weight: 800 !important;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease !important;
+}
+
+.staff-login-card button[type="submit"]:hover { transform: translateY(-1px); filter: brightness(1.06) !important; }
+.staff-login-card button[type="submit"]:active { transform: scale(0.99); }
+.staff-login-card button[type="submit"]:disabled { filter: saturate(0.6); cursor: not-allowed; }
+
+/* Login note box - LIGHT */
+.staff-login-note {
+  background: rgba(255, 255, 255, 0.70) !important;
+  border: 1px solid rgba(15, 23, 42, 0.10) !important;
+  border-radius: 14px !important;
+}
+
+/* Login note box - DARK */
+.dark .staff-login-note {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+}
+
+.staff-login-eye-btn,
+.staff-login-card button[title="Show password"],
+.staff-login-card button[title="Hide password"] {
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: absolute !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  right: 4px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  cursor: pointer !important;
+  z-index: 2 !important;
+  box-shadow: none !important;
+}
+
+.staff-login-eye-btn:hover,
+.staff-login-card button[title="Show password"]:hover,
+.staff-login-card button[title="Hide password"]:hover {
+  color: var(--accent) !important;
+  background: color-mix(in srgb, var(--accent) 10%, transparent) !important;
+}
+
+.staff-login-eye-btn:focus-visible,
+.staff-login-card button[title="Show password"]:focus-visible,
+.staff-login-card button[title="Hide password"]:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 1px !important;
+}
+
+.staff-login-eye-btn svg,
+.staff-login-card button[title="Show password"] svg,
+.staff-login-card button[title="Hide password"] svg {
+  display: block !important;
+  width: 20px !important;
+  height: 20px !important;
+  margin: 0 auto !important;
+}
+
+/* Theme toggle in login card - strictly centered square */
+.staff-login-theme-toggle {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+  max-width: 32px !important;
+  max-height: 32px !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 10px !important;
+  flex-shrink: 0 !important;
+}
+
+.staff-login-theme-toggle svg {
+  display: block !important;
+  width: 15px !important;
+  height: 15px !important;
+  margin: 0 auto !important;
+}
+
+/* Autofill - LIGHT */
+.staff-login-card input:-webkit-autofill,
+.staff-login-card input:-webkit-autofill:hover,
+.staff-login-card input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #0f172a !important;
+  -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.95) inset !important;
+  transition: background-color 9999s ease-out;
+}
+
+/* Autofill - DARK */
+.dark .staff-login-card input:-webkit-autofill,
+.dark .staff-login-card input:-webkit-autofill:hover,
+.dark .staff-login-card input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f5f5f7 !important;
+  -webkit-box-shadow: 0 0 0 1000px rgba(28, 25, 40, 0.95) inset !important;
+  transition: background-color 9999s ease-out;
+}
+
+/* =====================================================================
+   STAFF GLOBAL HEADER & TOOLBARS - LIGHT MODE (default)
+   ===================================================================== */
+.staff-global-header {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  background: rgba(255, 255, 255, 0.90) !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.10) !important;
+  backdrop-filter: blur(24px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(140%) !important;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08) !important;
+  z-index: 40;
+}
+
+/* DARK MODE header */
+.dark .staff-global-header {
+  background: rgba(28, 25, 40, 0.92) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.30) !important;
+}
+
+.staff-global-header button,
+.staff-admin-header button,
+.staff-kitchen-toolbar button,
+.staff-cashier-root button {
+  min-height: 40px;
+}
+
+/* Kitchen/Cashier toolbar - LIGHT */
+.staff-kitchen-toolbar,
+.staff-cashier-header {
+  background: rgba(255, 255, 255, 0.90) !important;
+  border: 1px solid rgba(15, 23, 42, 0.12) !important;
+  backdrop-filter: blur(24px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(140%) !important;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08) !important;
+  border-radius: 20px !important;
+  padding: 12px 20px !important;
+}
+
+/* Kitchen/Cashier toolbar - DARK */
+.dark .staff-kitchen-toolbar,
+.dark .staff-cashier-header {
+  background: rgba(36, 32, 50, 0.82) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.30) !important;
+}
+
+/* =====================================================================
+   INPUTS IN DASHBOARDS - LIGHT (default)
+   ===================================================================== */
+.staff-theme-root input[type="text"],
+.staff-theme-root input[type="search"],
+.staff-theme-root input[type="email"],
+.staff-theme-root input[type="password"],
+.staff-theme-root input[type="number"],
+.staff-theme-root select,
+.staff-theme-root textarea {
+  background: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid rgba(15, 23, 42, 0.15) !important;
+  color: #0f172a !important;
+  border-radius: 12px !important;
+  color-scheme: light;
+}
+
+.staff-theme-root input::placeholder,
+.staff-theme-root textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* DARK MODE inputs in dashboards */
+.dark .staff-theme-root input[type="text"],
+.dark .staff-theme-root input[type="search"],
+.dark .staff-theme-root input[type="email"],
+.dark .staff-theme-root input[type="password"],
+.dark .staff-theme-root input[type="number"],
+.dark .staff-theme-root select,
+.dark .staff-theme-root textarea {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  color: #f5f5f7 !important;
+  color-scheme: dark;
+}
+
+.dark .staff-theme-root input::placeholder,
+.dark .staff-theme-root textarea::placeholder {
+  color: rgba(255, 255, 255, 0.40) !important;
+}
+
+.staff-theme-root input:focus,
+.staff-theme-root select:focus,
+.staff-theme-root textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
+  outline: none !important;
+}
+
+/* Primary Action Buttons */
+.staff-theme-root [class~="bg-orange-600"],
+.staff-theme-root [class~="bg-orange-500"],
+.staff-theme-root [class*="bg-[var(--sb-primary)]"] {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%) !important;
+  border: 1px solid rgba(255, 160, 100, 0.30) !important;
+  box-shadow: 0 4px 18px rgba(249, 115, 22, 0.35) !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  border-radius: 12px !important;
+  transition: transform 0.15s ease, filter 0.15s ease !important;
+}
+
+.staff-theme-root [class~="bg-orange-600"]:hover,
+.staff-theme-root [class~="bg-orange-500"]:hover,
+.staff-theme-root [class*="bg-[var(--sb-primary)]"]:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06) !important;
+}
+
+/* Focus styles */
+.staff-theme-root button:focus-visible,
+.staff-theme-root a:focus-visible,
+.staff-theme-root input:focus-visible,
+.staff-theme-root select:focus-visible,
+.staff-theme-root textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Responsive tweaks */
+@media (max-width: 767px) {
+  .staff-login-card { padding: 22px 18px; border-radius: 24px !important; }
+  .staff-kitchen-root { padding: 12px; gap: 14px; }
+  .staff-cashier-root { padding: 12px; }
+  .staff-kitchen-toolbar { align-items: flex-start; }
+}
+
+@media (max-width: 389px) {
+  .staff-global-header { gap: 6px; padding-top: 8px; padding-bottom: 8px; }
+  .staff-global-header .staff-role-badge { padding: 3px 6px; font-size: 9px; }
+  .staff-global-header .staff-logout-label { display: none; }
+}

@@ -31,7 +31,6 @@ import {
   Check,
   MapPin,
   Loader2,
-  Utensils,
   Sun,
   Moon,
   Download,
@@ -76,6 +75,19 @@ const readStoredCustomerValue = (key) => {
   catch { return ''; }
 };
 
+const getOtpLinkContext = () => {
+  try {
+    const params = new URL(window.location.href).searchParams;
+    const otp = params.get('otp') || '';
+    const email = params.get('e') || '';
+    const sessionId = params.get('sid') || '';
+    if (!/^\d{6}$/.test(otp) || !isValidCustomerEmail(email) || !/^[\w-]{16,64}$/.test(sessionId)) return null;
+    return { otp, email: email.trim(), sessionId };
+  } catch {
+    return null;
+  }
+};
+
 const savePendingLogin = ({ name, email, otpSentAt, resendAvailableAt, sessionId, tableToken, tableId }) => {
   const pendingLogin = {
     step: 'otp',
@@ -106,6 +118,38 @@ const savePendingLogin = ({ name, email, otpSentAt, resendAvailableAt, sessionId
 
 const loadPendingLogin = () => {
   try {
+    const emailLink = getOtpLinkContext();
+    if (emailLink) {
+      // The OTP email link contains the code and email, but not the customer's
+      // name. Preserve the name from the pending login saved before opening Gmail.
+      let pendingName = '';
+      for (const storageName of ['sessionStorage', 'localStorage']) {
+        try {
+          const record = JSON.parse(window[storageName].getItem(PENDING_LOGIN_KEY) || 'null');
+          if (
+            record?.step === 'otp'
+            && String(record.email || '').trim().toLowerCase() === emailLink.email.toLowerCase()
+            && typeof record.name === 'string'
+            && record.name.trim()
+          ) {
+            pendingName = record.name.trim();
+            break;
+          }
+        } catch {
+          // Try the other storage area; OTP link recovery must remain usable.
+        }
+      }
+      return {
+        step: 'otp',
+        name: pendingName,
+        email: emailLink.email,
+        otpSentAt: Date.now(),
+        resendAvailableAt: 0,
+        sessionId: emailLink.sessionId,
+        tableToken: readStoredCustomerValue('customer_tableToken'),
+        tableId: readStoredCustomerValue('customer_tableId'),
+      };
+    }
     const records = [];
     let invalidRecordFound = false;
     for (const storageName of ['sessionStorage', 'localStorage']) {
@@ -495,7 +539,7 @@ const CustomerInstallGuideModal = ({ isIosDevice, onClose, hasNativePrompt, onIn
   return (
     <ModalShell isOpen onClose={onClose} labelledBy="install-guide-title" closeOnBackdrop={false} closeOnEscape={false} className="customer-modal customer-modal--install">
       <header className="customer-modal__header customer-install__header">
-        <span className="customer-install__app-icon"><Utensils aria-hidden="true" /></span>
+        <img className="customer-install__app-icon" src="/assets/zovikpos-mark.svg" alt="ZovikPOS app icon" />
         <div className="customer-install__heading">
           <h2 id="install-guide-title">Install ZOVIKPOS</h2>
         </div>
@@ -698,8 +742,13 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     if (label) lastValidTableLabelRef.current = label;
     return label;
   }, [tableId, tableIdFromRoute]);
-  const [sessionId, setSessionId] = useState(() => localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId') || '');
-  const [sessionInitializationDone, setSessionInitializationDone] = useState(false);
+  const [sessionId, setSessionId] = useState(() => (
+    getOtpLinkContext()?.sessionId || localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId') || ''
+  ));
+  const [sessionInitializationDone, setSessionInitializationDone] = useState(() => (
+    !tableIdFromRoute && Boolean(localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId'))
+  ));
+  const lastSessionInitRouteRef = React.useRef(tableIdFromRoute || '');
   const [tableError, setTableError] = useState('');
   const { menu, isLoading: isMenuLoading, isError: isMenuError, refetch: refetchMenu } = useCustomerMenu({
     enabled: sessionInitializationDone && !requiresTableQr,
@@ -784,6 +833,19 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     return Boolean(savedSession && verifiedSessionId === savedSession);
   });
 
+  useEffect(() => {
+    const handleCustomerAuthExpired = () => {
+      // Keep the physical-table session and cart; only require email/OTP again.
+      localStorage.removeItem('customer_verifiedSessionId');
+      sessionStorage.removeItem('customer_verifiedSessionId');
+      setIsSessionVerified(false);
+      setTableError('');
+      setError('');
+    };
+    window.addEventListener('customer-auth-expired', handleCustomerAuthExpired);
+    return () => window.removeEventListener('customer-auth-expired', handleCustomerAuthExpired);
+  }, []);
+
   const [pendingLoginOnMount] = useState(() => {
     const saved = loadPendingLogin();
     if (!saved) return null;
@@ -843,7 +905,9 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     return u ? (u.email || '') : '';
   });
   const [otpCode, setOtpCode] = useState('');
-  const [otpSent, setOtpSent] = useState(() => Boolean(pendingLoginOnMount));
+  // Older pending-login records may not have a name. Resume those at step 1,
+  // where the required name can be collected before sending a fresh code.
+  const [otpSent, setOtpSent] = useState(() => Boolean(pendingLoginOnMount?.name?.trim()));
   const [otpPrefillCode, setOtpPrefillCode] = useState('');
   const emailLinkClipboardCodeRef = React.useRef('');
   const emailLinkClipboardListenerRef = React.useRef(null);
@@ -853,7 +917,9 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
   const [otpSuccess, setOtpSuccess] = useState('');
-  const [cooldown, setCooldown] = useState(() => Math.max(0, Math.ceil(((pendingLoginOnMount?.resendAvailableAt || 0) - Date.now()) / 1000)));
+  const [cooldown, setCooldown] = useState(() => pendingLoginOnMount?.name?.trim()
+    ? Math.max(0, Math.ceil(((pendingLoginOnMount?.resendAvailableAt || 0) - Date.now()) / 1000))
+    : 0);
 
   useEffect(() => {
     const code = emailLinkClipboardCodeRef.current;
@@ -1073,13 +1139,18 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     }
   };
   useEffect(() => {
+    const routeToken = tableIdFromRoute || '';
+    if (lastSessionInitRouteRef.current !== routeToken) {
+      lastSessionInitRouteRef.current = routeToken;
+      setSessionInitializationDone(false);
+    }
     let isActive = true;
     let timedOut = false;
     const abortController = new AbortController();
     const initSession = async () => {
       setTableConnectionError('');
       setTableConnectionRetryable(true);
-      let storedSession = localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId') || pendingLoginOnMount?.sessionId || '';
+      let storedSession = getOtpLinkContext()?.sessionId || pendingLoginOnMount?.sessionId || localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId') || '';
       let storedTable = localStorage.getItem('customer_tableId') || sessionStorage.getItem('customer_tableId') || pendingLoginOnMount?.tableId || '';
       const storedTableToken = localStorage.getItem('customer_tableToken') || sessionStorage.getItem('customer_tableToken') || '';
       const restoreToken = pendingLoginOnMount?.tableToken || (hasProtectedCustomerState() ? storedTableToken : '');
@@ -1120,11 +1191,15 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       };
 
       if (tableIdFromRoute) {
+        // A route containing a table link must stay in the link flow. Show a
+        // link error if it cannot be verified; reserve the scan gate for /customer.
+        setRequiresTableQr(false);
+        setSessionExpired(false);
         const parsedRouteToken = parseTableToken(String(tableIdFromRoute));
         const cleanRouteToken = parsedRouteToken.token;
         if (!cleanRouteToken) {
-          setRequiresTableQr(true);
-          setTableError('This QR code is not valid. Please scan again or ask the staff.');
+          setTableConnectionRetryable(false);
+          setTableConnectionError('This table link could not be read. Check the URL or copy the current table link from Admin.');
           return;
         }
 
@@ -1139,8 +1214,8 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             || ((validationError.response?.status === 400 || validationError.response?.status === 401)
               && /invalid|expired|token|qr code/i.test(validationError.response?.data?.error || validationError.response?.data?.message || ''));
           if (invalidQr) {
-            setRequiresTableQr(true);
-            setTableError('This QR code is not valid. Please scan again or ask the staff.');
+            setTableConnectionRetryable(false);
+            setTableConnectionError('This table link is no longer valid. Copy the current table link from Admin and try again.');
           } else {
             setTableConnectionRetryable(!validationError.response || validationError.response.status >= 500);
             setTableConnectionError(validationError.response?.data?.error || 'The table service is temporarily unavailable.');
@@ -1149,10 +1224,36 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
         }
         const newTableDisplay = resolveTableLabel({ table: validatedQr.table, tableLabel: validatedQr.tableLabel, routeToken: cleanRouteToken, forCustomer: true });
         if (!newTableDisplay) {
-          setRequiresTableQr(true);
-          setTableError('This QR code is not linked to an active physical table. Scan the QR code attached to your table.');
+          setTableConnectionRetryable(false);
+          setTableConnectionError('This table link is not connected to an active table. Copy the current table link from Admin.');
           return;
         }
+        const previouslyScannedToken = parseTableToken(storedTableToken).token;
+        const scannedNewQr = Boolean(
+          storedSession
+          && previouslyScannedToken
+          && previouslyScannedToken !== cleanRouteToken
+        );
+        if (scannedNewQr) {
+          // A newly generated QR for the same table represents a new dining
+          // visit. Do not attach the old visit's session or cart to it.
+          ['customer_sessionId', 'customer_verifiedSessionId', 'customer_cart', 'customer_checkoutStep'].forEach((key) => {
+            localStorage.removeItem(key);
+            sessionStorage.removeItem(key);
+          });
+          storedSession = '';
+          storedTable = '';
+          setSessionId('');
+          setCart({});
+          setIsSessionVerified(false);
+        }
+        // Persist the verified QR immediately. Login or email-app navigation
+        // can reload the app before session creation finishes; the table link
+        // must still be available for recovery on /customer.
+        localStorage.setItem('customer_tableToken', cleanRouteToken);
+        sessionStorage.setItem('customer_tableToken', cleanRouteToken);
+        localStorage.setItem('customer_tableId', newTableDisplay);
+        sessionStorage.setItem('customer_tableId', newTableDisplay);
         setRequiresTableQr(false);
         setTableError('');
 
@@ -1302,8 +1403,8 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             || ((err.response?.status === 400 || err.response?.status === 401)
               && /invalid|expired|token|qr code/i.test(err.response?.data?.error || err.response?.data?.message || ''));
           if (invalidQr) {
-            setRequiresTableQr(true);
-            setTableError('This QR code is not valid. Please scan again or ask the staff.');
+            setTableConnectionRetryable(false);
+            setTableConnectionError('This table link is no longer valid. Copy the current table link from Admin and try again.');
           } else {
             setTableConnectionRetryable(!err.response || err.response.status >= 500);
             setTableConnectionError(err.response?.data?.error || (err.response?.status === 403
@@ -1407,7 +1508,6 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       setTableConnectionError('The table service did not respond. Check your connection and retry.');
       setSessionInitializationDone(true);
     }, 8000);
-    setSessionInitializationDone(false);
     initSession().finally(() => {
       window.clearTimeout(initTimeout);
       if (isActive && !timedOut) setSessionInitializationDone(true);
@@ -1422,7 +1522,6 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     if (!tableConnectionError || !tableConnectionRetryable || requiresTableQr) return undefined;
     const delays = [2000, 5000, 10000];
     const timer = window.setTimeout(() => {
-      setSessionInitializationDone(false);
       setTableConnectionError('');
       setSessionRetryAttempt((attempt) => attempt + 1);
     }, delays[Math.min(sessionRetryAttempt, delays.length - 1)]);
@@ -1456,6 +1555,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
           email: cleanEmail,
           otpSentAt: sentAt,
           resendAvailableAt: 0,
+          sessionId: getOtpLinkContext()?.sessionId || pendingLoginOnMount?.sessionId || undefined,
         });
       }
     } catch {
@@ -1465,6 +1565,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
         const cleanUrl = new URL(window.location.href);
         cleanUrl.searchParams.delete('otp');
         cleanUrl.searchParams.delete('e');
+        cleanUrl.searchParams.delete('sid');
         const cleanAddress = `${cleanUrl.pathname}${cleanUrl.search ? `?${cleanUrl.searchParams.toString()}` : ''}${cleanUrl.hash}`;
         window.history.replaceState(window.history.state, '', cleanAddress);
       } catch {
@@ -1483,10 +1584,10 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       try {
         const res = await api.get(`/sessions/${sessionId}`);
         if (res.data.session?.status === 'EXPIRED' || res.data.session?.status === 'CANCELLED') {
-          if (!hasProtectedCustomerState()) setSessionExpired(true);
+          setSessionExpired(true);
         }
       } catch (err) {
-        if (err.response?.status === 404 && !hasProtectedCustomerState()) {
+        if (err.response?.status === 404) {
           setSessionExpired(true);
         }
       }
@@ -1679,7 +1780,12 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   const handleSendOtp = async (e) => {
     if (e) e.preventDefault();
     if (otpLoading || cooldown > 0) return;
+    const cleanName = (authName || '').trim();
     const cleanEmail = (authEmail || '').trim();
+    if (!cleanName) {
+      setOtpError('Please enter your full name.');
+      return;
+    }
     if (!cleanEmail) {
       setOtpError('Please enter your UIT student email address.');
       return;
@@ -1696,7 +1802,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       const curSessionId = sessionId || localStorage.getItem('customer_sessionId');
       const res = await api.post('/auth/send-otp', {
         email: cleanEmail,
-        name: authName.trim() || 'Student',
+        name: cleanName,
         sessionId: curSessionId || undefined,
       });
 
@@ -1771,6 +1877,10 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
   const handleVerifyOtp = async (e) => {
     if (e) e.preventDefault();
+    if (!(authName || '').trim()) {
+      setOtpError('Please enter your full name before continuing.');
+      return;
+    }
     if (!otpCode || otpCode.trim().length < 4) {
       setOtpError('Please enter the 6-digit verification code.');
       return;
@@ -1784,7 +1894,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       const cleanEmail = (authEmail || '').trim();
       const res = await api.post('/auth/verify-otp', {
         email: cleanEmail,
-        name: authName.trim() || 'Student',
+        name: authName.trim(),
         otp: otpCode.trim(),
         sessionId: curSessionId || undefined,
       });
@@ -2399,9 +2509,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       <header className="customer-header glass sticky top-0 z-30 safe-area-top">
         <div className="customer-header__main">
           <div className="customer-header__brand" aria-label="ZOVIKPOS Smart Dining">
-            <span className="customer-header__mark" aria-hidden="true">
-              <Utensils />
-            </span>
+            <img className="customer-header__mark" src="/assets/zovikpos-mark.svg" alt="" aria-hidden="true" />
             <span className="customer-header__brand-copy">
               <span className="customer-header__wordmark">ZOVIKPOS</span>
               <span className="customer-header__caption">Smart Dining</span>
@@ -2678,7 +2786,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
               <span>Retry</span>
             </button>
           </section>
-        ) : requiresTableQr ? (
+        ) : requiresTableQr && !tableIdFromRoute ? (
           <section className="customer-table-gate" aria-labelledby="customer-table-gate-title">
             <span className="customer-table-gate__mark" aria-hidden="true"><QrCode /></span>
             <p className="customer-table-gate__eyebrow">TABLE ACCESS REQUIRED</p>
@@ -2737,14 +2845,22 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                     <input
                       id="customer-auth-name"
                       type="text"
+                      required
                       value={authName}
                       onChange={(e) => setAuthName(e.target.value)}
+                      aria-invalid={Boolean(otpError === 'Please enter your full name.')}
+                      aria-describedby={otpError === 'Please enter your full name.' ? 'customer-auth-name-error' : undefined}
                       autoComplete="name"
                       placeholder="e.g. Ahmed Khan"
                       className="customer-auth-input"
                     />
                     <User className="customer-auth-field-icon" aria-hidden="true" />
                   </div>
+                  {otpError === 'Please enter your full name.' && (
+                    <p id="customer-auth-name-error" className="customer-auth-field-message customer-auth-field-message--error" role="alert">
+                      {otpError}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -2768,7 +2884,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                     <Mail className="customer-auth-field-icon" aria-hidden="true" />
                     <CheckCircle2 className="customer-auth-valid-icon" aria-hidden="true" />
                   </div>
-                  {otpError && !otpSent ? (
+                  {otpError && !otpSent && otpError !== 'Please enter your full name.' ? (
                     <p id="customer-auth-email-error" className="customer-auth-field-message customer-auth-field-message--error" role="alert">
                       {otpError.includes('UIT student email') ? 'Enter a valid university email' : otpError}
                     </p>
@@ -2801,25 +2917,6 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                   <button type="button" onClick={() => { clearPendingLogin(); setOtpSent(false); }} className="customer-auth-change-email">Change email</button>
                 </div>
               </div>
-
-              {!authName.trim() && (
-                <div className="customer-auth-name-prompt">
-                  <label htmlFor="customer-auth-name-otp" className="customer-auth-label">Full Name</label>
-                  <div className="customer-auth-field">
-                    <input
-                      id="customer-auth-name-otp"
-                      type="text"
-                      value={authName}
-                      onChange={(event) => setAuthName(event.target.value)}
-                      autoComplete="name"
-                      placeholder="e.g. Ahmed Khan"
-                      className="customer-auth-input"
-                      required
-                    />
-                    <User className="customer-auth-field-icon" aria-hidden="true" />
-                  </div>
-                </div>
-              )}
 
               {otpError && (
                 <div className="customer-auth-message customer-auth-message--error" role="alert">
@@ -3612,7 +3709,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
       <div className={`customer-signout-overlay${isSigningOut ? ' is-visible' : ''}`} aria-hidden={!isSigningOut} role={isSigningOut ? 'status' : undefined} aria-live={isSigningOut ? 'polite' : undefined} aria-label={isSigningOut ? 'Signing out' : undefined}>
           <div className="customer-signout-overlay__content">
-            <span className="customer-signout-overlay__mark"><Utensils aria-hidden="true" /></span>
+            <img className="customer-signout-overlay__mark" src="/assets/zovikpos-mark.svg" alt="" aria-hidden="true" />
             <strong>ZOVIKPOS</strong>
             <span className="customer-signout-overlay__spinner" aria-hidden="true" />
             <span className="customer-signout-overlay__label">Signing out…</span>

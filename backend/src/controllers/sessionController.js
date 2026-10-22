@@ -156,28 +156,18 @@ const getSession = async (req, res) => {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
 
-    // Keep sessions alive for verified customers, non-empty server carts, and active orders.
-    // Empty guest sessions still expire after 10 minutes without activity.
+    // A session is renewed only by explicit customer activity (or customer
+    // mutations handled by sessionActivityMiddleware). Health checks and the
+    // presence of a login/cart/order must not keep an idle session alive.
     if (session.status === 'ACTIVE') {
-      const activeOrderCount = await prisma.order.count({
-        where: {
-          sessionId,
-          status: { in: ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY'] },
-        },
-      });
-      const hasCartItems = Boolean(session.cart?.items?.some((item) => Number(item.quantity) > 0));
-      const protectedSession = Boolean(
-        session.customerId
-        || (req.user?.role === 'CUSTOMER' && req.user?.id)
-        || hasCartItems
-        || activeOrderCount > 0
-      );
+      const sessionIsUnexpired = new Date(session.expiresAt) > new Date();
+      const explicitCustomerActivity = req.get('X-Session-Activity') === 'true';
 
-      if (protectedSession) {
+      if (explicitCustomerActivity && sessionIsUnexpired) {
         const renewedExpiry = new Date(Date.now() + 10 * 60 * 1000);
         await prisma.session.update({ where: { id: sessionId }, data: { expiresAt: renewedExpiry } });
         session.expiresAt = renewedExpiry;
-      } else if (new Date() > new Date(session.expiresAt)) {
+      } else if (!sessionIsUnexpired) {
         const updated = await prisma.session.update({
           where: { id: sessionId },
           data: { status: 'EXPIRED' },

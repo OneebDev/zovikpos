@@ -1537,7 +1537,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   : '';
                 if (showToast) {
                   const msg = unmatchedCount > 0
-                    ? `Imported ${newRows.length} items: ${matchedCount} matched âœ“, ${unmatchedCount} need manual selection.${supplierHint}`
+                    ? `Imported ${newRows.length} items: ${matchedCount} matched ✓, ${unmatchedCount} need manual selection.${supplierHint}`
                     : `All ${newRows.length} items matched and imported!${supplierHint}`;
                   showToast(msg, unmatchedCount > 0 ? 'warning' : 'success');
                 }
@@ -1708,7 +1708,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             const newCount = res.data.summary?.newItemsCount ?? rawUnmatched.length;
 
             if (showToast) {
-              const msg = `AI extracted ${newRows.length} items: ${matchedCount} matched âœ“, ${newCount} new items${reviewCount > 0 ? `, ${reviewCount} need review âš ï¸` : ''}.`;
+              const msg = `AI extracted ${newRows.length} items: ${matchedCount} matched ✓, ${newCount} new items${reviewCount > 0 ? `, ${reviewCount} need review ⚠️` : ''}.`;
               showToast(msg, reviewCount > 0 ? 'warning' : 'success');
             }
           }
@@ -1780,7 +1780,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       return;
     }
 
-    // For RECEIVED (Confirm & Receive Stock) â€” all items must be catalog-matched
+    // For RECEIVED (Confirm & Receive Stock) — all items must be catalog-matched
     if (activeRows.length === 0) {
       setReceiveSubmitMessage('Add at least one item before receiving stock.');
       if (showToast) showToast('Please select at least one item to receive.', 'error');
@@ -1792,7 +1792,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       if (!r.inventoryItemId) {
         if (editingDraftId) continue;
         const unmatchedCount = activeRows.filter(row => !row.inventoryItemId).length;
-        const message = `${unmatchedCount} new item${unmatchedCount === 1 ? '' : 's'} still need catalog names. Click â€œSave New Item Names (${unmatchedCount})â€ first, then confirm receiving.`;
+        const message = `${unmatchedCount} new item${unmatchedCount === 1 ? '' : 's'} still need catalog names. Click "Save New Item Names (${unmatchedCount})" first, then confirm receiving.`;
         setReceiveSubmitMessage(message);
         if (showToast) showToast(message, 'warning');
         return;
@@ -1809,7 +1809,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   };
 
   // Final Submit Action
-  // draftNewRowsOverride: optional array of unmatched rows (no inventoryItemId) â€” sent as draftNewItems for DRAFT only
+  // draftNewRowsOverride: optional array of unmatched rows (no inventoryItemId) — sent as draftNewItems for DRAFT only
   const executeSubmitReceiving = async (targetStatus, rowsOverride = null, draftNewRowsOverride = null) => {
     if (loading || savingDraft || (targetStatus === 'DRAFT' && draftSaveLock.current)) return false;
     if (targetStatus === 'DRAFT') draftSaveLock.current = true;
@@ -2428,7 +2428,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     }
     // Catalog-matched rows
     const rowsToSubmit = activeRows.filter(r => r.inventoryItemId && parseFloat(r.quantity) > 0);
-    // New/unmatched rows (only relevant for DRAFT â€” deferred catalog creation)
+    // New/unmatched rows (only relevant for DRAFT — deferred catalog creation)
     const newItemRows = activeRows.filter(r => !r.inventoryItemId && (r.searchTerm || '').trim() && parseFloat(r.quantity) > 0);
 
     if (rowsToSubmit.length === 0 && newItemRows.length === 0) {
@@ -2445,7 +2445,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         return false;
       }
       if (newItemRows.length > 0) {
-        const message = `${newItemRows.length} new item${newItemRows.length === 1 ? '' : 's'} on this supplier card need catalog names. Click â€œSave New Item Names (${newItemRows.length})â€ on this card, then confirm receiving.`;
+        const message = `${newItemRows.length} new item${newItemRows.length === 1 ? '' : 's'} on this supplier card need catalog names. Click "Save New Item Names (${newItemRows.length})" on this card, then confirm receiving.`;
         setCardReceiveMessages(prev => ({ ...prev, [cardId]: message }));
         showToast?.(message, 'warning');
         return false;
@@ -2868,7 +2868,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             }`}
           >
             {historyLoading && subTab === 'HISTORY' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
-            <span>{historyLoading && subTab === 'HISTORY' ? 'Loading Historyâ€¦' : 'Receiving History'}</span>
+            <span>{historyLoading && subTab === 'HISTORY' ? 'Loading History"¦' : 'Receiving History'}</span>
           </button>
         </div>
       </div>
@@ -2886,7 +2886,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             {savedDraftsPreview.slice(0, 3).map((draft) => (
               <article key={`saved-draft-${draft.id}`} className="min-w-0 rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] p-3">
                 <p className="truncate text-xs font-bold text-[var(--text-main)]" title={draft.receivingNumber}>{draft.receivingNumber || 'Receiving draft'}</p>
-                <p className="mt-1 truncate text-[11px] text-[var(--text-muted)]">{draft.supplier?.name || 'Local Market'} Â· {draft.itemCount ?? draft.items?.length ?? 0} items</p>
+                <p className="mt-1 truncate text-[11px] text-[var(--text-muted)]">{draft.supplier?.name || 'Local Market'} · {draft.itemCount ?? draft.items?.length ?? 0} items</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <button type="button" onClick={() => requestResumeDraft(draft)} className="min-h-10 rounded-lg border border-[var(--border-color)] px-2.5 text-[11px] font-semibold text-[var(--text-main)] hover:bg-[var(--bg-color)]">Edit</button>
                   <button type="button" onClick={() => handleDuplicateSavedDraft(draft)} className="min-h-10 rounded-lg border border-[var(--border-color)] px-2.5 text-[11px] font-semibold text-[var(--text-main)] hover:bg-[var(--bg-color)]">Duplicate</button>
@@ -3499,7 +3499,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                     handleSelectItem(index, exactMatch);
                                   }
                                 }}
-                                placeholder={!row.inventoryItemId && row.searchTerm ? `"${row.searchTerm}" â€“ click "Save in Catalog" or match...` : 'Search or select catalog item...'}
+                                placeholder={!row.inventoryItemId && row.searchTerm ? `"${row.searchTerm}" "“ click "Save in Catalog" or match...` : 'Search or select catalog item...'}
                                 className={`w-full pl-8 pr-3 py-2 bg-[var(--card-bg)] border rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none ${
                                   row.needsReview
                                     ? 'border-rose-500/60 focus:border-rose-500'
@@ -3742,7 +3742,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           <div className="flex items-center gap-2 p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-semibold">
                             <Info className="w-3.5 h-3.5 shrink-0" />
                             <span>
-                              Cost changed â€” Catalog cost: <strong>Rs. {selectedInvItem.costPrice} / {selectedInvItem.unit}</strong> â†’ Received cost: <strong>Rs. {row.unitCost} / {row.unit}</strong>
+                              Cost changed — Catalog cost: <strong>Rs. {selectedInvItem.costPrice} / {selectedInvItem.unit}</strong> → Received cost: <strong>Rs. {row.unitCost} / {row.unit}</strong>
                             </span>
                           </div>
                         )}
@@ -3793,10 +3793,10 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                   <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
                     <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
-                      {draftSaveScope === 'primary' && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === 'primary' && savingDraft ? 'Savingâ€¦' : 'Save Draft'}
+                      {draftSaveScope === 'primary' && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === 'primary' && savingDraft ? 'Saving"¦' : 'Save Draft'}
                     </button>
                     {newItemsCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
-                      {catalogSaveScope === 'primary' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'primary' ? 'Savingâ€¦' : `Save New Item Names (${newItemsCount})`}
+                      {catalogSaveScope === 'primary' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'primary' ? 'Saving"¦' : `Save New Item Names (${newItemsCount})`}
                     </button>}
                     <button
                       type="button"
@@ -3975,7 +3975,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           </span>
                           {cardNewCount > 0 && (
                             <span className="text-[11px] font-bold text-amber-400">
-                              â€¢ {cardNewCount} new
+                              • {cardNewCount} new
                             </span>
                           )}
                         </div>
@@ -4153,10 +4153,10 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                       <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
                         <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap rounded-xl border border-orange-500/35 bg-[var(--card-bg)] px-4 py-2 text-center text-xs font-bold text-orange-600 hover:bg-orange-500/10 disabled:opacity-50 sm:w-auto">
-                          {draftSaveScope === card.id && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === card.id && savingDraft ? 'Savingâ€¦' : 'Save Draft'}
+                          {draftSaveScope === card.id && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === card.id && savingDraft ? 'Saving"¦' : 'Save Draft'}
                         </button>
                         {cardNewCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-2 text-center text-xs font-bold text-amber-700 hover:bg-amber-500/15 disabled:opacity-50 sm:w-auto">
-                          {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Savingâ€¦' : `Save New Item Names (${cardNewCount})`}
+                          {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Saving"¦' : `Save New Item Names (${cardNewCount})`}
                         </button>}
                         <button
                           type="button"
@@ -4165,7 +4165,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           className="flex w-full flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-orange-600 px-5 py-2 text-center text-xs font-black text-white shadow-md cursor-pointer hover:bg-orange-500 disabled:opacity-60 disabled:cursor-not-allowed sm:w-auto sm:flex-initial"
                         >
                           {receivingActionScope === card.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                          <span>{receivingActionScope === card.id ? 'Receivingâ€¦' : `Confirm & Receive (Card #${cardIdx + 2})`}</span>
+                          <span>{receivingActionScope === card.id ? 'Receiving"¦' : `Confirm & Receive (Card #${cardIdx + 2})`}</span>
                         </button>
                       </div>
                     </div>}
@@ -4208,7 +4208,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-600 border border-orange-500/35 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                     >
                       {draftSaveScope === 'all' && savingDraft ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      <span>{draftSaveScope === 'all' && savingDraft ? 'Saving draftsâ€¦' : 'Save All Deliveries to Draft'}</span>
+                      <span>{draftSaveScope === 'all' && savingDraft ? 'Saving drafts"¦' : 'Save All Deliveries to Draft'}</span>
                     </button>
                     {allDeliveryNewItemsCount > 0 && <button
                       type="button"
@@ -4217,7 +4217,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white border border-orange-500 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                     >
                       {catalogSaveScope === 'all' ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      <span>{catalogSaveScope === 'all' ? 'Saving itemsâ€¦' : `Save All New Item Names (${allDeliveryNewItemsCount})`}</span>
+                      <span>{catalogSaveScope === 'all' ? 'Saving items"¦' : `Save All New Item Names (${allDeliveryNewItemsCount})`}</span>
                     </button>}
                   </div>
                 </div>
@@ -4236,7 +4236,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <div>
                 <h3 className="text-base font-black text-[var(--text-main)] font-display flex items-center gap-2">
-                  <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">ðŸ“¦</span>
+                  <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">📦</span>
                   Save New Item in Catalog
                 </h3>
                 <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
@@ -4408,7 +4408,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
               {/* Informational note about stock separation */}
               <div className="p-3 rounded-2xl bg-[var(--bg-color)]/70 border border-[var(--border-color)] text-[11px] text-[var(--text-muted)]">
-                â„¹ï¸ <strong>Catalog Separation:</strong> This creates the catalog definition with 0 stock. Actual received quantity will only be added to stock when you click <strong>Confirm &amp; Receive Stock</strong>.
+                <Info className="mr-1 inline h-3.5 w-3.5 align-text-bottom text-orange-500" aria-hidden="true" /> <strong>Catalog Separation:</strong> This creates the catalog definition with 0 stock. Actual received quantity will only be added to stock when you click <strong>Confirm &amp; Receive Stock</strong>.
               </div>
 
               {/* Action Buttons */}
@@ -4449,13 +4449,13 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         document.body
       )}
 
-      {/* Confirmation Modal â€” Confirm Stock Receiving? */}
+      {/* Confirmation Modal — Confirm Stock Receiving? */}
       {showConfirmModal && createPortal(
         <div className="fixed inset-0 z-[9999] glass-overlay flex items-center justify-center p-4">
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-scale-up">
             <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
               <h3 className="text-base font-black text-[var(--text-main)] font-display flex items-center gap-2">
-                <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">ðŸ“¦</span>
+                <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">📦</span>
                 Confirm Stock Receiving
               </h3>
               <button onClick={() => setShowConfirmModal(false)} className="p-1.5 rounded-xl bg-[var(--bg-color)] icon-btn">
@@ -4613,7 +4613,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
           <div className="space-y-3 md:hidden">
             {historyLoading ? (
-              <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 text-center text-xs text-orange-400"><span className="inline-flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin" />Loading receiving historyâ€¦</span></div>
+              <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 text-center text-xs text-orange-400"><span className="inline-flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin" />Loading receiving history"¦</span></div>
             ) : receivingsList.length === 0 ? (
               <div className="rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] p-6 text-center text-xs text-[var(--text-muted)]">No receiving records found.</div>
             ) : receivingsList.map((rec) => (
@@ -4664,7 +4664,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   {historyLoading ? (
                     <tr>
                       <td colSpan={historySelectionMode ? 8 : 7} className="p-12 text-center text-[var(--text-muted)] text-xs">
-                        <span className="inline-flex items-center gap-2 text-orange-500"><RefreshCw className="h-4 w-4 animate-spin" /> Loading receiving historyâ€¦</span>
+                        <span className="inline-flex items-center gap-2 text-orange-500"><RefreshCw className="h-4 w-4 animate-spin" /> Loading receiving history"¦</span>
                       </td>
                     </tr>
                   ) : receivingsList.length === 0 ? (
@@ -4691,7 +4691,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         </td>
                         <td className="p-4 font-mono font-black text-emerald-400">
                           <div>Rs. {(rec.totalCost || 0).toLocaleString()}</div>
-                          {Number(rec.discount || 0) > 0 && <div className="mt-1 text-[9px] font-semibold text-[var(--text-muted)]">Subtotal Rs. {(rec.subtotal || 0).toLocaleString()} Â· Discount Rs. {Number(rec.discount).toLocaleString()}</div>}
+                          {Number(rec.discount || 0) > 0 && <div className="mt-1 text-[9px] font-semibold text-[var(--text-muted)]">Subtotal Rs. {(rec.subtotal || 0).toLocaleString()} · Discount Rs. {Number(rec.discount).toLocaleString()}</div>}
                         </td>
                         <td className="p-4">
                           <span className={`px-2.5 py-1 rounded-xl text-[9px] font-black uppercase border ${
@@ -4735,7 +4735,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                   title="Confirm and update stock now"
                                 >
                                   {confirmingDraftIds.has(String(rec.id)) && <RefreshCw className="w-3 h-3 animate-spin" />}
-                                  <span>{confirmingDraftIds.has(String(rec.id)) ? 'Confirmingâ€¦' : 'Confirm'}</span>
+                                  <span>{confirmingDraftIds.has(String(rec.id)) ? 'Confirming"¦' : 'Confirm'}</span>
                                 </button>
                               </>
                             )}
@@ -5154,7 +5154,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     </div>
                     <p className="shrink-0 text-right tabular-nums text-[var(--text-main)]">
                       {Number(line.quantity).toLocaleString()} {line.unit}
-                      {line.converted == null ? <span className="block text-red-500">Cannot convert to {line.targetUnit}</span> : <span className="block text-[var(--text-muted)]">â†’ {Number(line.converted).toLocaleString(undefined, { maximumFractionDigits: 4 })} {line.targetUnit}</span>}
+                      {line.converted == null ? <span className="block text-red-500">Cannot convert to {line.targetUnit}</span> : <span className="block text-[var(--text-muted)]">→ {Number(line.converted).toLocaleString(undefined, { maximumFractionDigits: 4 })} {line.targetUnit}</span>}
                     </p>
                   </div>
                 )) : <p className="text-xs text-[var(--text-muted)]">No line items are available to preview.</p>}
@@ -5165,7 +5165,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <button type="button" disabled={confirmBatchLoading} onClick={() => { setConfirmBatchOpen(false); setConfirmBatchError(''); confirmBatchRequestRef.current = null; }} className="min-h-11 rounded-xl border border-[var(--border-color)] bg-[var(--bg-color)] px-4 text-sm font-semibold text-[var(--text-main)] disabled:opacity-60">Cancel</button>
               <button type="button" disabled={confirmBatchLoading || confirmBatchSummary.some((line) => line.converted == null)} onClick={handleConfirmReceivingBatch} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">
                 {confirmBatchLoading && <RefreshCw className="h-4 w-4 animate-spin" />}
-                {confirmBatchLoading ? 'Confirmingâ€¦' : confirmBatchError ? 'Retry Confirm' : 'Confirm All'}
+                {confirmBatchLoading ? 'Confirming"¦' : confirmBatchError ? 'Retry Confirm' : 'Confirm All'}
               </button>
             </div>
           </section>
@@ -5181,7 +5181,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             <h3 id="receiving-save-confirm-title" className="text-lg font-bold text-[var(--text-main)]">
               {pendingReceivingSaveAction.action === 'DRAFT'
                 ? (pendingReceivingSaveAction.cardId ? 'Save this supplier card as a draft?' : 'Save all supplier cards as drafts?')
-                : (pendingReceivingSaveAction.cardId ? 'Save this cardâ€™s new item names to the catalog?' : 'Save all cardsâ€™ new item names to the catalog?')}
+                : (pendingReceivingSaveAction.cardId ? 'Save this card"™s new item names to the catalog?' : 'Save all cards"™ new item names to the catalog?')}
             </h3>
             <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
               {pendingReceivingSaveAction.action === 'DRAFT'
@@ -5197,7 +5197,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <button type="button" disabled={loading || savingDraft || bulkSavingCatalog} onClick={confirmReceivingSaveAction} className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-500 disabled:opacity-50">
                 {(loading || savingDraft || bulkSavingCatalog) && <RefreshCw className="h-4 w-4 animate-spin" />}
                 {loading || savingDraft || bulkSavingCatalog
-                  ? (pendingReceivingSaveAction.action === 'DRAFT' ? 'Saving draftâ€¦' : 'Saving item namesâ€¦')
+                  ? (pendingReceivingSaveAction.action === 'DRAFT' ? 'Saving draft"¦' : 'Saving item names"¦')
                   : pendingReceivingSaveAction.action === 'DRAFT'
                     ? (pendingReceivingSaveAction.cardId ? 'Save Draft' : 'Save All Drafts')
                     : (pendingReceivingSaveAction.cardId ? 'Save New Item Names' : 'Save All New Item Names')}
@@ -5234,7 +5234,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             </div>
             <div className="mt-5 space-y-2.5">
               <button type="button" onClick={saveCurrentAndResumeDraft} disabled={resumeDraftSaving || loading || savingDraft} className="w-full rounded-xl bg-orange-600 px-4 py-3 text-sm font-bold text-white hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60">
-                {resumeDraftSaving ? 'Saving current workâ€¦' : 'Save current work as draft and continue'}
+                {resumeDraftSaving ? 'Saving current work"¦' : 'Save current work as draft and continue'}
               </button>
               <button type="button" onClick={() => { const draft = pendingResumeDraft; setPendingResumeDraft(null); loadDraftIntoForm(draft); }} disabled={resumeDraftSaving || loading || savingDraft} className="w-full rounded-xl border border-rose-500/30 bg-rose-500/5 px-4 py-2.5 text-sm font-semibold text-rose-500 hover:bg-rose-500/10 disabled:opacity-50">
                 Discard current work and continue

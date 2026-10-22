@@ -96,7 +96,8 @@ const Login = ({ onLoginSuccess }) => {
         <div className="lg:col-span-7 flex flex-col space-y-7">
           <div>
             <div className="inline-flex items-center space-x-2 px-3 py-1 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-full text-[10px] font-extrabold tracking-wider uppercase">
-              🍽️ ZovikPOS AI POS Suite
+              <img src="/assets/zovikpos-mark.svg" alt="" aria-hidden="true" className="h-5 w-5 rounded-md" />
+              <span>ZovikPOS AI POS Suite</span>
             </div>
             <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-white mt-4 leading-[1.1]">
               Canteen Management <br />

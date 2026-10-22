@@ -2,6 +2,7 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 @import "./styles/glass-theme.css";
+@import "./styles/staff-theme.css";
 
 /* ═══════════════════════════════════════════════════════════════
    ZOVIKPOS — GLOBAL DESIGN SYSTEM & BRAND THEME
@@ -144,10 +145,10 @@
   --sb-glass-bg: rgba(31, 31, 31, 0.85);
   --sb-glass-border: rgba(51, 51, 51, 0.6);
 
-  /* Legacy Variable Aliases (bridge for staff/admin pages) */
-  --bg-color: var(--sb-bg);
-  --card-bg: var(--sb-surface);
-  --border-color: var(--sb-border);
+  /* Legacy Variable Aliases (bridge for staff/admin pages - unified smoked glass in dark mode) */
+  --bg-color: var(--surface-inset, rgba(22, 19, 32, 0.70));
+  --card-bg: var(--surface-card, rgba(36, 32, 50, 0.75));
+  --border-color: var(--border-1, rgba(255, 255, 255, 0.12));
   --text-main: var(--sb-text-main);
   --text-muted: var(--sb-text-muted);
   --text-secondary: var(--sb-text-secondary);

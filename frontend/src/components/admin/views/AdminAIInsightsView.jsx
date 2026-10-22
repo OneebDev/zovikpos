@@ -109,19 +109,20 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
   return (
     <div className="space-y-6 sm:space-y-7">
       {/* Header Bar */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-2xl shadow-sm">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5 p-5 sm:p-6 rounded-2xl shadow-sm"
+           style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
         <div>
           <div className="flex items-center space-x-2">
             <Sparkles className="w-5 h-5 text-orange-400" />
-            <h2 className="text-xl font-extrabold text-[var(--text-main)] font-display">
+            <h2 className="text-xl font-extrabold font-display" style={{ color: 'var(--text-1)' }}>
               AI Groq ML Insights &amp; Demand Forecasting
             </h2>
           </div>
-          <p className="text-sm text-[var(--text-muted)] mt-1 max-w-3xl leading-relaxed">
+          <p className="text-sm mt-1 max-w-3xl leading-relaxed" style={{ color: 'var(--text-3)' }}>
             Real-time demand forecasting derived strictly from historical POS transaction data, stockout risk prediction, and Groq LLM intelligence.
           </p>
           {lastUpdated && !isRefreshing && (
-            <p className="text-[10px] text-emerald-400/70 mt-1 flex items-center gap-1">
+            <p className="text-[10px] text-emerald-500 mt-1 flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" />
               Last updated: {lastUpdated.toLocaleTimeString()}
             </p>
@@ -148,10 +149,14 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
 
       {/* Error banner — non-blocking, never hides data */}
       {errorMsg && !isRefreshing && (
-        <div className="bg-rose-500/10 border border-rose-500/30 p-4 rounded-xl flex items-center justify-between text-xs text-rose-300">
+        <div className="p-4 rounded-xl flex items-center justify-between text-xs"
+             style={{
+               background: 'rgba(239,68,68,0.10)',
+               border: '1px solid rgba(239,68,68,0.28)',
+             }}>
           <div className="flex items-center space-x-2">
-            <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0" />
-            <span>{errorMsg}</span>
+            <AlertTriangle className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--danger)' }} />
+            <span style={{ color: 'var(--danger-text)' }}>{errorMsg}</span>
           </div>
           <button
             onClick={handleRefresh}
@@ -167,83 +172,112 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
         <>
       {/* Executive Summary */}
           {aiData.executiveSummary && !isRefreshing && (
-            <div className="bg-orange-500/5 border border-orange-500/25 p-5 sm:p-6 rounded-2xl flex items-start gap-4 shadow-sm">
-              <span className="p-2.5 rounded-xl bg-orange-500/10 shrink-0"><Lightbulb className="w-5 h-5 text-orange-400" /></span>
+            <div className="bg-orange-500/10 dark:bg-orange-500/[0.08] border border-orange-500/30 p-5 sm:p-6 rounded-2xl flex items-start gap-4 shadow-sm">
+              <span className="p-2.5 rounded-xl bg-orange-500/15 shrink-0"><Lightbulb className="w-5 h-5 text-orange-500 dark:text-orange-400" /></span>
               <div>
-                <strong className="font-bold block text-sm text-[var(--text-main)]">Key takeaway</strong>
-                <p className="mt-1.5 text-sm sm:text-base text-[var(--text-muted)] leading-7 max-w-5xl">{aiData.executiveSummary}</p>
+                <strong className="font-extrabold block text-sm text-[var(--text-1)]">Key takeaway</strong>
+                <p className="mt-1.5 text-sm sm:text-base text-[var(--text-2)] leading-7 max-w-5xl font-medium">{aiData.executiveSummary}</p>
               </div>
             </div>
           )}
 
           {/* Metrics Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 rounded-2xl shadow-sm space-y-2">
-              <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">Model Prediction Accuracy</span>
-              <h3 className="text-2xl sm:text-3xl font-extrabold text-orange-400 font-mono">{accuracyText}</h3>
-              <p className="text-[10px] text-[var(--text-muted)]">{accuracyHelper}</p>
+            <div className="p-5 rounded-2xl shadow-sm space-y-2"
+                 style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+              <span className="text-[11px] uppercase font-bold tracking-wider" style={{ color: 'var(--text-2)' }}>Model Prediction Accuracy</span>
+              <h3 className="text-2xl sm:text-3xl font-extrabold font-mono" style={{ color: 'var(--accent)' }}>{accuracyText}</h3>
+              <p className="text-xs" style={{ color: 'var(--text-3)' }}>{accuracyHelper}</p>
             </div>
-            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 rounded-2xl shadow-sm space-y-2">
-              <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">Average Kitchen Prep Time</span>
-              <h3 className="text-2xl sm:text-3xl font-extrabold text-emerald-400 font-mono">{prepTimeText}</h3>
-              <p className="text-[10px] text-[var(--text-muted)]">{prepTimeSubtext}</p>
+            <div className="p-5 rounded-2xl shadow-sm space-y-2"
+                 style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+              <span className="text-[11px] uppercase font-bold tracking-wider" style={{ color: 'var(--text-2)' }}>Average Kitchen Prep Time</span>
+              <h3 className="text-2xl sm:text-3xl font-extrabold font-mono" style={{ color: 'var(--success)' }}>{prepTimeText}</h3>
+              <p className="text-xs" style={{ color: 'var(--text-3)' }}>{prepTimeSubtext}</p>
             </div>
-            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 rounded-2xl shadow-sm space-y-2">
-              <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">Stock Risk Predictions</span>
-              <h3 className="text-2xl sm:text-3xl font-extrabold text-amber-400 font-mono">{riskAlerts.length} Alerts</h3>
-              <p className="text-[10px] text-[var(--text-muted)]">Low stock &amp; stockout risk notifications</p>
+            <div className="p-5 rounded-2xl shadow-sm space-y-2"
+                 style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+              <span className="text-[11px] uppercase font-bold tracking-wider" style={{ color: 'var(--text-2)' }}>Stock Risk Predictions</span>
+              <h3 className="text-2xl sm:text-3xl font-extrabold font-mono" style={{ color: 'var(--warning)' }}>{riskAlerts.length} Alerts</h3>
+              <p className="text-xs" style={{ color: 'var(--text-3)' }}>Low stock &amp; stockout risk notifications</p>
             </div>
-            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 rounded-2xl shadow-sm space-y-2">
-              <span className="text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">POS Data Confidence</span>
-              <h3 className={`text-2xl sm:text-3xl font-extrabold font-mono ${
-                confidenceScore.includes('HIGH') ? 'text-emerald-400' : confidenceScore.includes('MEDIUM') ? 'text-amber-400' : 'text-orange-400'
-              }`}>
+            <div className="p-5 rounded-2xl shadow-sm space-y-2"
+                 style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+              <span className="text-[11px] uppercase font-bold tracking-wider" style={{ color: 'var(--text-2)' }}>POS Data Confidence</span>
+              <h3 className="text-2xl sm:text-3xl font-extrabold font-mono" style={{
+                color: confidenceScore.includes('HIGH')
+                  ? 'var(--success)'
+                  : confidenceScore.includes('MEDIUM')
+                  ? 'var(--warning)'
+                  : 'var(--accent)'
+              }}>
                 {confidenceScore}
               </h3>
-              <p className="text-[10px] text-[var(--text-muted)]">{confidenceExplanation}</p>
+              <p className="text-xs" style={{ color: 'var(--text-3)' }}>{confidenceExplanation}</p>
             </div>
           </div>
 
           {/* Demand & Cost sections */}
           <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
             {/* ML Demand Forecasts */}
-            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-2xl shadow-sm space-y-4">
-              <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
-                <BrainCircuit className="w-4 h-4 text-orange-400" />
+            <div className="p-5 sm:p-6 rounded-2xl shadow-sm space-y-4"
+                 style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+              <h3 className="text-sm font-black flex items-center space-x-2" style={{ color: 'var(--text-1)' }}>
+                <BrainCircuit className="w-4 h-4 text-orange-500" />
                 <span>Projected Item Demand Forecasts</span>
               </h3>
-              <div className="divide-y divide-[var(--border-color)] text-xs">
+              <div className="divide-y text-xs" style={{ borderColor: 'var(--border-color)' }}>
                 {riskAlerts.length === 0 ? (
-                  <p className="py-8 text-[var(--text-muted)] italic text-center">No urgent stockout alerts predicted. Inventory levels are healthy.</p>
+                  <p className="py-8 italic text-center font-medium" style={{ color: 'var(--text-2)' }}>No urgent stockout alerts predicted. Inventory levels are healthy.</p>
                 ) : (
                   riskAlerts.map((alert, idx) => (
                     <div key={idx} className="py-4 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-3 items-start">
                       <div className="min-w-0">
                         <div className="flex items-center space-x-2">
-                          <strong className="text-[var(--text-main)] font-bold">{alert.name || alert.itemName}</strong>
-                          <span className={`px-2 py-0.5 rounded text-[9px] font-black border ${
-                            alert.confidenceBadge === 'HIGH'
-                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                              : alert.confidenceBadge === 'MEDIUM'
-                              ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                              : 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                          }`}>
+                          <strong className="font-bold" style={{ color: 'var(--text-1)' }}>{alert.name || alert.itemName}</strong>
+                          <span style={{
+                            padding: '1px 8px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: 900,
+                            letterSpacing: '0.05em',
+                            border: '1px solid',
+                            background:
+                              alert.confidenceBadge === 'HIGH'
+                                ? 'var(--success-bg)'
+                                : alert.confidenceBadge === 'MEDIUM'
+                                ? 'var(--warning-bg)'
+                                : 'rgba(255,90,31,0.12)',
+                            borderColor:
+                              alert.confidenceBadge === 'HIGH'
+                                ? 'var(--success-border)'
+                                : alert.confidenceBadge === 'MEDIUM'
+                                ? 'var(--warning-border)'
+                                : 'rgba(255,90,31,0.28)',
+                            color:
+                              alert.confidenceBadge === 'HIGH'
+                                ? 'var(--success-text)'
+                                : alert.confidenceBadge === 'MEDIUM'
+                                ? 'var(--warning-text)'
+                                : 'var(--accent)',
+                          }}>
                             {alert.confidenceBadge || 'HIGH'} CONFIDENCE
                           </span>
                         </div>
-                        <p className="text-xs text-[var(--text-muted)] mt-1.5 leading-relaxed">{alert.message || 'Based on available inventory and historical sales data.'}</p>
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[10px] text-[var(--text-muted)]">
-                          <span>On hand: <strong className="text-[var(--text-main)]">{alert.currentStock} {alert.unit}</strong></span>
-                          <span>Safety minimum: <strong className="text-[var(--text-main)]">{alert.minThreshold} {alert.unit}</strong></span>
+                        <p className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--text-2)' }}>{alert.message || 'Based on available inventory and historical sales data.'}</p>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px]" style={{ color: 'var(--text-2)' }}>
+                          <span>On hand: <strong className="font-mono" style={{ color: 'var(--text-1)' }}>{alert.currentStock} {alert.unit}</strong></span>
+                          <span>Safety minimum: <strong className="font-mono" style={{ color: 'var(--text-1)' }}>{alert.minThreshold} {alert.unit}</strong></span>
                         </div>
                       </div>
-                      <div className="sm:min-w-40 sm:text-right rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] px-3 py-2.5">
-                        <span className="text-[9px] uppercase tracking-wide text-[var(--text-muted)] block">Forecast / coverage</span>
-                        <span className="font-mono font-extrabold text-orange-400 block text-xs mt-1">
+                      <div className="sm:min-w-44 sm:text-right rounded-xl px-3.5 py-2.5"
+                           style={{ background: 'var(--surface-inset)', border: '1px solid var(--border-1)' }}>
+                        <span className="text-[10px] uppercase font-bold tracking-wide block" style={{ color: 'var(--text-2)' }}>Forecast / coverage</span>
+                        <span className="font-mono font-extrabold block text-xs mt-1" style={{ color: 'var(--accent)' }}>
                           {alert.forecastLabel || (alert.forecast > 0 ? `~${alert.forecast} ${alert.unit}` : 'Not enough sales data')}
                         </span>
                         {alert.suggestedRestock > 0 && (
-                          <span className="text-[10px] font-bold text-amber-400 block mt-1">
+                          <span className="text-[11px] font-bold block mt-1" style={{ color: 'var(--warning-text)' }}>
                             Advise +{alert.suggestedRestock} {alert.unit} restock
                           </span>
                         )}
@@ -255,29 +289,38 @@ const AdminAIInsightsView = ({ stats, alerts = [], selectedBranchId = 'all', onR
             </div>
 
             {/* AI Food Cost Optimizations */}
-            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-5 sm:p-6 rounded-2xl shadow-sm space-y-4">
-              <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
-                <Package className="w-4 h-4 text-amber-400" />
+            <div className="p-5 sm:p-6 rounded-2xl shadow-sm space-y-4"
+                 style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+              <h3 className="text-sm font-black flex items-center space-x-2" style={{ color: 'var(--text-1)' }}>
+                <Package className="w-4 h-4 text-amber-500" />
                 <span>AI Food Cost &amp; Margin Optimizations</span>
               </h3>
-              <div className="divide-y divide-[var(--border-color)] text-xs">
+              <div className="divide-y text-xs" style={{ borderColor: 'var(--border-color)' }}>
                 {optimizations.length === 0 ? (
-                  <div className="py-8 text-[var(--text-muted)] italic text-center space-y-1">
-                    <p className="font-bold text-xs">Not Enough Cost Data</p>
-                    <p className="text-[10px] text-[var(--text-muted)]">Cost optimizations will appear as recipe costs and purchase transactions accumulate.</p>
+                  <div className="py-8 italic text-center space-y-1">
+                    <p className="font-bold text-xs" style={{ color: 'var(--text-1)' }}>Not Enough Cost Data</p>
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>Cost optimizations will appear as recipe costs and purchase transactions accumulate.</p>
                   </div>
                 ) : (
                   optimizations.map((opt, idx) => (
-                    <div key={idx} className="py-3.5 space-y-1">
+                    <div key={idx} className="py-3.5 space-y-1.5">
                       <div className="flex justify-between items-center">
-                        <strong className="text-[var(--text-main)] font-bold text-xs">{opt.title}</strong>
-                        <span className={`px-2 py-0.5 rounded text-[9px] font-black border ${
-                          opt.impact === 'High' ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                        }`}>
+                        <strong className="font-bold text-xs" style={{ color: 'var(--text-1)' }}>{opt.title}</strong>
+                        <span style={{
+                          padding: '1px 8px',
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          fontWeight: 900,
+                          letterSpacing: '0.05em',
+                          border: '1px solid',
+                          background: opt.impact === 'High' ? 'var(--danger-bg)' : 'var(--warning-bg)',
+                          borderColor: opt.impact === 'High' ? 'var(--danger-border)' : 'var(--warning-border)',
+                          color: opt.impact === 'High' ? 'var(--danger-text)' : 'var(--warning-text)',
+                        }}>
                           {opt.impact || 'Medium'} Impact
                         </span>
                       </div>
-                      <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">{opt.description}</p>
+                      <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>{opt.description}</p>
                     </div>
                   ))
                 )}

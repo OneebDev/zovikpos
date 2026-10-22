@@ -73,29 +73,29 @@ const navGroups = [
 const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isMobileOpen, onCloseMobile, onLogout }) => {
   return (
     <>
-      {/* Mobile Drawer Overlay */}
+      {/* Mobile Drawer Backdrop Overlay */}
       {isMobileOpen && (
         <div
           onClick={onCloseMobile}
-          className="fixed inset-0 glass-overlay z-40 lg:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
         />
       )}
 
-      {/* Sidebar Container */}
+      {/* Floating Sidebar Rail */}
       <aside
-        className={`admin-sidebar fixed top-0 left-0 bottom-0 z-50 flex flex-col transition-all duration-300 shadow-2xl ${
+        className={`floating-sidebar ${
           collapsed ? 'w-20' : 'w-64'
         } ${
-          isMobileOpen ? 'translate-x-0 w-64' : '-translate-x-full lg:translate-x-0'
+          isMobileOpen ? 'floating-sidebar--visible w-64' : 'floating-sidebar--hidden lg:translate-x-0'
         }`}
       >
         {/* Sidebar Header Brand */}
-        <div className="h-16 px-4 flex items-center justify-between border-b border-[var(--glass-border-subtle)] shrink-0">
+        <div className="floating-sidebar__header">
           <div className="flex items-center space-x-3 overflow-hidden">
-            <img src="/favicon.svg" alt="ZovikPOS logo" className="w-10 h-10 rounded-xl shrink-0 shadow-lg shadow-orange-600/30" />
+            <img src="/assets/zovikpos-mark.svg" alt="ZovikPOS logo" className="w-10 h-10 rounded-xl shrink-0 shadow-lg shadow-orange-600/30" />
             {!collapsed && (
               <div className="animate-fade-in truncate">
-                <h1 className="font-extrabold text-sm text-[var(--text-main)] tracking-tight font-display">ZOVIKPOS</h1>
+                <h1 className="font-extrabold text-sm text-[var(--panel-text)] tracking-tight font-display">ZOVIKPOS</h1>
                 <p className="text-[10px] text-orange-400 font-bold uppercase tracking-wider">Enterprise POS</p>
               </div>
             )}
@@ -104,62 +104,63 @@ const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isM
           {/* Desktop Collapse Toggle */}
           <button
             onClick={onToggleCollapse}
-            className="hidden lg:flex p-1.5 rounded-lg bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+            className="hidden lg:flex btn-icon shrink-0"
             title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+            aria-label={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           >
-            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            {collapsed ? <ChevronRight className="w-4 h-4 shrink-0" /> : <ChevronLeft className="w-4 h-4 shrink-0" />}
           </button>
         </div>
 
         {/* Sidebar Navigation Items */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-6 custom-scrollbar">
+        <div className="floating-sidebar__nav">
           {navGroups.map((group, groupIdx) => (
-            <div key={groupIdx} className="space-y-1">
+            <div key={groupIdx} className="mb-4">
               {!collapsed && (
-                <div className="px-3 text-[10px] font-black tracking-widest text-[var(--text-muted)] uppercase mb-2">
+                <div className="floating-sidebar__section-title">
                   {group.title}
                 </div>
               )}
 
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
 
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      onSelectTab(item.id);
-                      if (isMobileOpen) onCloseMobile();
-                    }}
-                    className={`admin-sidebar__nav-item ${collapsed ? 'admin-sidebar__nav-item--collapsed' : ''} text-sm font-semibold transition-all duration-200 cursor-pointer relative group ${
-                      isActive
-                        ? 'bg-gradient-to-r from-[#ff5a1f] to-[#ff7a3d] text-white shadow-md border border-orange-400/20'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                    }`}
-                    title={collapsed ? item.label : undefined}
-                  >
-                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-orange-400 group-hover:text-orange-300'}`} />
-                    {!collapsed && <span className="truncate">{item.label}</span>}
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        onSelectTab(item.id);
+                        if (isMobileOpen) onCloseMobile();
+                      }}
+                      className={`floating-sidebar__item ${collapsed ? 'floating-sidebar__item--collapsed' : ''} ${
+                        isActive ? 'floating-sidebar__item--active' : ''
+                      }`}
+                      title={collapsed ? item.label : undefined}
+                    >
+                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-orange-400'}`} />
+                      {!collapsed && <span className="truncate">{item.label}</span>}
 
-                    {/* Tooltip for Collapsed Sidebar */}
-                    {collapsed && (
-                      <div className="admin-sidebar__tooltip fixed left-20 ml-2 hidden bg-slate-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none border border-slate-700">
-                        {item.label}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
+                      {/* Tooltip for Collapsed Sidebar */}
+                      {collapsed && (
+                        <div className="floating-sidebar__tooltip">
+                          {item.label}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           ))}
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-[var(--glass-border-subtle)] shrink-0">
+        <div className="floating-sidebar__footer">
           <button
             onClick={onLogout}
-            className={`admin-sidebar__nav-item ${collapsed ? 'admin-sidebar__nav-item--collapsed' : ''} text-sm font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-all cursor-pointer`}
+            className={`floating-sidebar__item ${collapsed ? 'floating-sidebar__item--collapsed' : ''} text-rose-400 hover:text-rose-300 hover:bg-rose-500/15`}
             title={collapsed ? 'Log Out' : undefined}
           >
             <LogOut className="w-4 h-4 shrink-0" />

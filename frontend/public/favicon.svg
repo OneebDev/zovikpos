@@ -1,33 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <!-- Orange rounded background -->
-  <rect width="64" height="64" rx="16" fill="#E85D2A"/>
-  <!-- Subtle inner gradient overlay -->
-  <rect width="64" height="64" rx="16" fill="url(#grad)" opacity="0.4"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">ZovikPOS</title>
   <defs>
-    <radialGradient id="grad" cx="30%" cy="25%" r="70%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="#c04010" stop-opacity="0"/>
-    </radialGradient>
+    <linearGradient id="brand" x1="12" y1="10" x2="116" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FB923C"/>
+      <stop offset="1" stop-color="#E85D2A"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="30" y1="8" x2="74" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".20"/>
+      <stop offset=".55" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
   </defs>
-
-  <!-- Fork (left) -->
-  <g stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <!-- Fork tines -->
-    <line x1="21" y1="14" x2="21" y2="24"/>
-    <line x1="25" y1="14" x2="25" y2="24"/>
-    <line x1="29" y1="14" x2="29" y2="24"/>
-    <!-- Fork arch -->
-    <path d="M21 24 Q25 30 25 32"/>
-    <path d="M29 24 Q25 30 25 32"/>
-    <!-- Fork handle -->
-    <line x1="25" y1="32" x2="25" y2="50"/>
-  </g>
-
-  <!-- Knife (right) -->
-  <g stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <!-- Knife blade -->
-    <path d="M39 14 C39 14 43 18 43 26 L39 28"/>
-    <!-- Knife handle -->
-    <line x1="39" y1="28" x2="39" y2="50"/>
-  </g>
+  <rect width="128" height="128" rx="34" fill="url(#brand)"/>
+  <rect width="128" height="128" rx="34" fill="url(#shine)"/>
+  <circle cx="64" cy="64" r="43" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2.5"/>
+  <path d="M38 42h52v9L53 78h37v9H38v-9l37-27H38z" fill="#fff"/>
+  <path d="M39 99h50" fill="none" stroke="#fff" stroke-opacity=".52" stroke-width="3" stroke-linecap="round"/>
 </svg>

@@ -1,4 +1,4 @@
-﻿import ThemedSelect from '../../common/ThemedSelect';
+import ThemedSelect from '../../common/ThemedSelect';
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   Search,
@@ -451,10 +451,10 @@ const AdminOrdersView = ({ selectedBranchId = 'all', onRefresh, showToast }) => 
       {/* Result Count Info */}
       <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] font-medium">
         <span>
-          Showing <strong className="text-[var(--text-main)]">{pageInfo.total ? (currentPage - 1) * pageInfo.pageSize + 1 : 0}â€“{Math.min(currentPage * pageInfo.pageSize, pageInfo.total)}</strong> of <strong className="text-[var(--text-main)]">{pageInfo.total}</strong> orders
+          Showing <strong className="text-[var(--text-main)]">{pageInfo.total ? (currentPage - 1) * pageInfo.pageSize + 1 : 0}–{Math.min(currentPage * pageInfo.pageSize, pageInfo.total)}</strong> of <strong className="text-[var(--text-main)]">{pageInfo.total}</strong> orders
           {activeDateRange && (
             <span className="ml-2 text-orange-400 font-bold">
-              â€¢ {datePreset === 'TODAY' ? 'Today' : datePreset === 'YESTERDAY' ? 'Yesterday' : datePreset === 'LAST_7' ? 'Last 7 Days' : datePreset === 'THIS_MONTH' ? 'This Month' : datePreset === 'LAST_MONTH' ? 'Last Month' : 'Custom Range'}
+              • {datePreset === 'TODAY' ? 'Today' : datePreset === 'YESTERDAY' ? 'Yesterday' : datePreset === 'LAST_7' ? 'Last 7 Days' : datePreset === 'THIS_MONTH' ? 'This Month' : datePreset === 'LAST_MONTH' ? 'Last Month' : 'Custom Range'}
             </span>
           )}
         </span>
@@ -467,7 +467,7 @@ const AdminOrdersView = ({ selectedBranchId = 'all', onRefresh, showToast }) => 
       <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl shadow-xl overflow-hidden">
           {isOrdersLoading ? (
             <div role="status" aria-label="Loading orders" className="space-y-3 p-5">
-              <div className="flex items-center gap-3 text-xs font-bold text-[var(--text-muted)]"><Loader2 className="h-5 w-5 animate-spin text-orange-500" /><span>Loading ordersâ€¦</span></div>
+              <div className="flex items-center gap-3 text-xs font-bold text-[var(--text-muted)]"><Loader2 className="h-5 w-5 animate-spin text-orange-500" /><span>Loading orders…</span></div>
               {Array.from({ length: 5 }, (_, index) => <div key={index} className="h-12 animate-pulse rounded-xl bg-[var(--surface-2)]" />)}
             </div>
           ) : displayedOrdersError && pageOrders.length === 0 ? (
@@ -484,7 +484,7 @@ const AdminOrdersView = ({ selectedBranchId = 'all', onRefresh, showToast }) => 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1080px] text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
+                  <tr className="border-b border-[var(--border-color)] text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]" style={{ background: 'var(--table-header-bg)' }}>
                     {selectionMode && <th className="p-4 w-10 text-center">
                       <input
                         type="checkbox"
@@ -663,7 +663,7 @@ const AdminOrdersView = ({ selectedBranchId = 'all', onRefresh, showToast }) => 
                   <div key={item.id} className="p-3 flex justify-between items-center text-xs">
                     <div>
                       <strong className="text-[var(--text-main)] block font-bold">{item.nameSnapshot || item.menuItem?.name}</strong>
-                      <span className="text-[10px] text-[var(--text-muted)]">Qty: {item.quantity} Ã— {formatPrice(item.priceSnapshot)}</span>
+                      <span className="text-[10px] text-[var(--text-muted)]">Qty: {item.quantity} × {formatPrice(item.priceSnapshot)}</span>
                     </div>
                     <span className="font-mono font-extrabold text-orange-400">{formatPrice(Number(item.quantity || 0) * Number(item.priceSnapshot || 0))}</span>
                   </div>
@@ -677,7 +677,7 @@ const AdminOrdersView = ({ selectedBranchId = 'all', onRefresh, showToast }) => 
                 <span>Subtotal:</span>
                 <span className="font-mono font-bold">{formatPrice(selectedOrder.subtotal ?? selectedOrder.total)}</span>
               </div>
-              {Number(selectedOrder.discount || 0) > 0 && <div className="flex justify-between text-[var(--text-muted)]"><span>Discount:</span><span className="font-mono font-bold">âˆ’{formatPrice(selectedOrder.discount)}</span></div>}
+              {Number(selectedOrder.discount || 0) > 0 && <div className="flex justify-between text-[var(--text-muted)]"><span>Discount:</span><span className="font-mono font-bold">-{formatPrice(selectedOrder.discount)}</span></div>}
               <div className="flex justify-between text-[var(--text-muted)]"><span>Tax & service:</span><span className="font-mono font-bold">{formatPrice(selectedOrder.tax)}</span></div>
               <div className="flex justify-between text-base font-extrabold text-[var(--text-main)] pt-2 border-t border-[var(--border-color)]">
                 <span>Grand Total:</span>

@@ -26,7 +26,7 @@ const toDateStr = (d) => {
 const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
   const [methodTab, setMethodTab] = useState('ALL');
   const [statusTab] = useState('ALL');
-  const [viewMode] = useState('TABLE'); // TABLE only â€“ calendar removed
+  const [viewMode] = useState('TABLE'); // TABLE only – calendar removed
   const [searchTerm, setSearchTerm] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -339,7 +339,7 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1120px] text-left border-collapse">
               <thead>
-                <tr className="border-b border-[var(--border-color)] bg-[var(--bg-color)]/50 text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]">
+                <tr className="border-b border-[var(--border-color)] text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)]" style={{ background: 'var(--table-header-bg)' }}>
                   <th className="p-4">Order #</th>
                   <th className="p-4">Customer</th>
                   <th className="p-4">Table</th>

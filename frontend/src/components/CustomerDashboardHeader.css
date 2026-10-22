@@ -43,21 +43,13 @@
 }
 
 .customer-header__mark {
-  display: grid;
   width: 40px;
   height: 40px;
   flex: 0 0 40px;
-  place-items: center;
+  display: block;
   border-radius: 14px;
-  color: var(--surface);
-  background: var(--accent-gradient);
   box-shadow: var(--accent-glow);
-}
-
-.customer-header__mark svg {
-  width: 19px;
-  height: 19px;
-  stroke-width: 2.2;
+  object-fit: contain;
 }
 
 .customer-header__brand-copy {

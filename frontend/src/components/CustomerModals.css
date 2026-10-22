@@ -178,8 +178,7 @@
 }
 .customer-modal--install .customer-modal__close { position: absolute; top: 16px; right: 16px; }
 .customer-install__header { min-width: 0; align-items: center; padding: 0 48px 14px 0; }
-.customer-install__app-icon { display: inline-flex; width: 72px; height: 72px; flex: 0 0 72px; align-items: center; justify-content: center; border-radius: 22px; color: var(--text-on-accent); background: var(--accent-gradient); box-shadow: var(--accent-glow); }
-.customer-install__app-icon svg { width: 34px; height: 34px; stroke-width: 2.2; }
+.customer-install__app-icon { display: block; width: 72px; height: 72px; flex: 0 0 72px; border-radius: 22px; object-fit: contain; box-shadow: var(--accent-glow); }
 .customer-install__heading { min-width: 0; flex: 1 1 auto; }
 .customer-install__heading h2 { margin: 0; color: var(--text); font-size: var(--text-2xl); font-weight: 700; letter-spacing: -.01em; }
 .customer-install__heading p { margin: 5px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
@@ -319,8 +318,7 @@
 }
 .customer-signout-overlay.is-visible { opacity: 1; pointer-events: auto; }
 .customer-signout-overlay__content { display: flex; align-items: center; flex-direction: column; gap: 12px; color: var(--text); font-size: 18px; font-weight: 750; letter-spacing: .06em; }
-.customer-signout-overlay__mark { display: grid; width: 56px; height: 56px; place-items: center; border-radius: 18px; color: var(--text-on-accent); background: var(--accent-gradient); }
-.customer-signout-overlay__mark svg { width: 28px; height: 28px; }
+.customer-signout-overlay__mark { display: block; width: 56px; height: 56px; border-radius: 18px; object-fit: contain; }
 .customer-signout-overlay__spinner { width: 22px; height: 22px; margin-top: 4px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: customer-signout-spin 720ms linear infinite; }
 .customer-signout-overlay__label { color: var(--text-secondary); font-size: 13px; font-weight: 550; letter-spacing: 0; }
 @keyframes customer-signout-spin { to { transform: rotate(360deg); } }
@@ -419,7 +417,6 @@
   border: 0;
 }
 .customer-install__app-icon { grid-area: icon; width: 52px; height: 52px; flex-basis: 52px; border-radius: 16px; box-shadow: var(--shadow-sm); }
-.customer-install__app-icon svg { width: 26px; height: 26px; }
 .customer-install__heading { grid-area: title; padding-right: 34px; }
 .customer-install__heading h2 { font-size: 19px; line-height: 1.2; }
 .customer-install__subtitle { grid-area: subtitle; min-width: 0; margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.35; white-space: nowrap; }

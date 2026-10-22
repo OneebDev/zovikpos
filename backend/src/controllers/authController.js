@@ -301,7 +301,7 @@ const sendOTP = async (req, res) => {
     });
 
     // Send email asynchronously
-    sendOTPEmail(normalizedEmail, safeName, rawOtp).catch(err =>
+    sendOTPEmail(normalizedEmail, safeName, rawOtp, validSessionId).catch(err =>
       console.error('[OTP Email] Failed to send email:', err.message)
     );
 

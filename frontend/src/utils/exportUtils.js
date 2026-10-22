@@ -75,7 +75,8 @@ export const printPDFReport = (title, contentHtml) => {
           @page { size: A4 portrait; margin: 15mm; }
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11pt; color: #0f172a; margin: 0; padding: 0; }
           .header { display: flex; justify-content: space-between; align-items: center; border-b: 2px solid #E85D2A; padding-bottom: 12px; margin-bottom: 20px; }
-          .brand { font-size: 18pt; font-weight: 900; color: #E85D2A; letter-spacing: 1px; }
+          .brand { display: flex; align-items: center; gap: 10px; font-size: 18pt; font-weight: 900; color: #E85D2A; letter-spacing: 1px; }
+          .brand img { width: 38px; height: 38px; border-radius: 11px; }
           .subtitle { font-size: 9pt; color: #64748b; margin-top: 2px; }
           .meta { text-align: right; font-size: 9pt; color: #64748b; }
           table { width: 100%; border-collapse: collapse; margin-top: 15px; }
@@ -92,7 +93,7 @@ export const printPDFReport = (title, contentHtml) => {
       <body>
         <div class="header">
           <div>
-            <div class="brand">🍽️ ZOVIKPOS</div>
+            <div class="brand"><img src="${window.location.origin}/assets/zovikpos-mark.svg" alt="" /> ZOVIKPOS</div>
             <div class="subtitle">${title} • University Canteen Management System</div>
           </div>
           <div class="meta">

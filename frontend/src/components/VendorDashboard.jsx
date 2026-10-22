@@ -18,9 +18,9 @@ import {
   Volume2,
   VolumeX,
   FileText,
-  DollarSign,
 } from 'lucide-react';
 import DemoStatusBadge from './DemoStatusBadge';
+import AppBackground from './common/AppBackground';
 import { paymentMethodLabel } from '../utils/paymentMethods';
 import { isOrderDeletedEvent, mergeOrderList, mergeOrderRecord, orderStoreFromList, removeDeletedOrders, stableOrderSort } from '../utils/liveOrderStore';
 
@@ -584,17 +584,17 @@ const VendorDashboard = ({ user }) => {
   }, [orders, menu, activeOrders, verificationOrders]);
 
   return (
-    <div className="responsive-shell min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] p-4 sm:p-6 relative selection:bg-[var(--sb-primary)]/30 font-sans">
-      {/* Background radial glows */}
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[var(--sb-primary)]/5 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-emerald-500/4 rounded-full blur-[140px] pointer-events-none" />
+    <div className="responsive-shell staff-theme-root staff-cashier-root min-h-screen text-[var(--text-main)] p-4 sm:p-6 relative selection:bg-[var(--sb-primary)]/30 font-sans">
+      <AppBackground />
 
-      <div className="max-w-7xl mx-auto space-y-5 relative z-10">
+      <div className="staff-cashier-content max-w-7xl mx-auto space-y-5 relative z-10">
 
         {/* Mode Indicator & Top Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
-          <div className="flex items-center gap-3 min-w-0">
-            <ShoppingCart className="w-5 h-5 text-orange-400 shrink-0" />
+        <div className="staff-cashier-header flex items-center justify-between px-4 sm:px-6 py-3.5 rounded-2xl shadow-lg border border-[var(--border-color)]">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center shrink-0">
+              <ShoppingCart className="w-5 h-5" />
+            </div>
             <div className="min-w-0">
               <h1 className="text-sm font-black tracking-tight text-[var(--text-main)]">Point of Sale</h1>
               <p className="text-[10px] font-semibold text-[var(--text-muted)]">Orders, payments, and menu availability</p>
@@ -630,7 +630,7 @@ const VendorDashboard = ({ user }) => {
           {/* Today's Sales */}
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-4 rounded-2xl flex items-center space-x-3.5 shadow-lg">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-              <DollarSign className="w-5 h-5" />
+              <Banknote className="w-5 h-5" />
             </div>
             <div>
               <span className="text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider block">Approved Sales</span>
@@ -656,6 +656,7 @@ const VendorDashboard = ({ user }) => {
                 setSoundEnabled(!soundEnabled);
                 showToast(`Audio alerts ${!soundEnabled ? 'Enabled' : 'Disabled'}`);
               }}
+              aria-label={soundEnabled ? 'Mute audio alerts' : 'Enable audio alerts'}
               className={`p-2 rounded-xl border transition-all cursor-pointer ${
                 soundEnabled
                   ? 'bg-orange-500/15 border-orange-500/30 text-[var(--sb-primary-warm)]'

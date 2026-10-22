@@ -344,7 +344,7 @@ const AdminExpiryTrackingView = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass-card p-5 sm:p-6">
         <div>
           <h2 className="text-xl font-black text-[var(--text-main)] font-display flex items-center gap-2.5">
-            <span className="p-2 rounded-2xl bg-rose-500/10 text-rose-400">â³</span>
+            <span className="inline-flex p-2 rounded-2xl bg-orange-500/10 text-orange-500"><Clock className="h-5 w-5" aria-hidden="true" /></span>
             Expiry Tracking
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -517,7 +517,7 @@ const AdminExpiryTrackingView = ({
         ) : (
           <div className="overflow-x-auto">
             <table className="inventory-single-row-table w-full min-w-[1140px] text-left text-xs divide-y divide-[var(--border-color)]">
-              <thead className="bg-[var(--bg-color)] text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border-color)]">
+              <thead className=" text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border-color)]" style={{ background: 'var(--table-header-bg)' }}>
                 <tr>
                   <th className="py-3.5 px-4 min-w-[200px]">Item</th>
                   <th className="py-3.5 px-4 min-w-[160px]">Internal Ref #</th>
@@ -601,17 +601,17 @@ const AdminExpiryTrackingView = ({
 
                       {/* Internal Reference # (Optional) */}
                       <td className="py-3 px-4 font-mono text-[11px] text-amber-400 font-bold">
-                        {r.receivingRef || <span className="text-[var(--text-muted)] italic font-normal">â€”</span>}
+                        {r.receivingRef || <span className="text-[var(--text-muted)] italic font-normal">—</span>}
                       </td>
 
                       {/* Batch # (Optional) */}
                       <td className="py-3 px-4 font-mono text-[11px] text-[var(--text-main)] font-semibold">
-                        {r.batchNumber || <span className="text-[var(--text-muted)] italic font-normal">â€”</span>}
+                        {r.batchNumber || <span className="text-[var(--text-muted)] italic font-normal">—</span>}
                       </td>
 
                       {/* Supplier Invoice # (Optional) */}
                       <td className="py-3 px-4 font-mono text-[11px] text-purple-400 font-bold">
-                        {r.invoiceNumber || <span className="text-[var(--text-muted)] italic font-normal">â€”</span>}
+                        {r.invoiceNumber || <span className="text-[var(--text-muted)] italic font-normal">—</span>}
                       </td>
 
                       <td className="py-3 px-4 font-mono font-bold text-orange-500 text-center">
@@ -623,13 +623,13 @@ const AdminExpiryTrackingView = ({
                         {r.hasExpiry ? (
                           new Date(r.expiryDate).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })
                         ) : (
-                          <span className="text-[var(--text-muted)] italic">â€”</span>
+                          <span className="text-[var(--text-muted)] italic">—</span>
                         )}
                       </td>
 
                       <td className="py-3 px-4 font-mono font-bold text-center">
                         {!r.hasExpiry ? (
-                          <span className="text-[var(--text-muted)] text-[11px]">â€”</span>
+                          <span className="text-[var(--text-muted)] text-[11px]">—</span>
                         ) : r.daysLeft < 0 ? (
                           <span className="text-rose-500">{Math.abs(r.daysLeft)} days ago</span>
                         ) : r.daysLeft === 0 ? (
@@ -713,28 +713,28 @@ const AdminExpiryTrackingView = ({
               <div>
                 <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Cost per Unit</span>
                 <strong className="text-emerald-400 font-mono text-sm">
-                  {selectedBatchDetails.costPerUnit > 0 ? `Rs. ${selectedBatchDetails.costPerUnit}` : 'â€”'}
+                  {selectedBatchDetails.costPerUnit > 0 ? `Rs. ${selectedBatchDetails.costPerUnit}` : '—'}
                 </strong>
               </div>
 
               <div>
                 <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Internal Reference #</span>
                 <strong className="text-amber-400 font-mono">
-                  {selectedBatchDetails.receivingRef || 'â€”'}
+                  {selectedBatchDetails.receivingRef || '—'}
                 </strong>
               </div>
 
               <div>
                 <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Supplier Invoice #</span>
                 <strong className="text-purple-400 font-mono">
-                  {selectedBatchDetails.invoiceNumber || 'â€”'}
+                  {selectedBatchDetails.invoiceNumber || '—'}
                 </strong>
               </div>
 
               <div>
                 <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] block">Supplier</span>
                 <strong className="text-[var(--text-main)]">
-                  {selectedBatchDetails.supplierName || 'â€”'}
+                  {selectedBatchDetails.supplierName || '—'}
                 </strong>
               </div>
 
@@ -743,7 +743,7 @@ const AdminExpiryTrackingView = ({
                 <span className="text-[var(--text-main)] font-medium">
                   {selectedBatchDetails.receivingDate
                     ? new Date(selectedBatchDetails.receivingDate).toLocaleDateString([], { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })
-                    : 'â€”'}
+                    : '—'}
                 </span>
               </div>
             </div>
@@ -762,7 +762,7 @@ const AdminExpiryTrackingView = ({
                     type="text"
                     value={editBatchNumber}
                     onChange={(e) => setEditBatchNumber(e.target.value)}
-                    placeholder="Click ðŸ”„ to generate..."
+                    placeholder="Click 🔄 to generate..."
                     className="field-action-control__input w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
                   />
                   <button
@@ -787,7 +787,7 @@ const AdminExpiryTrackingView = ({
                       type="text"
                       value={editReceivingRef}
                       onChange={(e) => setEditReceivingRef(e.target.value)}
-                      placeholder="Click ðŸ”„ to generate..."
+                      placeholder="Click 🔄 to generate..."
                       className="field-action-control__input w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-amber-400 focus:outline-none focus:border-amber-500"
                     />
                     <button
@@ -810,7 +810,7 @@ const AdminExpiryTrackingView = ({
                       type="text"
                       value={editInvoiceNumber}
                       onChange={(e) => setEditInvoiceNumber(e.target.value)}
-                      placeholder="Click ðŸ”„ to generate..."
+                      placeholder="Click 🔄 to generate..."
                       className="field-action-control__input w-full pl-3 pr-9 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-purple-400 focus:outline-none focus:border-purple-500"
                     />
                     <button

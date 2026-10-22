@@ -1,4 +1,4 @@
-﻿import { useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   TrendingUp,
   ShoppingCart,
@@ -109,7 +109,7 @@ const AdminHomeView = ({
         <h2 className="text-base font-bold text-[var(--text-main)]">Could not load dashboard analytics</h2>
         <p className="max-w-xl text-sm text-[var(--text-muted)]">{statsError}</p>
         <button type="button" onClick={onRetry} disabled={statsLoading} className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-sm font-bold text-orange-500 disabled:opacity-60">
-          {statsLoading ? 'Retryingâ€¦' : 'Retry'}
+          {statsLoading ? 'Retrying…' : 'Retry'}
         </button>
       </section>
     );
@@ -119,7 +119,7 @@ const AdminHomeView = ({
     return (
       <div role="status" className="flex flex-col items-center justify-center gap-3 py-16 text-xs font-bold text-[var(--text-muted)]">
         {statsLoading ? <Loader2 className="h-5 w-5 animate-spin text-orange-500" /> : <AlertTriangle className="h-5 w-5 text-amber-500" />}
-        <span>{statsLoading ? 'Loading Executive Dashboard Analyticsâ€¦' : 'Dashboard analytics are unavailable.'}</span>
+        <span>{statsLoading ? 'Loading Executive Dashboard Analytics…' : 'Dashboard analytics are unavailable.'}</span>
         {!statsLoading && <button type="button" onClick={onRetry} className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-orange-500">Retry</button>}
       </div>
     );
@@ -132,7 +132,7 @@ const AdminHomeView = ({
       {statsError && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-[var(--text-main)]">
           <span>Could not refresh dashboard analytics: {statsError}. Showing the last loaded data.</span>
-          <button type="button" onClick={onRetry} disabled={statsLoading} className="font-bold text-orange-500 disabled:opacity-60">{statsLoading ? 'Retryingâ€¦' : 'Retry'}</button>
+          <button type="button" onClick={onRetry} disabled={statsLoading} className="font-bold text-orange-500 disabled:opacity-60">{statsLoading ? 'Retrying…' : 'Retry'}</button>
         </div>
       )}
       {/* Top Header Controls & Date Filter */}
@@ -221,7 +221,7 @@ const AdminHomeView = ({
               onClick={() => onNavigate('inventory')}
               className="text-[10px] text-amber-400 hover:underline font-bold block mt-1 cursor-pointer"
             >
-              View Low Stock Alerts â†’
+              View Low Stock Alerts →
             </button>
           </div>
         </div>
@@ -244,7 +244,7 @@ const AdminHomeView = ({
               onClick={() => onNavigate('reports')}
               className="shrink-0 px-3 py-1.5 bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-xl text-xs font-bold hover:bg-orange-500/20 transition-all cursor-pointer whitespace-nowrap"
             >
-              Full Financial Reports â†’
+              Full Financial Reports →
             </button>
           </div>
 
@@ -329,14 +329,14 @@ const AdminHomeView = ({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <strong className="text-[var(--text-main)] font-bold truncate">{item.name}</strong>
-                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase ${
-                          isCritical ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                          isCritical ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30' : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
                         }`}>
                           {isCritical ? 'Critical Stock' : 'Low Stock'}
                         </span>
                       </div>
                       <span className="text-[10px] text-[var(--text-muted)] font-medium mt-0.5 block">
-                        Stock: <span className={isCritical ? 'text-rose-400 font-bold' : 'text-amber-400 font-bold'}>{item.stockLevel} {item.unit}</span> (Min: {item.minThreshold} {item.unit})
+                        Stock: <span className={isCritical ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-amber-600 dark:text-amber-400 font-bold'}>{item.stockLevel} {item.unit}</span> (Min: {item.minThreshold} {item.unit})
                       </span>
                     </div>
                     <button
@@ -362,7 +362,7 @@ const AdminHomeView = ({
             onClick={() => onNavigate('notifications')}
             className="w-full py-2.5 bg-[var(--bg-color)] hover:bg-[var(--border-color)] text-[var(--text-main)] font-bold text-xs rounded-xl border border-[var(--border-color)] transition-all cursor-pointer text-center"
           >
-            View All System Alerts â†’
+            View All System Alerts →
           </button>
         </div>
       </div>
@@ -370,7 +370,7 @@ const AdminHomeView = ({
       {/* Additional Charts Row: Payment Method Breakdown & Order Status Pipeline */}
       <div className="grid min-w-0 lg:grid-cols-2 gap-6">
         {/* Payment Methods Bar Chart */}
-        <div className="min-w-0 glass-card p-6 space-y-4">
+        <div className="min-w-0 h-full glass-card p-6 flex flex-col gap-4">
           <div className="flex justify-between items-center">
             <div>
               <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
@@ -383,11 +383,11 @@ const AdminHomeView = ({
               onClick={() => onNavigate('payments')}
               className="text-xs text-orange-400 hover:underline font-bold cursor-pointer"
             >
-              Audit Payments â†’
+              Audit Payments →
             </button>
           </div>
 
-          <div className="relative w-full min-w-0 pt-2" style={{ height: Math.max(200, paymentMethodChartData.length * 58) }}>
+          <div className="relative w-full min-w-0 flex-1 min-h-[200px] pt-2">
             <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
                 <BarChart data={paymentMethodChartData} layout="vertical" margin={{ left: 12, right: 42 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.35} horizontal={false} />
@@ -404,7 +404,7 @@ const AdminHomeView = ({
                     }}
                     labelStyle={{ color: 'var(--text-main)' }}
                     itemStyle={{ color: 'var(--text-main)' }}
-                    formatter={(value, name, props) => [formatCurrency(value), `Revenue Â· ${props.payload.count} orders`]}
+                    formatter={(value, name, props) => [formatCurrency(value), `Revenue · ${props.payload.count} orders`]}
                   />
                   <Bar dataKey="revenue" name="Revenue" fill="#f97316" radius={[0, 6, 6, 0]} barSize={18}>
                     <LabelList dataKey="revenue" position="right" formatter={(value) => formatCurrency(value)} style={{ fill: 'var(--text-muted)', fontSize: 9, fontWeight: 700 }} />
@@ -428,7 +428,7 @@ const AdminHomeView = ({
               onClick={() => onNavigate('orders')}
               className="text-xs text-orange-400 hover:underline font-bold cursor-pointer"
             >
-              Inspect Orders â†’
+              Inspect Orders →
             </button>
           </div>
 
@@ -471,7 +471,7 @@ const AdminHomeView = ({
               <span>Top Selling Menu Items</span>
             </h3>
             <button onClick={() => onNavigate('menu')} className="text-xs text-orange-400 hover:underline font-bold cursor-pointer">
-              Manage Catalog â†’
+              Manage Catalog →
             </button>
           </div>
 

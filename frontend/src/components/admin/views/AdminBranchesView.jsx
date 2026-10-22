@@ -1,4 +1,4 @@
-﻿import  { useState, useEffect, useCallback } from 'react';
+import  { useState, useEffect, useCallback } from 'react';
 import {
   Building2,
   Plus,
@@ -70,7 +70,7 @@ const AdminBranchesView = ({ showToast, onBranchesChanged }) => {
   };
 
   const handleDeleteBranch = async (branch) => {
-    const confirmed = window.confirm(`Remove â€œ${branch.name}â€? Branches with linked orders, staff, or inventory will be safely deactivated instead of permanently deleted.`);
+    const confirmed = window.confirm(`Remove “${branch.name}”? Branches with linked orders, staff, or inventory will be safely deactivated instead of permanently deleted.`);
     if (!confirmed) return;
     setDeletingBranchId(branch.id);
     try {
@@ -148,29 +148,29 @@ const AdminBranchesView = ({ showToast, onBranchesChanged }) => {
               </div>
 
               <div className="grid grid-cols-2 gap-2 border-t border-[var(--border-color)] pt-3 sm:grid-cols-3">
-                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-orange-500/15 bg-orange-500/[0.04] px-1.5 py-2 text-center">
-                  <strong className="font-mono text-lg font-extrabold leading-none text-orange-500">{b._count?.tables ?? 0}</strong>
-                  <span className="mt-1.5 block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Tables</span>
+                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/[0.08] dark:bg-orange-500/[0.12] px-1.5 py-2 text-center">
+                  <strong className="font-mono text-xl font-extrabold leading-none text-orange-600 dark:text-orange-400">{b._count?.tables ?? 0}</strong>
+                  <span className="mt-1.5 block text-[11px] font-bold uppercase tracking-wider text-[var(--text-2)]">Tables</span>
                 </div>
-                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-emerald-500/15 bg-emerald-500/[0.04] px-1.5 py-2 text-center">
-                  <strong className="font-mono text-lg font-extrabold leading-none text-emerald-500">{b._count?.menuItems ?? 0}</strong>
-                  <span className="mt-1.5 block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Menu Items</span>
+                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/[0.08] dark:bg-emerald-500/[0.12] px-1.5 py-2 text-center">
+                  <strong className="font-mono text-xl font-extrabold leading-none text-emerald-600 dark:text-emerald-400">{b._count?.menuItems ?? 0}</strong>
+                  <span className="mt-1.5 block text-[11px] font-bold uppercase tracking-wider text-[var(--text-2)]">Menu Items</span>
                 </div>
-                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-amber-500/15 bg-amber-500/[0.04] px-1.5 py-2 text-center">
-                  <strong className="font-mono text-lg font-extrabold leading-none text-amber-500">{b._count?.users ?? 0}</strong>
-                  <span className="mt-1.5 block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Staff</span>
+                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-amber-500/20 bg-amber-500/[0.08] dark:bg-amber-500/[0.12] px-1.5 py-2 text-center">
+                  <strong className="font-mono text-xl font-extrabold leading-none text-amber-600 dark:text-amber-400">{b._count?.users ?? 0}</strong>
+                  <span className="mt-1.5 block text-[11px] font-bold uppercase tracking-wider text-[var(--text-2)]">Staff</span>
                 </div>
-                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-sky-500/15 bg-sky-500/[0.04] px-1.5 py-2 text-center">
-                  <strong className="font-mono text-lg font-extrabold leading-none text-sky-500">{b._count?.orders ?? 0}</strong>
-                  <span className="mt-1.5 block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Orders</span>
+                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-sky-500/20 bg-sky-500/[0.08] dark:bg-sky-500/[0.12] px-1.5 py-2 text-center">
+                  <strong className="font-mono text-xl font-extrabold leading-none text-sky-600 dark:text-sky-400">{b._count?.orders ?? 0}</strong>
+                  <span className="mt-1.5 block text-[11px] font-bold uppercase tracking-wider text-[var(--text-2)]">Orders</span>
                 </div>
-                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-violet-500/15 bg-violet-500/[0.04] px-1.5 py-2 text-center">
-                  <strong className="font-mono text-lg font-extrabold leading-none text-violet-500">{b._count?.inventoryItems ?? 0}</strong>
-                  <span className="mt-1.5 block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Inventory</span>
+                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-violet-500/20 bg-violet-500/[0.08] dark:bg-violet-500/[0.12] px-1.5 py-2 text-center">
+                  <strong className="font-mono text-xl font-extrabold leading-none text-violet-600 dark:text-violet-400">{b._count?.inventoryItems ?? 0}</strong>
+                  <span className="mt-1.5 block text-[11px] font-bold uppercase tracking-wider text-[var(--text-2)]">Inventory</span>
                 </div>
-                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-rose-500/15 bg-rose-500/[0.04] px-1.5 py-2 text-center">
-                  <strong className="font-mono text-lg font-extrabold leading-none text-rose-500">{b._count?.receivings ?? 0}</strong>
-                  <span className="mt-1.5 block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Receivings</span>
+                <div className="flex min-h-[68px] min-w-0 flex-col items-center justify-center rounded-xl border border-rose-500/20 bg-rose-500/[0.08] dark:bg-rose-500/[0.12] px-1.5 py-2 text-center">
+                  <strong className="font-mono text-xl font-extrabold leading-none text-rose-600 dark:text-rose-400">{b._count?.receivings ?? 0}</strong>
+                  <span className="mt-1.5 block text-[11px] font-bold uppercase tracking-wider text-[var(--text-2)]">Receivings</span>
                 </div>
               </div>
             </div>
@@ -178,15 +178,15 @@ const AdminBranchesView = ({ showToast, onBranchesChanged }) => {
         </div>
       )}
 
-      {/* Add Branch Modal */}
+      {/* Add / Edit Branch Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-[var(--glass-bg-subtle)] backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-md w-full p-6 space-y-6 shadow-2xl animate-scale-up">
-            <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-4">
-              <h3 className="text-base font-extrabold text-[var(--text-main)] font-display">{editingBranch ? 'Edit Branch Details' : 'Register New Branch'}</h3>
+        <div className="fixed inset-0 z-50 glass-overlay flex items-center justify-center p-4 animate-fade-in">
+          <div className="glass-modal max-w-md w-full p-6 space-y-6 animate-scale-up border border-[var(--border-1)]">
+            <div className="flex justify-between items-center border-b border-[var(--border-1)] pb-4">
+              <h3 className="text-base font-extrabold text-[var(--text-1)] font-display">{editingBranch ? 'Edit Branch Details' : 'Register New Branch'}</h3>
               <button
                 onClick={() => { setShowAddModal(false); setEditingBranch(null); setFormData({ name: '', address: '', phone: '' }); }}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer icon-btn"
+                className="p-1.5 rounded-xl bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors cursor-pointer icon-btn"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -194,50 +194,50 @@ const AdminBranchesView = ({ showToast, onBranchesChanged }) => {
 
             <form onSubmit={handleCreateBranch} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-[var(--text-muted)] uppercase mb-1">Branch Name *</label>
+                <label className="block font-bold text-[var(--text-2)] uppercase mb-1 tracking-wider text-[11px]">Branch Name *</label>
                 <input
                   type="text"
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="e.g. Hostel Block B Canteen"
-                  className="w-full px-4 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                  className="w-full px-4 py-2.5 bg-[var(--field-bg)] border border-[var(--field-border)] rounded-xl text-xs text-[var(--text-1)] focus:outline-none focus:border-orange-500"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-[var(--text-muted)] uppercase mb-1">Address</label>
+                <label className="block font-bold text-[var(--text-2)] uppercase mb-1 tracking-wider text-[11px]">Address</label>
                 <input
                   type="text"
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   placeholder="e.g. Building 4 Ground Floor"
-                  className="w-full px-4 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                  className="w-full px-4 py-2.5 bg-[var(--field-bg)] border border-[var(--field-border)] rounded-xl text-xs text-[var(--text-1)] focus:outline-none focus:border-orange-500"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-[var(--text-muted)] uppercase mb-1">Contact Phone</label>
+                <label className="block font-bold text-[var(--text-2)] uppercase mb-1 tracking-wider text-[11px]">Contact Phone</label>
                 <PhoneInput
                   value={formData.phone}
                   onChange={(val) => setFormData({ ...formData, phone: val })}
                 />
               </div>
 
-              <div className="flex justify-end space-x-3 pt-4 border-t border-[var(--border-color)]">
+              <div className="flex justify-end space-x-3 pt-4 border-t border-[var(--border-1)]">
                 <button
                   type="button"
                   onClick={() => { setShowAddModal(false); setEditingBranch(null); setFormData({ name: '', address: '', phone: '' }); }}
-                  className="px-4 py-2 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] font-bold cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl border border-[var(--border-1)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--text-1)] font-bold cursor-pointer text-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold transition-all shadow-md cursor-pointer disabled:opacity-60"
+                  className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold transition-all shadow-md cursor-pointer disabled:opacity-60 text-xs"
                 >
-                  {saving ? 'Savingâ€¦' : editingBranch ? 'Save Changes' : 'Register Branch'}
+                  {saving ? 'Saving…' : editingBranch ? 'Save Changes' : 'Register Branch'}
                 </button>
               </div>
             </form>

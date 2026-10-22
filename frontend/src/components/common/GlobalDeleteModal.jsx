@@ -1,4 +1,4 @@
-﻿import  { useState, useEffect } from 'react';
+import  { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Trash2, ShieldAlert, X, Loader2 } from 'lucide-react';
 
@@ -56,11 +56,11 @@ const GlobalDeleteModal = ({
               {isScopeAll ? <ShieldAlert className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-stone-100 font-display">
+              <h3 className="text-base font-extrabold text-[var(--text-1)] font-display">
                 {title}
               </h3>
               {itemCount > 1 && (
-                <span className="text-[11px] font-bold text-amber-400">
+                <span className="text-[11px] font-bold text-amber-500 dark:text-amber-400">
                   Target Scope: {itemCount} Records
                 </span>
               )}
@@ -69,7 +69,7 @@ const GlobalDeleteModal = ({
           <button
             onClick={onClose}
             disabled={loading}
-            className="p-1.5 rounded-xl hover:bg-[var(--glass-bg)] text-[var(--sb-text-muted)] hover:text-[var(--sb-text-main)] transition-colors disabled:opacity-50 cursor-pointer icon-btn"
+            className="p-1.5 rounded-xl hover:bg-[var(--surface-hover)] text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors disabled:opacity-50 cursor-pointer icon-btn"
           >
             <X className="w-5 h-5" />
           </button>
@@ -78,25 +78,25 @@ const GlobalDeleteModal = ({
         {/* Body */}
         <div className="p-6 space-y-4 overflow-y-auto">
           {/* Main prompt */}
-          <p className="text-sm text-[var(--sb-text-main)] leading-relaxed">
+          <p className="text-sm text-[var(--text-2)] leading-relaxed">
             {message}
           </p>
 
           {/* Record name preview if provided */}
           {itemName && (
-            <div className="p-3.5 bg-[var(--glass-bg-subtle)] rounded-2xl border border-[var(--glass-border-subtle)] flex items-center justify-between">
-              <span className="text-xs font-semibold text-[var(--sb-text-muted)]">Target Record:</span>
-              <span className="text-xs font-bold text-stone-100 max-w-[280px] truncate">{itemName}</span>
+            <div className="p-3.5 bg-[var(--surface-inset)] rounded-2xl border border-[var(--border-1)] flex items-center justify-between">
+              <span className="text-xs font-semibold text-[var(--text-3)]">Target Record:</span>
+              <span className="text-xs font-bold text-[var(--text-1)] max-w-[280px] truncate">{itemName}</span>
             </div>
           )}
 
           {/* Extra details (key-values) */}
           {itemDetails && (
-            <div className="p-3.5 bg-[var(--glass-bg-subtle)] rounded-2xl border border-[var(--glass-border-subtle)] space-y-1.5 text-xs">
+            <div className="p-3.5 bg-[var(--surface-inset)] rounded-2xl border border-[var(--border-1)] space-y-1.5 text-xs">
               {Object.entries(itemDetails).map(([k, v]) => (
-                <div key={k} className="flex justify-between items-center text-[var(--sb-text-muted)]">
+                <div key={k} className="flex justify-between items-center text-[var(--text-3)]">
                   <span className="capitalize">{k.replace(/([A-Z])/g, ' $1')}:</span>
-                  <span className="font-semibold text-[var(--sb-text-main)] truncate max-w-[200px]">{String(v ?? 'N/A')}</span>
+                  <span className="font-semibold text-[var(--text-1)] truncate max-w-[200px]">{String(v ?? 'N/A')}</span>
                 </div>
               ))}
             </div>
@@ -104,10 +104,10 @@ const GlobalDeleteModal = ({
 
           {/* Warnings List */}
           {warningNotes && warningNotes.length > 0 && (
-            <div className="p-3.5 bg-rose-950/20 border border-rose-900/30 rounded-2xl space-y-1">
+            <div className="p-3.5 bg-rose-500/10 dark:bg-rose-950/30 border border-rose-500/25 dark:border-rose-900/40 rounded-2xl space-y-1">
               {warningNotes.map((note, idx) => (
-                <p key={idx} className="text-xs text-rose-300 flex items-start space-x-1.5">
-                  <span className="text-rose-400 font-bold">â€¢</span>
+                <p key={idx} className="text-xs text-rose-700 dark:text-rose-300 font-medium flex items-start space-x-1.5">
+                  <span className="text-rose-600 dark:text-rose-400 font-bold">•</span>
                   <span>{note}</span>
                 </p>
               ))}
@@ -117,8 +117,8 @@ const GlobalDeleteModal = ({
           {/* Scoped Delete Confirmation Input */}
           {requiresTyping && (
             <div className="pt-2 space-y-2">
-              <label className="block text-xs font-bold text-[var(--sb-text-main)]">
-                Type <span className="text-rose-400 font-black tracking-wider px-1.5 py-0.5 bg-rose-500/10 rounded border border-rose-500/30">{requiredConfirmationText}</span> to authorize deletion:
+              <label className="block text-xs font-bold text-[var(--text-1)]">
+                Type <span className="text-rose-600 dark:text-rose-400 font-black tracking-wider px-1.5 py-0.5 bg-rose-500/10 rounded border border-rose-500/30">{requiredConfirmationText}</span> to authorize deletion:
               </label>
               <input
                 type="text"
@@ -127,19 +127,19 @@ const GlobalDeleteModal = ({
                 placeholder={`Type "${requiredConfirmationText}" here...`}
                 disabled={loading}
                 autoFocus
-                className="w-full px-4 py-2.5 bg-stone-900 border border-stone-700/80 rounded-xl text-stone-100 text-sm font-semibold focus:outline-none focus:border-rose-500 transition-colors"
+                className="w-full px-4 py-2.5 bg-[var(--field-bg)] border border-[var(--field-border)] rounded-xl text-[var(--text-1)] text-sm font-semibold focus:outline-none focus:border-rose-500 transition-colors"
               />
             </div>
           )}
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-end space-x-3 px-6 py-4 border-t border-[var(--glass-border-subtle)] bg-[var(--glass-bg-subtle)]">
+        <div className="flex items-center justify-end space-x-3 px-6 py-4 border-t border-[var(--border-1)] bg-[var(--surface-inset)]">
           <button
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="px-4 py-2.5 rounded-xl border border-[var(--glass-border-subtle)] hover:bg-[var(--glass-bg)] text-[var(--sb-text-main)] font-bold text-xs transition-colors disabled:opacity-50 cursor-pointer"
+            className="px-4 py-2.5 rounded-xl border border-[var(--border-1)] bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--text-1)] font-bold text-xs transition-colors disabled:opacity-50 cursor-pointer"
           >
             Cancel
           </button>

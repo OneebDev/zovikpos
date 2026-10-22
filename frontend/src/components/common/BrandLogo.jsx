@@ -3,7 +3,7 @@ import 'react';
 const BrandLogo = ({ subtitle = 'Smart Dining Experience', compact = false, className = '' }) => (
   <div className={`flex items-center gap-3 min-w-0 ${className}`}>
     <img
-      src="/favicon.svg"
+      src="/assets/zovikpos-mark.svg"
       alt="ZovikPOS logo"
       className={`${compact ? 'w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl' : 'w-10 h-10 rounded-xl'} shrink-0 shadow-md shadow-orange-600/20`}
     />

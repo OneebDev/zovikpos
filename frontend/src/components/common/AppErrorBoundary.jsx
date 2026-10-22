@@ -30,7 +30,7 @@ class AppErrorBoundary extends React.Component {
     return (
       <main className="app-error-fallback" role="alert">
         <div className="app-error-fallback__content">
-          <span className="app-error-fallback__mark" aria-hidden="true">Z</span>
+          <img className="app-error-fallback__mark" src="/assets/zovikpos-mark.svg" alt="" aria-hidden="true" />
           <strong className="app-error-fallback__brand">ZOVIKPOS</strong>
           <h1>Something went wrong</h1>
           <p>The app hit an unexpected problem. Reload to continue.</p>

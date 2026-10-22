@@ -2,31 +2,33 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="shortcut icon" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/assets/zovikpos-mark.svg" />
+    <link rel="shortcut icon" href="/assets/zovikpos-mark.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>ZovikPOS — Smart Canteen &amp; Point of Sale System</title>
     <!-- PWA Settings -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#FAF9F7" />
     <style>
-      html, body, #root { min-height: 100%; background: #FAF9F7; }
-      html.dark, html.dark body, html.dark #root { background: #111111; }
+      html, body, #root { min-height: 100%; background: #FAF9F7; color-scheme: light; }
+      html.dark, html.dark body, html.dark #root { background: #111111; color-scheme: dark; }
       #app-boot-splash { min-height: 100dvh; display: grid; place-items: center; background: inherit; color: #1C1917; font-family: Arial, sans-serif; }
       html.dark #app-boot-splash { color: #FAFAF9; }
       #app-boot-splash .boot-content { display: flex; align-items: center; flex-direction: column; gap: 14px; font-size: 16px; font-weight: 800; letter-spacing: .08em; }
-      #app-boot-splash .boot-mark { display: grid; width: 56px; height: 56px; place-items: center; border-radius: 18px; background: linear-gradient(135deg, #F97316, #E85D2A); color: #FFFFFF; font-size: 24px; }
+      #app-boot-splash .boot-mark { display: block; width: 56px; height: 56px; border-radius: 18px; object-fit: contain; }
       #app-boot-splash .boot-spinner { width: 22px; height: 22px; border: 2px solid #E7E5E4; border-top-color: #E85D2A; border-radius: 50%; animation: boot-spin .8s linear infinite; }
       @keyframes boot-spin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) { #app-boot-splash .boot-spinner { animation: none; } }
     </style>
     <script>
       (function () {
-        var savedTheme = 'light';
+        /* Default dark — matches App.jsx useState default */
+        var savedTheme = 'dark';
         try {
-          savedTheme = window.localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+          var stored = window.localStorage.getItem('theme');
+          savedTheme = stored === 'light' ? 'light' : 'dark';
         } catch (error) {
-          savedTheme = 'light';
+          savedTheme = 'dark';
         }
         document.documentElement.classList.toggle('dark', savedTheme === 'dark');
         var themeColor = document.querySelector('meta[name="theme-color"]');
@@ -37,7 +39,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ZovikPOS" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/assets/email-logo.png" />
     <!-- Mobile App Capabilities -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="format-detection" content="telephone=no" />
@@ -46,7 +48,7 @@
     <div id="root">
       <main id="app-boot-splash" role="status" aria-label="Loading ZOVIKPOS">
         <div class="boot-content">
-          <span class="boot-mark" aria-hidden="true">Z</span>
+          <img class="boot-mark" src="/assets/zovikpos-mark.svg" alt="" aria-hidden="true" />
           <strong>ZOVIKPOS</strong>
           <span class="boot-spinner" aria-hidden="true"></span>
         </div>
@@ -55,7 +57,7 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch((err) => {
+          navigator.serviceWorker.register('/sw.js?v=2').catch((err) => {
             console.log('SW registration note:', err);
           });
         });

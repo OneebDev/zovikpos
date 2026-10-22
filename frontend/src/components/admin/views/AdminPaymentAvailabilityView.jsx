@@ -1,4 +1,4 @@
-﻿import  { useState, useEffect, useCallback } from 'react';
+import  { useState, useEffect, useCallback } from 'react';
 import {
   Banknote,
   CreditCard,
@@ -74,42 +74,42 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
 
       {/* Toggles Grid */}
       {loading ? (
-        <div className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)]/40 text-xs font-semibold text-[var(--text-muted)]">
+        <div className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)]/40 text-xs font-semibold text-[var(--text-2)]">
           <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
-          <span>Loading payment settingsâ€¦</span>
+          <span>Loading payment settings…</span>
         </div>
       ) : <div className="grid md:grid-cols-2 gap-6">
         {/* COD Toggle Card */}
         <div className="glass-card p-6 space-y-6">
           <div className="flex justify-between items-start">
             <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 dark:text-emerald-400 flex items-center justify-center">
                 <Banknote className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-[var(--text-main)] font-display">Pay at Counter (COD)</h3>
-                <span className="text-xs text-[var(--text-muted)]">Cash payments at POS counter</span>
+                <h3 className="text-base font-extrabold text-[var(--text-1)] font-display">Pay at Counter (COD)</h3>
+                <span className="text-xs text-[var(--text-2)]">Cash payments at POS counter</span>
               </div>
             </div>
             <span
               className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider border ${
                 settings.codEnabled
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                  : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
+                  : 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30'
               }`}
             >
               {settings.codEnabled ? 'OPEN' : 'CLOSED'}
             </span>
           </div>
 
-          <div className="flex justify-between items-center pt-4 border-t border-[var(--border-color)] text-xs">
-            <span className="text-[var(--text-muted)] font-bold">Accept Cash Orders:</span>
+          <div className="flex justify-between items-center pt-4 border-t border-[var(--divider)] text-xs">
+            <span className="text-[var(--text-1)] font-bold">Accept Cash Orders:</span>
             <button
               onClick={() => handleToggle('codEnabled', !settings.codEnabled)}
               disabled={updating}
               className={`px-4 py-2 rounded-xl font-extrabold text-xs transition-all cursor-pointer shadow-md ${
                 settings.codEnabled
-                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20'
+                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-500/20'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white'
               }`}
             >
@@ -122,33 +122,33 @@ const AdminPaymentAvailabilityView = ({ showToast }) => {
         <div className="glass-card p-6 space-y-6">
           <div className="flex justify-between items-start">
             <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-500 dark:text-orange-400 flex items-center justify-center">
                 <CreditCard className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-[var(--text-main)] font-display">Online Payment</h3>
-                <span className="text-xs text-[var(--text-muted)]">Easypaisa & JazzCash Wallets</span>
+                <h3 className="text-base font-extrabold text-[var(--text-1)] font-display">Online Payment</h3>
+                <span className="text-xs text-[var(--text-2)]">Easypaisa &amp; JazzCash Wallets</span>
               </div>
             </div>
             <span
               className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider border ${
                 settings.onlineEnabled
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                  : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
+                  : 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30'
               }`}
             >
               {settings.onlineEnabled ? 'OPEN' : 'CLOSED'}
             </span>
           </div>
 
-          <div className="flex justify-between items-center pt-4 border-t border-[var(--border-color)] text-xs">
-            <span className="text-[var(--text-muted)] font-bold">Accept Online Orders:</span>
+          <div className="flex justify-between items-center pt-4 border-t border-[var(--divider)] text-xs">
+            <span className="text-[var(--text-1)] font-bold">Accept Online Orders:</span>
             <button
               onClick={() => handleToggle('onlineEnabled', !settings.onlineEnabled)}
               disabled={updating}
               className={`px-4 py-2 rounded-xl font-extrabold text-xs transition-all cursor-pointer shadow-md ${
                 settings.onlineEnabled
-                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20'
+                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-500/20'
                   : 'bg-orange-600 hover:bg-orange-500 text-white'
               }`}
             >

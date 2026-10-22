@@ -1,12 +1,18 @@
 // Simple Service Worker for PWA installation support
-const CACHE_NAME = 'zovikpos-pwa-v1';
+const CACHE_NAME = 'zovikpos-pwa-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil((async () => {
+    const cacheNames = await caches.keys();
+    await Promise.all(cacheNames
+      .filter((name) => name.startsWith('zovikpos-pwa-') && name !== CACHE_NAME)
+      .map((name) => caches.delete(name)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', (event) => {

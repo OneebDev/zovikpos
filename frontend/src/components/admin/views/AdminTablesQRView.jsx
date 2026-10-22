@@ -260,13 +260,13 @@ const AdminTablesQRView = ({ showToast }) => {
 
         return `
           <div class="card">
-            <div class="logo">ðŸ½ï¸ ZOVIKPOS</div>
+            <div class="logo"><img src="${window.location.origin}/assets/zovikpos-mark.svg" alt="" /> <span>ZOVIKPOS</span></div>
             <div class="subtitle">${table.branchName || 'Main Campus Canteen'}</div>
             <div class="table-num">${displayNum.startsWith('Table') ? displayNum : 'TABLE ' + displayNum}</div>
             <img class="qr-img" src="${table.qrDataUrl}" alt="${displayNum} QR" />
             <div class="url-text">${targetUrl}</div>
-            <div class="instructions">ðŸ“± Scan QR Code to View Menu & Order</div>
-            <div class="secured">ðŸ”’ Cryptographically HMAC Signed Security</div>
+            <div class="instructions">📱 Scan QR Code to View Menu & Order</div>
+            <div class="secured">🔒 Cryptographically HMAC Signed Security</div>
           </div>
         `;
       })
@@ -280,8 +280,9 @@ const AdminTablesQRView = ({ showToast }) => {
           <style>
             @page { size: A5 portrait; margin: 10mm; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; color: #0f172a; padding: 20px; }
-            .card { border: 4px solid #4f46e5; border-radius: 24px; padding: 30px; margin: 0 auto; max-width: 320px; background: #ffffff; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-            .logo { font-size: 20pt; font-weight: 900; color: #4f46e5; margin-bottom: 5px; }
+            .card { border: 4px solid #E85D2A; border-radius: 24px; padding: 30px; margin: 0 auto; max-width: 320px; background: #ffffff; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+            .logo { display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 20pt; font-weight: 900; color: #E85D2A; margin-bottom: 5px; }
+            .logo img { width: 38px; height: 38px; border-radius: 11px; }
             .table-num { font-size: 28pt; font-weight: 900; color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; }
             .subtitle { font-size: 10pt; color: #64748b; margin-bottom: 20px; }
             .qr-img { width: 220px; height: 220px; margin: 0 auto; display: block; border-radius: 16px; border: 2px solid #e2e8f0; }
@@ -393,7 +394,7 @@ const AdminTablesQRView = ({ showToast }) => {
             const tableNumStr = table.tableNumber || `Table ${table.id}`;
             const isSelected = selectedTableIds.includes(table.id);
             const isRegeneratingThis = regeneratingId === table.id;
-            const displayUrl = table.url || 'QR URL unavailable â€” check backend FRONTEND_URL';
+            const displayUrl = table.url || 'QR URL unavailable — check backend FRONTEND_URL';
 
             return (
               <div
@@ -577,7 +578,7 @@ const AdminTablesQRView = ({ showToast }) => {
               </div>
 
               <div className="p-3 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] text-[11px] text-[var(--text-muted)]">
-                ðŸ”’ A cryptographic HMAC-SHA256 token will automatically be generated and assigned to this table.
+                🔒 A cryptographic HMAC-SHA256 token will automatically be generated and assigned to this table.
               </div>
 
               <div className="flex justify-end space-x-3 pt-4 border-t border-[var(--border-color)]">

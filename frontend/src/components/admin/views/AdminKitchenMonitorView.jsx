@@ -61,7 +61,7 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
                 <div className="divide-y divide-[var(--border-color)] text-xs">
                   {order.orderItems?.map((item) => (
                     <div key={item.id} className="py-1 flex justify-between text-[var(--text-main)]">
-                      <span>{item.quantity}Ã— {item.nameSnapshot || item.menuItem?.name}</span>
+                      <span>{item.quantity}× {item.nameSnapshot || item.menuItem?.name}</span>
                     </div>
                   ))}
                 </div>
@@ -107,7 +107,7 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
                 <div className="divide-y divide-[var(--border-color)] text-xs">
                   {order.orderItems?.map((item) => (
                     <div key={item.id} className="py-1 flex justify-between text-[var(--text-main)]">
-                      <span>{item.quantity}Ã— {item.nameSnapshot || item.menuItem?.name}</span>
+                      <span>{item.quantity}× {item.nameSnapshot || item.menuItem?.name}</span>
                     </div>
                   ))}
                 </div>
@@ -153,13 +153,13 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
                 <div className="divide-y divide-[var(--border-color)] text-xs">
                   {order.orderItems?.map((item) => (
                     <div key={item.id} className="py-1 flex justify-between text-[var(--text-main)]">
-                      <span>{item.quantity}Ã— {item.nameSnapshot || item.menuItem?.name}</span>
+                      <span>{item.quantity}× {item.nameSnapshot || item.menuItem?.name}</span>
                     </div>
                   ))}
                 </div>
 
                 <div className="pt-2 border-t border-[var(--border-color)] text-[10px] text-orange-400 font-bold">
-                  âœ“ Ready at counter
+                  ✓ Ready at counter
                 </div>
               </div>
             ))}

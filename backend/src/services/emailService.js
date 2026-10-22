@@ -122,12 +122,13 @@ const buildItemsHtml = (orderItems = []) => {
 /**
  * 1. Send OTP Verification Email
  */
-const sendOTPEmail = async (email, name, otp) => {
+const sendOTPEmail = async (email, name, otp, sessionId = null) => {
   const customerName = typeof name === 'string' && name !== 'Customer' && !name.startsWith('Table') ? name : 'Valued Guest';
   const firstName = customerName.trim().split(/\s+/)[0] || 'there';
   const subject = `${otp} is your ZOVIKPOS verification code`;
   const frontendUrl = (process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://zovik-pos.vercel.app' : 'http://localhost:5173')).trim().replace(/\/+$/, '');
-  const appUrl = `${frontendUrl}/customer?otp=${encodeURIComponent(otp)}&e=${encodeURIComponent(email)}`;
+  const sessionQuery = typeof sessionId === 'string' && sessionId ? `&sid=${encodeURIComponent(sessionId)}` : '';
+  const appUrl = `${frontendUrl}/customer?otp=${encodeURIComponent(otp)}&e=${encodeURIComponent(email)}${sessionQuery}`;
   const preheader = 'Your ZovikPOS email verification code is ready. It is valid for 5 minutes.';
   const bodyText = `Hi ${firstName},\n\nUse this code to verify your email and continue ordering.\n\n${otp}\n\nValid for 5 minutes.\n\nCopy & Open App: ${appUrl}\nCode fills in automatically.\n\nSecurity: Never share this code. If you did not request it, you can safely ignore this email.`;
   const contentHtml = `${greeting(firstName)}

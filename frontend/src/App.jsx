@@ -9,7 +9,7 @@ const KitchenBoardPage = lazy(() => import('./pages/kitchen/KitchenBoardPage'));
 const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'));
 import api, { setActiveAuthTokens } from './services/api';
 import { connectSocket, disconnectSocket } from './services/socket';
-import { Sun, Moon, Flame, CreditCard, ShieldCheck } from 'lucide-react';
+import { Sun, Moon, Flame, CreditCard, ShieldCheck, LogOut } from 'lucide-react';
 import DemoRestrictionModal from './components/DemoRestrictionModal';
 import RoleChangeModal from './components/RoleChangeModal';
 import BrandLogo from './components/common/BrandLogo';
@@ -85,6 +85,31 @@ function App() {
   useEffect(() => {
     const handleSessionExpired = (e) => {
       console.warn('Session expired event received:', e?.detail?.message);
+      if (location.pathname.startsWith('/customer')) {
+        // Customer JWT expiry must return to the email step on the same table.
+        // A dining session, its cart, and the scanned QR URL are independent of
+        // the login token and must survive this auth-only recovery.
+        ['customer_token', 'customer_refreshToken', 'customer_user'].forEach((key) => {
+          localStorage.removeItem(key);
+          sessionStorage.removeItem(key);
+        });
+        let globalUserRole = '';
+        try {
+          globalUserRole = JSON.parse(sessionStorage.getItem('user') || localStorage.getItem('user') || '{}').role || '';
+        } catch { /* Treat an unreadable global identity as customer-scoped on this route. */ }
+        if (!globalUserRole || globalUserRole === 'CUSTOMER') {
+          ['token', 'refreshToken', 'user'].forEach((key) => {
+            localStorage.removeItem(key);
+            sessionStorage.removeItem(key);
+          });
+          const guestCustomer = { id: 0, role: 'CUSTOMER', name: 'Guest Customer', email: '', isGuest: true };
+          setUser(guestCustomer);
+          disconnectSocket();
+          connectSocket(guestCustomer);
+        }
+        window.dispatchEvent(new Event('customer-auth-expired'));
+        return;
+      }
       handleLogout();
     };
 
@@ -96,20 +121,25 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
-  // Keep eligible customer sessions renewed across menu, cart, checkout and tracking routes.
+  // Renew empty guest sessions only when the customer is actually active.
   useEffect(() => {
     if (!location.pathname.startsWith('/customer')) return undefined;
-    // CustomerDashboard already performs the same session health check.
-    if (location.pathname === '/customer' || location.pathname.startsWith('/customer/table/')) return undefined;
-    const renew = () => {
+    let lastTouchAt = 0;
+    let inFlight = false;
+    const renewFromActivity = () => {
+      const now = Date.now();
+      if (inFlight || now - lastTouchAt < 45000) return;
       const sessionId = localStorage.getItem('customer_sessionId') || sessionStorage.getItem('customer_sessionId');
       if (!sessionId) return;
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 8000);
-      api.get(`/sessions/${sessionId}`, { signal: controller.signal }).catch(() => {}).finally(() => window.clearTimeout(timeout));
+      lastTouchAt = now;
+      inFlight = true;
+      api.get(`/sessions/${sessionId}`, { headers: { 'X-Session-Activity': 'true' } })
+        .catch(() => {})
+        .finally(() => { inFlight = false; });
     };
-    const timer = window.setInterval(renew, 2 * 60 * 1000);
-    return () => window.clearInterval(timer);
+    const events = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((eventName) => window.addEventListener(eventName, renewFromActivity, { passive: true }));
+    return () => events.forEach((eventName) => window.removeEventListener(eventName, renewFromActivity));
   }, [location.pathname]);
 
   const handleLoginSuccess = (loggedInUser, tokens) => {
@@ -129,7 +159,11 @@ function App() {
     if (loggedInUser.role === 'ADMIN') navigate('/admin');
     else if (loggedInUser.role === 'VENDOR') navigate('/cashier');
     else if (loggedInUser.role === 'KITCHEN') navigate('/kitchen');
-    else navigate('/customer');
+    else if (location.pathname.startsWith('/customer/table/')) {
+      // Keep a native-camera QR route through customer login so the scanned
+      // table does not get replaced by a bare /customer URL after auth.
+      navigate(`${location.pathname}${location.search}${location.hash}`, { replace: true });
+    } else navigate('/customer');
   };
 
   const handleLogout = () => {
@@ -174,8 +208,9 @@ function App() {
     else navigate('/customer');
   };
 
-  // Determine if we are on a customer-facing or login route
+  // Determine if we are on a customer-facing, admin, or login route
   const isCustomerRoute = location.pathname.startsWith('/customer');
+  const isAdminRoute = location.pathname.startsWith('/admin');
   const isLoginRoute = location.pathname.includes('/login');
 
   return (
@@ -185,15 +220,15 @@ function App() {
       {/* Global Real-Time Account Role Change & Deactivation Alert Modal */}
       <RoleChangeModal currentUser={user} onLogout={handleLogout} />
 
-      {/* Top Application Header – hidden on customer routes and login pages */}
-      {!isCustomerRoute && !isLoginRoute && (
-        <div className="bg-[var(--card-bg)] border-b border-[var(--border-color)] px-2.5 sm:px-6 py-2.5 flex flex-nowrap justify-between items-center gap-2 z-40 transition-colors duration-300 shadow-sm">
+      {/* Top Application Header – hidden on customer routes, admin routes (which have their own floating header), and login pages */}
+      {!isCustomerRoute && !isAdminRoute && !isLoginRoute && (
+        <div className="staff-global-header bg-[var(--card-bg)] border-b border-[var(--border-color)] px-2.5 sm:px-6 py-2.5 flex flex-nowrap justify-between items-center gap-2 z-40 transition-colors duration-300 shadow-sm">
           <BrandLogo compact className="shrink-0" />
 
           <div className="flex flex-nowrap items-center gap-1.5 sm:gap-3 text-xs min-w-0">
             <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-              <span className="font-semibold text-[var(--text-main)] truncate max-w-[92px] sm:max-w-none">{user.name}</span>
-              <span className="shrink-0 px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-500 text-[10px] font-bold uppercase border border-orange-500/20">
+              <span className="staff-user-name font-semibold text-[var(--text-main)] truncate max-w-[92px] sm:max-w-none">{user.name}</span>
+              <span className="staff-role-badge shrink-0 px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-500 text-[10px] font-bold uppercase border border-orange-500/20">
                 {user.role}
               </span>
             </div>
@@ -235,9 +270,10 @@ function App() {
             ) : (
               <button
                 onClick={handleLogout}
-                className="shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-2 sm:px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer"
+                className="shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-2 sm:px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 min-h-10"
               >
-                Logout
+                <LogOut className="h-4 w-4" aria-hidden="true" />
+                <span className="staff-logout-label">Logout</span>
               </button>
             )}
           </div>
