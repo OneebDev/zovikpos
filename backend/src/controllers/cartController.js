@@ -2,6 +2,12 @@ const { prisma } = require('../config/db');
 const { convertUnit } = require('../utils/unitConverter');
 const { isPhysicalTable } = require('../utils/tableLabel');
 
+// Cart caps (read from env each call so tests can override without module reload).
+// CART_MAX_ITEMS: max distinct menu items per cart (default 30).
+// CART_MAX_QTY: max quantity per item (default 50).
+const CART_MAX_ITEMS = () => Number(process.env.CART_MAX_ITEMS) || 30;
+const CART_MAX_QTY = () => Number(process.env.CART_MAX_QTY) || 50;
+
 const getPhysicalCustomerSession = async (sessionId) => prisma.session.findUnique({
   where: { id: sessionId },
   select: {
@@ -151,6 +157,16 @@ const addItemToCart = async (req, res) => {
   const { sessionId } = req.params;
   const { menuItemId, quantity = 1 } = req.body;
 
+  // Validate quantity before hitting the DB.
+  const incomingQty = Number(quantity);
+  const maxQty = CART_MAX_QTY();
+  if (!Number.isInteger(incomingQty) || incomingQty < 1 || incomingQty > maxQty) {
+    return res.status(400).json({
+      error: `Item quantity must be a whole number between 1 and ${maxQty}.`,
+      code: 'INVALID_QUANTITY',
+    });
+  }
+
   if (!menuItemId) {
     return res.status(400).json({ error: 'menuItemId is required.' });
   }
@@ -179,16 +195,31 @@ const addItemToCart = async (req, res) => {
 
     const cart = await getOrCreateCart(sessionId);
 
-    // Check if item already exists in cart
-    const existingItem = await prisma.cartItem.findFirst({
-      where: {
-        cartId: cart.id,
-        menuItemId: menuItem.id,
-      },
+    // Check distinct item count in cart. Include the current item only if it is new.
+    const existingItemForMenu = await prisma.cartItem.findFirst({
+      where: { cartId: cart.id, menuItemId: menuItem.id },
     });
+    if (!existingItemForMenu) {
+      const distinctCount = await prisma.cartItem.count({ where: { cartId: cart.id } });
+      if (distinctCount >= CART_MAX_ITEMS()) {
+        return res.status(400).json({
+          error: `A cart cannot contain more than ${CART_MAX_ITEMS()} distinct items.`,
+          code: 'ORDER_TOO_LARGE',
+        });
+      }
+    }
+
+    // Check if item already exists in cart
+    const existingItem = existingItemForMenu;
 
     if (existingItem) {
       const newQuantity = existingItem.quantity + parseInt(quantity, 10);
+      if (newQuantity > maxQty) {
+        return res.status(400).json({
+          error: `Item quantity cannot exceed ${maxQty}.`,
+          code: 'INVALID_QUANTITY',
+        });
+      }
       const updatedStockError = verifyStockForQty(menuItem, newQuantity);
       if (updatedStockError) {
         return res.status(400).json({ error: updatedStockError });
@@ -262,6 +293,13 @@ const updateCartItem = async (req, res) => {
     }
 
     const newQty = parseInt(quantity, 10);
+    const maxQty = CART_MAX_QTY();
+    if (!Number.isInteger(newQty) || newQty < 0 || newQty > maxQty) {
+      return res.status(400).json({
+        error: `Item quantity must be a whole number between 0 and ${maxQty}.`,
+        code: 'INVALID_QUANTITY',
+      });
+    }
     if (newQty <= 0) {
       await prisma.cartItem.delete({ where: { id: cartItem.id } });
     } else {

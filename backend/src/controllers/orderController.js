@@ -17,8 +17,17 @@ const { deductInventoryForConfirmedOrder, restoreInventoryForOrder } = require('
 const { clearDashboardStatsCache } = require('./adminController');
 const { validateStudentEmail } = require('./authController');
 const { COUNTER_TABLE_LABEL, formatTableLabel, withTableLabel, isPhysicalTable } = require('../utils/tableLabel');
-const { isValid } = require('../utils/statusValues');
+const { isValid, OrderStatus } = require('../utils/statusValues');
 const { roundMoney } = require('../utils/money');
+
+// Statuses that count as an 'open' order for the per-session cap.
+// Exclude terminal statuses: COMPLETED, CANCELLED, PAYMENT_FAILED, REFUNDED.
+const TERMINAL_ORDER_STATUSES = new Set(['COMPLETED', 'CANCELLED', 'PAYMENT_FAILED', 'REFUNDED']);
+const OPEN_ORDER_STATUSES = OrderStatus.filter((status) => !TERMINAL_ORDER_STATUSES.has(status));
+
+const ORDER_MAX_ITEMS = () => Number(process.env.ORDER_MAX_ITEMS) || 30;
+const ORDER_MAX_QTY = () => Number(process.env.ORDER_MAX_QTY) || 50;
+const ORDER_MAX_OPEN_PER_SESSION = () => Number(process.env.ORDER_MAX_OPEN_PER_SESSION) || 5;
 
 /**
  * Generate human-friendly unique order number (e.g. ORD-2026-8941)
@@ -78,9 +87,32 @@ const createOrder = async (req, res) => {
     return res.status(400).json({ error: 'Order must contain at least one menu item.' });
   }
 
+  // --- ORDER SIZE CAPS (env: ORDER_MAX_ITEMS, ORDER_MAX_QTY) ---
+  const maxItems = ORDER_MAX_ITEMS();
+  const maxQty = ORDER_MAX_QTY();
+
+  if (items.length > maxItems) {
+    return res.status(400).json({
+      error: `An order cannot contain more than ${maxItems} distinct items.`,
+      code: 'ORDER_TOO_LARGE',
+    });
+  }
+
+  for (const item of items) {
+    const rawQty = item.quantity != null ? Number(item.quantity) : 1;
+    if (!Number.isInteger(rawQty) || rawQty < 1 || rawQty > maxQty) {
+      return res.status(400).json({
+        error: `Item quantity must be a whole number between 1 and ${maxQty}.`,
+        code: 'INVALID_QUANTITY',
+      });
+    }
+  }
+
   try {
     // Verify database payment method availability settings
+
     let settings = await prisma.paymentSetting.findFirst();
+
     if (!settings) {
       settings = await prisma.paymentSetting.create({
         data: { codEnabled: true, onlineEnabled: true },
@@ -124,6 +156,26 @@ const createOrder = async (req, res) => {
 
     if (req.user.role === 'CUSTOMER' && existingSession.customerId && existingSession.customerId !== userId) {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+    }
+
+    // --- OPEN ORDER CAP (env: ORDER_MAX_OPEN_PER_SESSION, default 5) ---
+    // Counts unfinished orders tied to this session. Applied ONLY to CUSTOMER role;
+    // Cashier/Admin/Vendor counter orders must not be capped by it.
+    // Idempotent replays never reach this point because idempotencyMiddleware returns cached response first.
+    if (userRole === 'CUSTOMER') {
+      const maxOpen = ORDER_MAX_OPEN_PER_SESSION();
+      const openOrderCount = await prisma.order.count({
+        where: {
+          sessionId,
+          status: { in: OPEN_ORDER_STATUSES },
+        },
+      });
+      if (openOrderCount >= maxOpen) {
+        return res.status(429).json({
+          error: `This table already has ${openOrderCount} open orders. Please wait for them to be completed before placing a new one.`,
+          code: 'TOO_MANY_OPEN_ORDERS',
+        });
+      }
     }
 
     if (userRole === 'CUSTOMER' && (!existingSession.tableId || !isPhysicalTable(existingSession.table))) {
