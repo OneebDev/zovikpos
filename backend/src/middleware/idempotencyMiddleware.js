@@ -108,8 +108,12 @@ const runIdempotency = async (req, res, next) => {
       });
       if (!claimed.count) {
         const current = await prisma.apiIdempotency.findUnique({ where: { scopeKey } });
-        if (current?.state === 'COMPLETED') return res.status(current.responseStatus).json(encryptedReplay(current));
+        if (current?.state === 'COMPLETED') {
+          res.setHeader('Idempotent-Replayed', 'true');
+          return res.status(current.responseStatus).json(encryptedReplay(current));
+        }
         res.setHeader('Retry-After', '1');
+        res.setHeader('Idempotency-Error', 'REQUEST_IN_PROGRESS');
         return errorResponse(res, 409, 'A request with this idempotency key is already in progress.');
       }
     } else {
@@ -118,9 +122,16 @@ const runIdempotency = async (req, res, next) => {
   } catch (error) {
     if (error.code !== 'P2002') throw error;
     const current = await prisma.apiIdempotency.findUnique({ where: { scopeKey } });
-    if (current?.requestHash !== requestHash) return errorResponse(res, 422, 'This idempotency key was already used with a different request body.');
-    if (current?.state === 'COMPLETED') return res.status(current.responseStatus).json(encryptedReplay(current));
+    if (current?.requestHash !== requestHash) {
+      res.setHeader('Idempotency-Error', 'IDEMPOTENCY_KEY_REUSED');
+      return errorResponse(res, 422, 'This idempotency key was already used with a different request body.');
+    }
+    if (current?.state === 'COMPLETED') {
+      res.setHeader('Idempotent-Replayed', 'true');
+      return res.status(current.responseStatus).json(encryptedReplay(current));
+    }
     res.setHeader('Retry-After', '1');
+    res.setHeader('Idempotency-Error', 'REQUEST_IN_PROGRESS');
     return errorResponse(res, 409, 'A request with this idempotency key is already in progress.');
   }
 
