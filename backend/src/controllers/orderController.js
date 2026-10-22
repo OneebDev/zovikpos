@@ -18,6 +18,7 @@ const { clearDashboardStatsCache } = require('./adminController');
 const { validateStudentEmail } = require('./authController');
 const { COUNTER_TABLE_LABEL, formatTableLabel, withTableLabel, isPhysicalTable } = require('../utils/tableLabel');
 const { isValid } = require('../utils/statusValues');
+const { roundMoney } = require('../utils/money');
 
 /**
  * Generate human-friendly unique order number (e.g. ORD-2026-8941)
@@ -203,7 +204,7 @@ const createOrder = async (req, res) => {
           throw new Error(`Insufficient stock for "${menuItem.name}". Only ${menuItem.stock} available.`);
         }
 
-        const itemSubtotal = menuItem.price * qty;
+        const itemSubtotal = roundMoney(menuItem.price * qty);
         subtotal += itemSubtotal;
 
         orderItemsData.push({
@@ -215,9 +216,10 @@ const createOrder = async (req, res) => {
         });
       }
 
-      const tax = 0.0;
-      const discount = 0.0;
-      const total = subtotal + tax - discount;
+      subtotal = roundMoney(subtotal);
+      const tax = roundMoney(0.0);
+      const discount = roundMoney(0.0);
+      const total = roundMoney(subtotal + tax - discount);
 
       const orderNumber = generateOrderNumber();
       const initialStatus = requestedMethod === 'COD' ? 'PENDING' : (paymentStatus === 'PENDING_VERIFICATION' ? 'PAYMENT_PENDING' : 'PENDING');

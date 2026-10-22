@@ -4,8 +4,7 @@ const { prisma } = require('../config/db');
 const { convertUnit } = require('../utils/unitConverter');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { emitToAdmin, emitToVendor } = require('../sockets/socket');
-
-const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const { roundMoney } = require('../utils/money');
 
 class BatchError extends Error {
   constructor(message, status = 400, card = null) {
@@ -57,8 +56,8 @@ const normalizeDraft = (draft, index) => {
   if (requestedDiscountPercent !== null && (!Number.isFinite(requestedDiscountPercent) || requestedDiscountPercent < 0 || requestedDiscountPercent > 100)) {
     throw new BatchError('Discount percentage must be between 0 and 100.', 400, label);
   }
-  let subtotal = normalizedItems.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
-  subtotal += normalizedNewItems.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
+  let subtotal = normalizedItems.reduce((sum, item) => sum + roundMoney(item.quantity * item.unitCost), 0);
+  subtotal += normalizedNewItems.reduce((sum, item) => sum + roundMoney(item.quantity * item.unitCost), 0);
   subtotal = roundMoney(subtotal);
   const requestedDiscount = Number(draft?.discount || 0);
   if (!Number.isFinite(requestedDiscount) || requestedDiscount < 0) throw new BatchError('Discount must be non-negative.', 400, label);
@@ -306,7 +305,7 @@ const receiveOneInTransaction = async (tx, receivingId) => {
       throw new BatchError(`${item.name}: ${error.message}`, 400, receiving.receivingNumber);
     }
     if (!Number.isFinite(quantity) || quantity <= 0) throw new BatchError(`${item.name}: converted quantity must be greater than zero.`, 400, receiving.receivingNumber);
-    const totalCost = Number(line.totalCost ?? line.quantity * line.unitCost ?? 0);
+    const totalCost = roundMoney(line.totalCost ?? line.quantity * line.unitCost ?? 0);
     const quantityBefore = Number(item.stockLevel);
     if (!Number.isFinite(quantityBefore) || quantityBefore < 0) {
       throw new BatchError(`${item.name}: current stock is invalid or negative. Correct the stock balance before receiving this delivery.`, 409, receiving.receivingNumber);
