@@ -171,14 +171,17 @@ const initSocket = (server) => {
       if (sessionId) socket.leave(`session-${sessionId}`);
     });
 
-    socket.on('join:tracking', (tokenOrId) => {
-      if (tokenOrId) {
-        socket.join(`tracking-${tokenOrId}`);
+    socket.on('join:tracking', (token) => {
+      // Accept only signed/valid tracking token strings; reject numeric order IDs or non-string tokens
+      if (typeof token === 'string' && token.startsWith('ord:') && token.length > 20) {
+        socket.join(`tracking-${token}`);
       }
     });
 
-    socket.on('leave:tracking', (tokenOrId) => {
-      if (tokenOrId) socket.leave(`tracking-${tokenOrId}`);
+    socket.on('leave:tracking', (token) => {
+      if (typeof token === 'string' && token.startsWith('ord:') && token.length > 20) {
+        socket.leave(`tracking-${token}`);
+      }
     });
   });
 
@@ -201,9 +204,6 @@ const emitToUser = (userId, event, data) => {
   }
   if (data?.trackingToken) {
     io.to(`tracking-${data.trackingToken}`).emit(event, data);
-  }
-  if (data?.id) {
-    io.to(`tracking-${data.id}`).emit(event, data);
   }
 };
 
