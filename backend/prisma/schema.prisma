@@ -54,6 +54,7 @@ model User {
   statusChanges OrderStatusHistory[]
   inventoryLogs InventoryLog[]
   receivings    InventoryReceiving[]
+  disputes      Dispute[]
 }
 
 model Session {
@@ -72,6 +73,8 @@ model Session {
   cart        Cart?
   orders      Order[]
   otps        EmailOTP[]
+
+  @@index([tableId, status, expiresAt])
 }
 
 model Cart {
@@ -93,6 +96,8 @@ model CartItem {
   price      Float
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  @@index([cartId])
 }
 
 model Category {
@@ -158,6 +163,10 @@ model Order {
   payment       Payment?
   etaPrediction ETAPrediction?
   statusHistory OrderStatusHistory[]
+  disputes      Dispute[]
+
+  @@index([status, branchId, createdAt])
+  @@index([sessionId])
 }
 
 model OrderItem {
@@ -289,6 +298,8 @@ model InventoryLog {
   user            User?                   @relation(fields: [userId], references: [id])
   createdBy       Int?
   createdAt       DateTime                @default(now())
+
+  @@index([inventoryItemId, createdAt])
 }
 
 model InventoryReceiving {
@@ -349,6 +360,8 @@ model EmailOTP {
   attempts   Int       @default(0)
   verifiedAt DateTime?
   createdAt  DateTime  @default(now())
+
+  @@index([email, expiresAt])
 }
 
 model AuditLog {
@@ -362,6 +375,8 @@ model AuditLog {
   newValue  String?
   ip        String?
   createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model ApiIdempotency {
@@ -388,6 +403,8 @@ model OrderStatusHistory {
   changedByUser   User?    @relation(fields: [changedByUserId], references: [id])
   note            String?
   createdAt       DateTime @default(now())
+
+  @@index([orderId])
 }
 
 model PaymentSetting {
@@ -396,4 +413,25 @@ model PaymentSetting {
   onlineEnabled Boolean  @default(true)
   updatedAt     DateTime @updatedAt
 }
+
+model Dispute {
+  id            Int       @id @default(autoincrement())
+  customerId    Int?
+  customer      User?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerEmail String
+  customerName  String?
+  orderId       Int?
+  order         Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  orderNumber   String?
+  category      String    @default("Order Issue")
+  reason        String
+  description   String
+  status        String    @default("OPEN")
+  resolution    String?
+  resolvedAt    DateTime?
+  resolvedBy    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+}
+
 

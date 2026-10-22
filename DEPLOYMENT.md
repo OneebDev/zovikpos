@@ -1,31 +1,122 @@
-# Deployment notes
+# Deployment Notes & Production Architecture
 
-## Redis for backend rate limiting
+## 1. Database Layer: Heroku Postgres
 
-The backend uses `REDIS_URL` for shared rate-limit counters. The AI service does not need Redis. The Redis add-on is **not provisioned** by this repository; it is a paid Heroku resource and requires explicit approval before creation.
+The primary application database is hosted on **Heroku Postgres**. Supabase DB is deprecated and replaced; Supabase is retained **only** for Object Storage (menu item images and learned aliases). Do not delete the old Supabase database for at least **1 week** following production cutover.
 
-Heroku's current Key-Value Store Mini plan is `heroku-redis:mini`. Heroku documents it at $0.004/hour, up to $3/month, with 25 MB and a 20-connection limit. Mini has no persistence and no high availability. Confirm the current price and plan details in the [Heroku Key-Value Store docs](https://devcenter.heroku.com/articles/heroku-redis) before provisioning.
-
-After approval at deployment time, provision it for the backend app only:
-
+### Provisioning (Deploy Day)
+Provision Heroku Postgres for the backend application:
 ```sh
-heroku addons:create heroku-redis:mini -a <backend-app>
+heroku addons:create heroku-postgresql:essential-0 -a <backend-app>
+```
+> **Note on Plans & Pricing**: Heroku documents the entry-level plan as `essential-0` (verify plan name and current pricing in the [Heroku Postgres documentation](https://devcenter.heroku.com/articles/heroku-postgresql)).
+
+### Connection Limit & Pool Sizing
+- **Essential-0 Connection Ceiling**: 20 maximum concurrent database connections.
+- **Reserved Connections**: 3 connections reserved for admin tasks, CLI `psql` diagnostics, migration runs, and backup captures.
+- **Usable Pool for Application**: 17 total connections maximum across all dynos.
+- **Pool Sizing Formula**:
+  $$\text{connection\_limit} = \left\lfloor \frac{\text{Total Available (17)}}{\text{WEB\_CONCURRENCY (Dyno Count)}} \right\rfloor$$
+- **Configured Parameter Values**:
+  - `connection_limit=10`: Sized comfortably below the 20-connection ceiling to leave headroom and avoid connection rejection errors.
+  - `pool_timeout=15`: 15-second acquire timeout in Prisma to absorb transient query spikes without failing requests immediately.
+  - `sslmode=no-verify`: Heroku Postgres uses self-signed TLS certificates; this setting prevents connection rejections during Node.js SSL handshakes.
+
+### Production `DATABASE_URL` Format
+Heroku automatically populates `DATABASE_URL`. Ensure required pooling and TLS parameters are appended:
+```sh
+postgresql://<user>:<password>@<host>:5432/<database>?connection_limit=10&pool_timeout=15&sslmode=no-verify
 ```
 
-Heroku attaches the add-on and populates `REDIS_URL` automatically. Confirm the config var is present without copying its secret value into the repository:
+---
 
-```sh
-heroku config:get REDIS_URL -a <backend-app>
+## 2. Release Phase Migrations (`backend/Procfile`)
+
+Migrations execute automatically in Heroku's isolated release phase prior to web dyno restart:
+
+```
+release: npx prisma migrate deploy
+web: node src/server.js
 ```
 
-Do not replace the add-on-managed value manually. If you intentionally use a separately managed Redis provider instead, set that provider's TLS URL as a Heroku config var (never commit or share the URL):
+- When code is pushed via `git subtree push --prefix backend heroku-backend main`, Heroku boots a temporary release dyno and runs `npx prisma migrate deploy`.
+- If a migration fails, deployment halts and existing web dynos remain unharmed.
 
-```sh
-heroku config:set REDIS_URL='rediss://<user>:<password>@<host>:<port>' -a <backend-app>
+---
+
+## 3. Data Migration & Cutover (Supabase to Heroku Postgres)
+
+Run these steps when performing the one-time data cutover:
+
+### Step 1: Pre-Cutover Backup from Supabase
+Export a full dump from Supabase using the direct port 5432 connection string (do NOT use port 6543 pooler):
+```powershell
+pg_dump -Fc --no-owner --no-privileges -d "<SUPABASE_DIRECT_URL>" -f zovikpos_full_backup.dump
+pg_dump --schema-only --no-owner --no-privileges -d "<SUPABASE_DIRECT_URL>" -f schema.sql
+```
+Verify the backup file is non-empty:
+```powershell
+dir zovikpos_full_backup.dump
 ```
 
-For local development, put a local Redis URL in the ignored `backend/.env`, for example `REDIS_URL=redis://127.0.0.1:6379`; leaving it unset uses the in-memory rate-limit fallback. Production logs the selected rate-limit mode at startup. `/health` does not depend on Redis; `/ready` checks Redis when `REDIS_URL` is configured.
+### Step 2: Verify `_prisma_migrations` Table
+Inspect the dump archive table of contents to ensure `_prisma_migrations` is present so future releases recognize past migration state:
+```powershell
+pg_restore -l zovikpos_full_backup.dump | Select-String "_prisma_migrations"
+```
 
-## Database migrations
+### Step 3: Restore to Heroku Postgres
+1. Enable maintenance mode:
+   ```powershell
+   heroku maintenance:on -a <backend-app>
+   ```
+2. Retrieve the Heroku database connection string:
+   ```powershell
+   $DB = heroku config:get DATABASE_URL -a <backend-app>
+   ```
+3. Restore the dump into Heroku Postgres:
+   ```powershell
+   pg_restore --verbose --no-acl --no-owner -d $DB zovikpos_full_backup.dump
+   ```
+4. Disable maintenance mode:
+   ```powershell
+   heroku maintenance:off -a <backend-app>
+   ```
+5. Verify restoration success:
+   ```powershell
+   heroku pg:psql -a <backend-app> -c 'SELECT count(*) FROM "Order";'
+   ```
 
-Before any production migration, take and verify a database backup, review the exact migration SQL, and get explicit approval. No production migration is run automatically by the application.
+### Step 4: Retention Period
+- **Keep Supabase Database Active**: Keep the old Supabase database running untouched for at least **1 week** as a safety rollback target.
+- Supabase Storage (buckets for menu item images and learned aliases) remains active permanently.
+
+---
+
+## 4. Backups, Monitoring & Drains
+
+### Scheduled Nightly Backups
+```powershell
+heroku pg:backups:schedule DATABASE_URL --at "03:00 Asia/Karachi" -a <backend-app>
+heroku pg:backups:capture -a <backend-app>
+heroku pg:backups:info -a <backend-app>
+```
+
+### Log Drains (BetterStack / Syslog)
+```powershell
+heroku drains:add <BETTERSTACK_DRAIN_URL> -a <backend-app>
+heroku logs --tail -a <backend-app>
+```
+
+---
+
+## 5. Redis for Backend Rate Limiting
+
+The backend uses `REDIS_URL` for shared rate-limit counters. The AI service does not need Redis.
+- Plan: `heroku-redis:mini`
+- > **Note on Plans & Pricing**: Verify plan name and current pricing in the [Heroku Key-Value Store documentation](https://devcenter.heroku.com/articles/heroku-redis).
+- Provision:
+  ```powershell
+  heroku addons:create heroku-redis:mini -a <backend-app>
+  ```
+- Local fallback: leaving `REDIS_URL` empty defaults safely to in-memory rate limiting.
