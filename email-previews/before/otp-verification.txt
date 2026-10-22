@@ -1,0 +1,14 @@
+Hi Amina,
+
+Use this code to verify your email and continue ordering.
+
+482916
+
+Valid for 5 minutes.
+
+Copy & Open App: http://localhost:5173/customer?otp=482916&e=customer%40example.invalid&sid=session-preview-7
+Code fills in automatically.
+
+Security: If you did not request this code, you can safely ignore this email.
+
+ZOVIKPOS

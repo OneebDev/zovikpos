@@ -1,0 +1,19 @@
+Hi Amina Khan,
+
+Thank you for your order!
+Order Number: ORD-2026-01042
+Table: Table 7
+Estimated Ready Time: ~18 mins
+Payment Method: Easypaisa
+Payment Status: PAID
+
+Order Breakdown:
+- Chicken Biryani x 2 @ Rs. 850.00 = Rs. 1700.00
+- Fresh Lime x 1 @ Rs. 300.00 = Rs. 300.00
+
+Total Amount: Rs. 2050.00
+
+Track your live order status here:
+http://localhost:5173/customer/track/preview-tracking-token
+
+ZovikPOS Team

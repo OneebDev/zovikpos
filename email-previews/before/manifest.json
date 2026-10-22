@@ -1,0 +1,26 @@
+[
+  {
+    "to": "customer@example.invalid",
+    "subject": "482916 is your ZOVIKPOS verification code"
+  },
+  {
+    "to": "customer@example.invalid",
+    "subject": "Order Confirmed: ORD-2026-01042 - ZovikPOS"
+  },
+  {
+    "to": "customer@example.invalid",
+    "subject": "Payment Verified: ORD-2026-01042 - ZovikPOS"
+  },
+  {
+    "to": "customer@example.invalid",
+    "subject": "Order Ready for Pickup: ORD-2026-01042 🛎️ - ZovikPOS"
+  },
+  {
+    "to": "customer@example.invalid",
+    "subject": "Order Completed: ORD-2026-01042 - Thank You for Dining with Us!"
+  },
+  {
+    "to": "customer@example.invalid",
+    "subject": "Order CANCELLED: ORD-2026-01042 - ZovikPOS"
+  }
+]
