@@ -364,6 +364,20 @@ model AuditLog {
   createdAt DateTime @default(now())
 }
 
+model ApiIdempotency {
+  scopeKey       String   @id
+  requestHash    String
+  state          String   @default("IN_PROGRESS")
+  responseStatus Int?
+  responseBody   Json?
+  lockedUntil    DateTime
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
 model OrderStatusHistory {
   id              Int      @id @default(autoincrement())
   orderId         Int
