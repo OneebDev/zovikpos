@@ -177,7 +177,7 @@ const callGroqAPI = async (payload, retries = null) => {
               'Authorization': `Bearer ${apiKey}`,
               'Content-Type': 'application/json'
             },
-            timeout: 35000
+            timeout: Number(process.env.GROQ_TIMEOUT_MS) || 20000
           }
         );
         return response.data;
