@@ -1,5 +1,6 @@
 const { generateRealAIInsightsWithGroq, callGroqAPI, getGroqModel } = require('../services/groqService');
 const { prisma } = require('../config/db');
+const { isValid } = require('../utils/statusValues');
 const { Prisma } = require('@prisma/client');
 const { getInventoryForecast } = require('../services/aiService');
 const { emitToAdmin, emitToVendor } = require('../sockets/socket');
@@ -1563,6 +1564,9 @@ const generateReceivingRef = async (req, res) => {
 
 const getReceivings = async (req, res) => {
   const { status, supplierId, branchId, search } = req.query;
+  if (status && status.toUpperCase() !== 'ALL' && !isValid('InventoryReceivingStatus', status.toUpperCase())) {
+    return res.status(400).json({ error: 'Invalid inventory receiving status value.' });
+  }
   try {
     const where = {};
     if (status && status !== 'ALL') where.status = status.toUpperCase();
@@ -1649,6 +1653,9 @@ const getReceivingById = async (req, res) => {
  */
 const createReceiving = async (req, res) => {
   const { supplierId, invoiceNumber, receivingRef, branchId, receivingDate, notes, items, status, draftNewItems } = req.body;
+  if (status != null && !isValid('InventoryReceivingStatus', String(status).toUpperCase())) {
+    return res.status(400).json({ error: 'Invalid inventory receiving status value.' });
+  }
   const requestedDiscountPercent = req.body.discountPercent == null ? null : Number(req.body.discountPercent);
   let discountAmount = roundReceivingMoney(Number(req.body.discount ?? 0));
   if (!Number.isFinite(discountAmount) || discountAmount < 0 || (requestedDiscountPercent !== null && (!Number.isFinite(requestedDiscountPercent) || requestedDiscountPercent < 0 || requestedDiscountPercent > 100))) {
@@ -2365,6 +2372,9 @@ const deleteReceiving = async (req, res) => {
  */
 const bulkDeleteReceivings = async (req, res) => {
   const { ids, branchId, status = 'DRAFT' } = req.body;
+  if (!Array.isArray(ids) && !isValid('InventoryReceivingStatus', String(status).toUpperCase())) {
+    return res.status(400).json({ error: 'Invalid inventory receiving status value.' });
+  }
 
   try {
     const where = {};
@@ -2425,6 +2435,9 @@ const bulkDeleteReceivings = async (req, res) => {
 const updateReceiving = async (req, res) => {
   const { id } = req.params;
   const { supplierId, invoiceNumber, receivingRef, branchId, receivingDate, notes, items, status, batchNumber: docBatch, draftNewItems } = req.body;
+  if (status != null && !isValid('InventoryReceivingStatus', String(status).toUpperCase())) {
+    return res.status(400).json({ error: 'Invalid inventory receiving status value.' });
+  }
 
   try {
     const recId = parseInt(id, 10);

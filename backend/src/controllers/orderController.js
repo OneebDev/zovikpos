@@ -17,6 +17,7 @@ const { deductInventoryForConfirmedOrder, restoreInventoryForOrder } = require('
 const { clearDashboardStatsCache } = require('./adminController');
 const { validateStudentEmail } = require('./authController');
 const { COUNTER_TABLE_LABEL, formatTableLabel, withTableLabel, isPhysicalTable } = require('../utils/tableLabel');
+const { isValid } = require('../utils/statusValues');
 
 /**
  * Generate human-friendly unique order number (e.g. ORD-2026-8941)
@@ -42,6 +43,10 @@ const createOrder = async (req, res) => {
 
   const userId = req.user.id;
   const userRole = (req.user.role || '').toUpperCase();
+
+  if (paymentStatus != null && !isValid('OrderPaymentStatus', paymentStatus)) {
+    return res.status(400).json({ error: 'Invalid order payment status value.' });
+  }
 
   if (userRole === 'CUSTOMER') {
     const customerUser = await prisma.user.findUnique({
@@ -330,19 +335,7 @@ const updateOrderStatus = async (req, res) => {
   const userRole = (req.user.role || '').toUpperCase();
   const userId = req.user.id;
 
-  const validStatuses = [
-    'PENDING',
-    'PAYMENT_PENDING',
-    'PAID',
-    'PREPARING',
-    'READY',
-    'COMPLETED',
-    'CANCELLED',
-    'PAYMENT_FAILED',
-    'REFUNDED',
-  ];
-
-  if (!status || !validStatuses.includes(status)) {
+  if (!isValid('OrderStatus', status)) {
     return res.status(400).json({ error: 'Invalid order status value.' });
   }
 
