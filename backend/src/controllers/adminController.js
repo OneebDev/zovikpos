@@ -5,6 +5,7 @@ const supabaseAdmin = require('../config/supabaseAdmin');
 const { emitToAccount } = require('../sockets/socket');
 const { clearUserCache } = require('../middleware/authMiddleware');
 const { withTableLabel } = require('../utils/tableLabel');
+const exceptionLogger = require('../utils/exceptionLogger');
 const {
   getAllDisputes,
   getDisputeCounts,
@@ -680,9 +681,13 @@ const createStaff = async (req, res) => {
       role: role.toUpperCase(),
     });
     if (authUser?.user?.id) {
-      console.log(`✅ Supabase Auth synced: ${normalizedEmail} (${authUser.user.id})`);
+      exceptionLogger.log('info', 'auth.supabase_sync', 'Staff account synchronized', {
+        context: { recipientEmail: normalizedEmail, userId: authUser.user.id, provider: 'supabase' },
+      });
     } else {
-      console.warn(`⚠️  Supabase Auth sync skipped for: ${normalizedEmail}`);
+      exceptionLogger.log('warn', 'auth.supabase_sync', 'Staff account synchronization skipped', {
+        context: { recipientEmail: normalizedEmail, provider: 'supabase' },
+      });
     }
 
     await logAudit({

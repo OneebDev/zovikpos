@@ -115,6 +115,17 @@ const http = require('http');
 const path = require('path');
 require('dotenv').config();
 
+const exceptionLogger = require('./utils/exceptionLogger');
+let serverRef = null;
+
+// Route existing application warnings/errors through the redacting logger.
+console.error = (...args) => exceptionLogger.captureConsole('error', args);
+console.warn = (...args) => exceptionLogger.captureConsole('warn', args);
+
+exceptionLogger.installProcessHandlers(() => serverRef);
+
+exceptionLogger.validateConfig();
+
 if (/(localhost|127\.0\.0\.1)/i.test(process.env.FRONTEND_URL || '')) {
   console.warn('⚠️ FRONTEND_URL contains localhost or 127.0.0.1; OTP email links will not work from a phone.');
 }
@@ -161,6 +172,33 @@ const etaRoutes = require('./routes/etaRoutes');
 // Initialize Express and HTTP server
 const app = express();
 const server = http.createServer(app);
+serverRef = server;
+
+// Request IDs and outcome-only logging; request bodies and headers are never captured.
+app.use((req, res, next) => {
+  req.requestId = require('crypto').randomUUID();
+  res.setHeader('X-Request-ID', req.requestId);
+  res.on('finish', () => {
+    if (res.statusCode < 400 || (res.statusCode >= 500 && req.exceptionLogged)) return;
+    const route = req.route?.path ? `${req.baseUrl || ''}${req.route.path}` : (req.baseUrl || req.path || '/');
+    exceptionLogger.log(res.statusCode >= 500 ? 'error' : 'warn', `http.response.${res.statusCode}`, `HTTP ${res.statusCode}`, {
+      context: {
+        requestId: req.requestId,
+        method: req.method,
+        url: route,
+        status: res.statusCode,
+        role: req.user?.role,
+        userId: req.user?.id,
+        ip: req.ip,
+        code: res.statusCode === 429 ? 'RATE_LIMITED'
+          : res.statusCode === 401 || res.statusCode === 403 ? 'AUTH_OR_FORBIDDEN'
+            : res.statusCode === 400 || res.statusCode === 422 ? 'VALIDATION_OR_BAD_REQUEST'
+              : res.statusCode === 409 ? 'CONFLICT' : undefined,
+      },
+    });
+  });
+  next();
+});
 
 // Trust Railway's reverse proxy for client IPs,
 // HTTPS detection and rate-limiter behavior.
@@ -267,7 +305,22 @@ app.use((req, res) => {
 
 // Centralized error handler
 app.use((err, req, res, next) => {
-  console.error('[Server Error]:', err);
+  req.exceptionLogged = true;
+  const errorStatus = Number.isInteger(err.statusCode) && err.statusCode >= 400 && err.statusCode < 600
+    ? err.statusCode : 500;
+  exceptionLogger.exception('http.unhandled', err, {
+    level: errorStatus >= 500 ? 'error' : 'warn',
+    context: {
+      requestId: req.requestId,
+      method: req.method,
+      url: req.route?.path ? `${req.baseUrl || ''}${req.route.path}` : (req.baseUrl || req.path || '/'),
+      status: errorStatus,
+      role: req.user?.role,
+      userId: req.user?.id,
+      ip: req.ip,
+      code: err.code,
+    },
+  });
 
   if (res.headersSent) {
     return next(err);
@@ -302,27 +355,27 @@ server.listen(PORT, '0.0.0.0', () => {
 
 // Handle server startup/runtime errors
 server.on('error', (err) => {
-  console.error('[Server Error]:', err);
+  exceptionLogger.fatalSync('server.startup', err);
   process.exit(1);
 });
 
 // Graceful shutdown
 function shutdown(signal) {
-  console.log(`${signal} received. Shutting down server...`);
+  exceptionLogger.log('warn', 'process.signal', `${signal} received`, { context: { code: signal } });
 
   server.close((err) => {
     if (err) {
-      console.error('Server shutdown error:', err);
-      process.exit(1);
+      exceptionLogger.exception('process.shutdown', err);
+      exceptionLogger.flush().finally(() => process.exit(1));
+      return;
     }
 
-    console.log('Server closed successfully.');
-    process.exit(0);
+    exceptionLogger.flush().finally(() => process.exit(0));
   });
 
   // Force shutdown if connections do not close in time.
   setTimeout(() => {
-    console.error('Forced shutdown after timeout.');
+    exceptionLogger.log('error', 'process.shutdown', 'Forced shutdown after timeout');
     process.exit(1);
   }, 10000).unref();
 }

@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { prisma } = require('../config/db');
+const exceptionLogger = require('../utils/exceptionLogger');
 
 /**
  * Calculates the Estimated Time of Arrival (ETA) for a set of menu items.
@@ -155,10 +156,10 @@ const calculateETA = async (items) => {
         // quantity- and queue-aware deterministic estimate.
         aiAdjustment = Math.max(-2, Math.min(5, aiEstimate - baseEta));
       }
-      console.log(`AI Prediction success. Base ETA: ${baseEta.toFixed(1)} mins.`);
+      exceptionLogger.log('info', 'ai.eta', 'AI ETA adjustment received');
     } catch (aiError) {
       // The deterministic estimate remains available when the model is down.
-      console.warn(`AI prediction unavailable (${aiError.message}); using kitchen load estimate.`);
+      exceptionLogger.exception('ai.eta', aiError, { level: 'warn', context: { action: 'fallback', code: aiError.code } });
     }
 
     const rawEstimatedTime = Math.max(

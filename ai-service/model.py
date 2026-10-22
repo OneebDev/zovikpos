@@ -1,12 +1,13 @@
 import numpy as np
 import pandas as pd
+from exception_logger import exception as log_error
 from datetime import datetime, timedelta
 
 try:
     from sklearn.ensemble import RandomForestRegressor
     SKLEARN_AVAILABLE = True
 except Exception as e:
-    print(f"Warning in model.py: scikit-learn not available ({e}); using heuristic fallback.")
+    log_error("ai.model.import", e, level="warn")
     SKLEARN_AVAILABLE = False
 
 def generate_synthetic_data(item_name: str, days: int = 90) -> pd.DataFrame:
@@ -170,7 +171,7 @@ def forecast_demand(item_name: str, target_features: dict, historical_sales: lis
             "note": note_str
         }
     except Exception as e:
-        print(f"RandomForest modeling failure: {str(e)}")
+        log_error("ai.forecast", e, level="warn", context={"action": "fallback"})
         avg = sum(historical_sales) / max(len(historical_sales), 1) if historical_sales else 15.0
         return {
             "forecast": round(avg, 2),

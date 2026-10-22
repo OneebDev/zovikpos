@@ -1,4 +1,5 @@
 const axios = require('axios');
+const exceptionLogger = require('../utils/exceptionLogger');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
@@ -55,8 +56,10 @@ const getInventoryForecast = async (itemName, historicalSales, features = {}) =>
       percentChange: response.data.percent_change,
       source: 'fastapi-ml'
     };
-  } catch {
-    console.warn(`FastAPI forecasting service unavailable for ${itemName}. Executing Node fallback moving-average.`);
+  } catch (error) {
+    exceptionLogger.exception('ai.forecast', error, {
+      level: 'warn', context: { action: 'fallback', code: error.code },
+    });
 
     // Fallback: Simple moving average (SMA) of last 3 periods, or average of whatever is available
     const length = actualHistory.length;

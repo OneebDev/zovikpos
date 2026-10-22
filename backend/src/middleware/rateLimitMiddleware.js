@@ -1,5 +1,6 @@
 // In-memory sliding window rate limiter
 const requestBuckets = new Map();
+const exceptionLogger = require('../utils/exceptionLogger');
 
 /**
  * Creates a rate limiting middleware
@@ -34,6 +35,18 @@ const createRateLimiter = ({ windowMs = 60000, max = 100, message = 'Too many re
       const oldest = bucket.timestamps[0];
       const retryAfterSec = Math.ceil((oldest + windowMs - now) / 1000);
       res.setHeader('Retry-After', retryAfterSec);
+      exceptionLogger.log('warn', 'http.rate_limit', 'Rate limit exceeded', {
+        context: {
+          requestId: req.requestId,
+          method: req.method,
+          url: req.route?.path ? `${req.baseUrl || ''}${req.route.path}` : (req.baseUrl || req.path || '/'),
+          status: 429,
+          role: req.user?.role,
+          userId: req.user?.id,
+          ip,
+          code: 'RATE_LIMITED',
+        },
+      });
       return res.status(429).json({
         error: message,
         retryAfterSeconds: retryAfterSec,
@@ -46,7 +59,7 @@ const createRateLimiter = ({ windowMs = 60000, max = 100, message = 'Too many re
 };
 
 // Cleanup old empty buckets every 10 minutes to prevent memory leak
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, bucket] of requestBuckets.entries()) {
     bucket.timestamps = bucket.timestamps.filter(ts => now - ts < 900000);
@@ -55,6 +68,8 @@ setInterval(() => {
     }
   }
 }, 600000);
+// The cleanup sweep should not keep scripts or workers alive on its own.
+cleanupTimer.unref?.();
 
 // Specific rate limiters
 const authLimiter = createRateLimiter({

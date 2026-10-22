@@ -1,7 +1,6 @@
 const nodemailer = require('nodemailer');
-const fs = require('fs');
-const path = require('path');
 const axios = require('axios');
+const exceptionLogger = require('../utils/exceptionLogger');
 const { formatTableLabel } = require('../utils/tableLabel');
 const {
   bodyParagraph,
@@ -49,37 +48,25 @@ const sendViaResend = async (to, subject, text, html) => {
       { from, to: [to], subject, text, html },
       { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } }
     );
-    console.log(`[Email Service] Resend API success. Sent to ${to}. ID: ${response.data.id}`);
+    exceptionLogger.log('info', 'email.resend.send', 'Email sent', {
+      context: { recipientEmail: to, provider: 'resend' },
+    });
     return true;
   } catch (err) {
-    console.error(`[Email Service] Resend API failed for ${to}:`, err.response?.data || err.message);
+    exceptionLogger.exception('email.resend.send', err, {
+      level: 'warn', context: { recipientEmail: to, provider: 'resend', code: err.code },
+    });
     return false;
   }
 };
 
 const logEmailLocally = (to, subject, textContent, htmlContent) => {
-  if (process.env.NODE_ENV === 'production') {
-    console.warn('[Email Service] Email delivery failed; sensitive message content was not written to disk.');
-    return;
-  }
-
-  try {
-    const logPath = path.join(__dirname, '../../email_logs.txt');
-    const logDivider = '\n' + '='.repeat(80) + '\n';
-    const logEntry = `${logDivider}DATE/TIME: ${new Date().toLocaleString()}
-TO: ${to}
-SUBJECT: ${subject}
-TEXT CONTENT:
-${textContent}
-HTML PREVIEW:
-${htmlContent}
-${logDivider}`;
-
-    fs.appendFileSync(logPath, logEntry, 'utf8');
-    console.log(`[Email Service] Offline fallback: Email written to ${logPath}`);
-  } catch (err) {
-    console.error('[Email Service] Failed to write local email log:', err);
-  }
+  void subject;
+  void textContent;
+  void htmlContent;
+  exceptionLogger.log('warn', 'email.delivery', 'Email delivery unavailable; message content omitted', {
+    context: { recipientEmail: to, provider: 'smtp' },
+  });
 };
 
 const sendMailGeneric = async (to, subject, textContent, htmlContent, attachments = []) => {
@@ -97,9 +84,13 @@ const sendMailGeneric = async (to, subject, textContent, htmlContent, attachment
         html: htmlContent,
         attachments,
       });
-      console.log(`[Email Service] SMTP email sent successfully to ${to}`);
+      exceptionLogger.log('info', 'email.smtp.send', 'Email sent', {
+        context: { recipientEmail: to, provider: 'smtp' },
+      });
     } catch (err) {
-      console.error(`[Email Service] SMTP send failed: ${err.message}`);
+      exceptionLogger.exception('email.smtp.send', err, {
+        level: 'error', context: { recipientEmail: to, provider: 'smtp', code: err.code },
+      });
       logEmailLocally(to, subject, textContent, htmlContent);
     }
   } else {

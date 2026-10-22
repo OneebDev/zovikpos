@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/db');
 const corsOrigin = require('../middleware/corsPolicy');
+const exceptionLogger = require('../utils/exceptionLogger');
 
 let io;
 
@@ -14,6 +15,12 @@ const initSocket = (server) => {
       methods: ['GET', 'POST'],
       credentials: true,
     },
+  });
+
+  io.engine.on('connection_error', (error) => {
+    exceptionLogger.exception('socket.connection', error, {
+      level: 'warn', context: { code: error.code, action: error.message },
+    });
   });
 
   // Guest sockets remain connected for public menu updates. A supplied token is
@@ -32,14 +39,18 @@ const initSocket = (server) => {
       });
 
       if (user?.isActive && decoded.role === user.role) socket.data.user = user;
-    } catch {
+    } catch (error) {
       // An expired or invalid token gets guest-level public events only.
+      exceptionLogger.exception('socket.auth', error, { level: 'warn', context: { code: 'INVALID_OR_EXPIRED_TOKEN' } });
     }
 
     return next();
   });
 
   io.on('connection', (socket) => {
+    socket.on('error', (error) => {
+      exceptionLogger.exception('socket.handler', error, { context: { action: 'socket error' } });
+    });
     const user = socket.data.user;
     if (user) {
       socket.join(`account-${user.id}`);
