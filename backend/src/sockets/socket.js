@@ -8,8 +8,34 @@ let io;
 
 const getAccessSecret = () => process.env.JWT_SECRET || 'pos_system_jwt_access_secret_key_2026';
 
+const getClientIp = (handshake) => {
+  if (process.env.NODE_ENV === 'production') {
+    const forwarded = handshake?.headers?.['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+      const parts = forwarded.split(',');
+      const last = parts[parts.length - 1].trim();
+      if (last) return last;
+    }
+  }
+  return handshake?.address || 'unknown-ip';
+};
+
+// Flood guard limits from env
+const SOCKET_MAX_PER_IP = () => Number(process.env.SOCKET_MAX_PER_IP) || 200;
+const SOCKET_EVENTS_PER_10S = () => Number(process.env.SOCKET_EVENTS_PER_10S) || 60;
+
+// Track active connections per IP (guest/customer only)
+const ipConnectionCounts = new Map();
+
+const isStaffUser = (user) => {
+  if (!user || !user.role) return false;
+  const role = String(user.role).toUpperCase();
+  return role === 'ADMIN' || role === 'VENDOR' || role === 'KITCHEN';
+};
+
 const initSocket = (server) => {
   io = new Server(server, {
+    maxHttpBufferSize: 100000,
     cors: {
       origin: corsOrigin,
       methods: ['GET', 'POST'],
@@ -47,8 +73,77 @@ const initSocket = (server) => {
     return next();
   });
 
+  // Connection cap middleware (enforced per IP for non-staff)
+  io.use((socket, next) => {
+    if (isStaffUser(socket.data.user)) return next();
+
+    const clientIp = getClientIp(socket.handshake);
+    const maxSockets = SOCKET_MAX_PER_IP();
+    const currentCount = ipConnectionCounts.get(clientIp) || 0;
+
+    if (currentCount >= maxSockets) {
+      exceptionLogger.log('warn', 'socket.connection_cap', 'Socket connection cap exceeded for IP', {
+        context: { ip: clientIp, currentCount, maxSockets },
+      });
+      return next(new Error('Connection limit exceeded for this network'));
+    }
+
+    return next();
+  });
+
   io.on('connection', (socket) => {
+    const clientIp = getClientIp(socket.handshake);
+    const isStaff = isStaffUser(socket.data.user);
+
+    if (!isStaff) {
+      const current = ipConnectionCounts.get(clientIp) || 0;
+      ipConnectionCounts.set(clientIp, current + 1);
+    }
+
+    // Per-socket incoming event throttle
+    const eventTimestamps = [];
+    let lastWarnTime = 0;
+
+    socket.use(([event, ...args], nextEvent) => {
+      if (isStaff) return nextEvent();
+
+      const now = Date.now();
+      const maxEvents = SOCKET_EVENTS_PER_10S();
+      const windowMs = 10000;
+
+      while (eventTimestamps.length > 0 && now - eventTimestamps[0] > windowMs) {
+        eventTimestamps.shift();
+      }
+
+      if (eventTimestamps.length >= maxEvents) {
+        // Drop silently, log at most one warning per socket per minute
+        if (now - lastWarnTime > 60000) {
+          lastWarnTime = now;
+          exceptionLogger.log('warn', 'socket.flood_guard', 'Dropped socket event due to throttle', {
+            context: {
+              socketId: socket.id,
+              event,
+              maxEvents,
+              windowSeconds: 10,
+            },
+          });
+        }
+        return; // Event dropped
+      }
+
+      eventTimestamps.push(now);
+      return nextEvent();
+    });
+
     socket.on('disconnect', (reason) => {
+      if (!isStaff) {
+        const current = ipConnectionCounts.get(clientIp) || 0;
+        if (current <= 1) {
+          ipConnectionCounts.delete(clientIp);
+        } else {
+          ipConnectionCounts.set(clientIp, current - 1);
+        }
+      }
       exceptionLogger.log('info', 'socket.disconnect', 'Socket client disconnected', {
         context: { code: reason },
       });
