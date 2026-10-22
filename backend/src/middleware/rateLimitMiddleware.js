@@ -31,6 +31,9 @@ const createRateLimiter = ({ windowMs = 60000, max = 100, message = 'Too many re
     const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown-ip';
     const key = keyGenerator ? keyGenerator(req) : `${ip}:${req.baseUrl || req.path}`;
 
+    // keyGenerator returning null means this tier does not apply to this request; skip it.
+    if (key === null) return next();
+
     void (async () => {
       let result;
       if (redis.hasRedis) {
@@ -70,6 +73,7 @@ const createRateLimiter = ({ windowMs = 60000, max = 100, message = 'Too many re
   };
 };
 
+
 // Cleanup old local fallback buckets periodically to keep dyno memory bounded.
 const cleanupTimer = setInterval(() => {
   const now = Date.now();
@@ -107,4 +111,105 @@ const generalLimiter = createRateLimiter({
   message: 'High traffic detected. Please slow down.',
 });
 
-module.exports = { createRateLimiter, authLimiter, otpLimiter, otpVerificationLimiter, generalLimiter, fallbackCheck };
+// --- ORDER CREATE LIMITER ---
+// Dual protection:
+// 1. Identity cap: req.user.id (when authenticated, forge-proof) or req.body.sessionId.
+// 2. IP cap: always applies to protect against flood attacks on the same network.
+// Env vars: ORDER_RATE_SESSION_MAX (default 10), ORDER_RATE_IP_MAX (default 60),
+//           ORDER_RATE_WINDOW_MS (default 120000 = 2 min).
+const orderCreateCombinedLimiter = (() => {
+  const windowMs = Number(process.env.ORDER_RATE_WINDOW_MS) || 120000;
+  const sessionMax = Number(process.env.ORDER_RATE_SESSION_MAX) || 10;
+  const ipMax = Number(process.env.ORDER_RATE_IP_MAX) || 60;
+
+  const identityLimiter = createRateLimiter({
+    windowMs,
+    max: sessionMax,
+    message: 'Too many orders placed. Please wait a moment before placing another order.',
+    keyGenerator: (req) => {
+      if (req.user?.id) {
+        return `order-create:user:${req.user.id}`;
+      }
+      const sessionId = req.body?.sessionId;
+      if (typeof sessionId === 'string' && sessionId.length > 5) {
+        return `order-create:session:${sessionId}`;
+      }
+      return null;
+    },
+  });
+
+  const ipLimiter = createRateLimiter({
+    windowMs,
+    max: ipMax,
+    message: 'Too many orders from this network. Please wait a moment.',
+    keyGenerator: (req) => `order-create:ip:${req.ip || 'unknown'}`,
+  });
+
+  return (req, res, next) => {
+    identityLimiter(req, res, (err) => {
+      if (err) return next(err);
+      ipLimiter(req, res, next);
+    });
+  };
+})();
+
+// --- PAYMENT SUBMIT LIMITER ---
+// Dual protection:
+// 1. Identity cap: req.user.id ONLY (no orderId in key to prevent bypass).
+// 2. IP cap: always applies.
+// Env vars: PAYMENT_RATE_USER_MAX (default 8), PAYMENT_RATE_IP_MAX (default 60),
+//           PAYMENT_RATE_WINDOW_MS (default 300000 = 5 min).
+const paymentSubmitLimiter = (() => {
+  const windowMs = Number(process.env.PAYMENT_RATE_WINDOW_MS) || 300000;
+  const userMax = Number(process.env.PAYMENT_RATE_USER_MAX) || 8;
+  const ipMax = Number(process.env.PAYMENT_RATE_IP_MAX) || 60;
+
+  const identityLimiter = createRateLimiter({
+    windowMs,
+    max: userMax,
+    message: 'Too many payment submissions. Please wait before trying again.',
+    keyGenerator: (req) => {
+      if (req.user?.id) {
+        return `payment-submit:user:${req.user.id}`;
+      }
+      return null;
+    },
+  });
+
+  const ipLimiter = createRateLimiter({
+    windowMs,
+    max: ipMax,
+    message: 'Too many payment submissions from this network. Please wait.',
+    keyGenerator: (req) => `payment-submit:ip:${req.ip || 'unknown'}`,
+  });
+
+  return (req, res, next) => {
+    identityLimiter(req, res, (err) => {
+      if (err) return next(err);
+      ipLimiter(req, res, next);
+    });
+  };
+})();
+
+// --- SESSION START LIMITER ---
+// Session start is unauthenticated; key is IP only (shared WiFi canteen tables all hit this).
+// Env vars: SESSION_RATE_IP_MAX (default 60), SESSION_RATE_WINDOW_MS (default 300000 = 5 min).
+const sessionStartLimiter = createRateLimiter({
+  windowMs: Number(process.env.SESSION_RATE_WINDOW_MS) || 300000,
+  max: Number(process.env.SESSION_RATE_IP_MAX) || 60,
+  message: 'Too many session start requests from this network. Please wait a few minutes.',
+  keyGenerator: (req) => `session-start:ip:${req.ip || 'unknown'}`,
+});
+
+module.exports = {
+  createRateLimiter,
+  authLimiter,
+  otpLimiter,
+  otpVerificationLimiter,
+  generalLimiter,
+  fallbackCheck,
+  orderCreateCombinedLimiter,
+  paymentSubmitLimiter,
+  sessionStartLimiter,
+};
+
