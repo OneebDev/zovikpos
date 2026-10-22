@@ -161,6 +161,7 @@ if (process.env.NODE_ENV === 'production') {
 const { initSocket } = require('./sockets/socket');
 const { generalLimiter } = require('./middleware/rateLimitMiddleware');
 const corsOrigin = require('./middleware/corsPolicy');
+const { startApiIdempotencyCleanup } = require('./services/apiIdempotencyCleanup');
 
 // Route imports
 const authRoutes = require('./routes/authRoutes');
@@ -373,6 +374,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(
     `🚀 ZovikPOS Backend API running on port ${PORT}`
   );
+  startApiIdempotencyCleanup();
 });
 
 // Handle server startup/runtime errors

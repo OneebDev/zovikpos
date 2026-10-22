@@ -116,6 +116,20 @@ const ping = async () => {
   return withTimeout(redis.ping());
 };
 
+const idempotencyCacheKey = (scopeKey) => `${PREFIX}idem:${crypto.createHash('sha256').update(String(scopeKey)).digest('hex')}`;
+const getIdempotencyCache = async (scopeKey) => {
+  const redis = await ensureConnected();
+  return withTimeout(redis.get(idempotencyCacheKey(scopeKey)));
+};
+const setIdempotencyCache = async (scopeKey, value, ttlSeconds) => {
+  const redis = await ensureConnected();
+  return withTimeout(redis.set(idempotencyCacheKey(scopeKey), value, 'EX', ttlSeconds));
+};
+const deleteIdempotencyCache = async (scopeKey) => {
+  const redis = await ensureConnected();
+  return withTimeout(redis.del(idempotencyCacheKey(scopeKey)));
+};
+
 const closeRedis = async () => {
   if (client && client.status !== 'end') {
     try { await withTimeout(client.quit(), REDIS_TIMEOUT_MS); }
@@ -123,4 +137,7 @@ const closeRedis = async () => {
   }
 };
 
-module.exports = { hasRedis, checkRateLimit, ping, closeRedis, withTimeout, REDIS_TIMEOUT_MS };
+module.exports = {
+  hasRedis, checkRateLimit, ping, closeRedis, withTimeout, REDIS_TIMEOUT_MS,
+  getIdempotencyCache, setIdempotencyCache, deleteIdempotencyCache,
+};

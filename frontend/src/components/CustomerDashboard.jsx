@@ -10,6 +10,7 @@ import { parseTableDisplay, resolveTableLabel } from '../utils/customerTableLabe
 import { parseTableToken } from '../utils/parseTableToken';
 import { formatCompactAmount } from '../utils/formatCompactAmount';
 import { formatPrice } from '../utils/formatPrice';
+import { clearIdempotencyKey, getOrCreateIdempotencyKey } from '../utils/idempotencyKey';
 import {
   ShoppingBag,
   Sparkles,
@@ -1158,7 +1159,13 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       const restoreFromPendingScannedQr = async () => {
         if (!restoreToken) return false;
         try {
-          const response = await api.post('/sessions/start', { qrToken: restoreToken }, { signal: abortController.signal });
+          const payload = { qrToken: restoreToken };
+          const idempotencyKey = getOrCreateIdempotencyKey('customer_session_restore_attempt', payload);
+          const response = await api.post('/sessions/start', payload, {
+            signal: abortController.signal,
+            headers: { 'Idempotency-Key': idempotencyKey },
+          });
+          clearIdempotencyKey('customer_session_restore_attempt', idempotencyKey);
           if (!isActive || timedOut) return false;
           const restoredSession = response.data?.session;
           const restoredLabel = resolveTableLabel({
@@ -1205,7 +1212,13 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
         let validatedQr;
         try {
-          const validationResponse = await api.post('/sessions/start', { qrToken: cleanRouteToken, validateOnly: true }, { signal: abortController.signal });
+          const payload = { qrToken: cleanRouteToken, validateOnly: true };
+          const idempotencyKey = getOrCreateIdempotencyKey('customer_session_validate_attempt', payload);
+          const validationResponse = await api.post('/sessions/start', payload, {
+            signal: abortController.signal,
+            headers: { 'Idempotency-Key': idempotencyKey },
+          });
+          clearIdempotencyKey('customer_session_validate_attempt', idempotencyKey);
           if (!isActive || timedOut) return;
           validatedQr = validationResponse.data;
         } catch (validationError) {
@@ -1364,9 +1377,13 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
         // No active matching session exists; start one from the scanned signed token.
         try {
-          const res = await api.post('/sessions/start', {
-            qrToken: cleanRouteToken,
-          }, { signal: abortController.signal });
+          const payload = { qrToken: cleanRouteToken };
+          const idempotencyKey = getOrCreateIdempotencyKey('customer_session_start_attempt', payload);
+          const res = await api.post('/sessions/start', payload, {
+            signal: abortController.signal,
+            headers: { 'Idempotency-Key': idempotencyKey },
+          });
+          clearIdempotencyKey('customer_session_start_attempt', idempotencyKey);
           if (!isActive || timedOut) return;
 
           if (res.data.session) {
@@ -1657,11 +1674,14 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     }
 
     try {
-      const res = await api.post('/sessions/start', {
-        qrToken: pendingTableToken,
+      const payload = { qrToken: pendingTableToken };
+      const idempotencyKey = getOrCreateIdempotencyKey('customer_session_switch_attempt', payload);
+      const res = await api.post('/sessions/start', payload, {
+        headers: { 'Idempotency-Key': idempotencyKey },
       });
 
       if (res.data.session) {
+        clearIdempotencyKey('customer_session_switch_attempt', idempotencyKey);
         const s = res.data.session;
         const newSessionId = s.id;
         const newTableDisplay = resolveTableLabel({ tableLabel: s.tableLabel, table: s.table, routeToken: pendingTableToken, forCustomer: true });

@@ -8,6 +8,7 @@ const {
 const authMiddleware = require('../middleware/authMiddleware');
 const { optionalAuthMiddleware } = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
+const { idempotencyMiddleware } = require('../middleware/idempotencyMiddleware');
 
 const router = express.Router();
 
@@ -18,7 +19,7 @@ router.get('/settings', optionalAuthMiddleware, getPaymentSettings);
 router.use(authMiddleware);
 
 router.put('/settings', roleMiddleware(['ADMIN', 'VENDOR']), updatePaymentSettings);
-router.post('/submit', roleMiddleware(['ADMIN', 'VENDOR', 'CUSTOMER']), submitTransactionId);
+router.post('/submit', roleMiddleware(['ADMIN', 'VENDOR', 'CUSTOMER']), idempotencyMiddleware, submitTransactionId);
 router.put('/:id/verify', roleMiddleware(['ADMIN', 'VENDOR']), verifyTransaction);
 
 module.exports = router;

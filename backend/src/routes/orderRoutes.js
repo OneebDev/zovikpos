@@ -12,6 +12,7 @@ const {
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
 const sessionActivityMiddleware = require('../middleware/sessionActivityMiddleware');
+const { idempotencyMiddleware } = require('../middleware/idempotencyMiddleware');
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ router.get('/track/:token', getOrderByTrackingToken);
 // Protected Order Management Endpoints
 router.use(authMiddleware);
 
-router.post('/', createOrder);
+router.post('/', idempotencyMiddleware, createOrder);
 router.get('/', getAllOrders);
 router.delete('/bulk', roleMiddleware(['ADMIN', 'VENDOR']), bulkDeleteOrders);
 router.delete('/:id', roleMiddleware(['ADMIN', 'VENDOR']), deleteOrder);

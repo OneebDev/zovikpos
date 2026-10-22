@@ -8,6 +8,7 @@ import PhoneInput from '../../components/PhoneInput';
 import { paymentMethodLabel } from '../../utils/paymentMethods';
 import { resolveTableLabel } from '../../utils/customerTableLabel';
 import { formatPrice } from '../../utils/formatPrice';
+import { clearIdempotencyKey, getOrCreateIdempotencyKey } from '../../utils/idempotencyKey';
 import Button from '../../components/ui/Button';
 import Skeleton from '../../components/ui/Skeleton';
 import ModalShell from '../../components/ui/ModalShell';
@@ -496,19 +497,20 @@ const CustomerCartPage = ({ user }) => {
       return;
     }
     setPlacingOrder(true);
+    const orderPayload = {
+      items,
+      tableId,
+      sessionId,
+      paymentMethod: overrideMethod || paymentMethod,
+      paymentStatus: Boolean(overrideTxId) ? 'PENDING_VERIFICATION' : 'UNPAID',
+      paymentTxId: overrideTxId || null,
+      status: overrideTxId ? 'PAYMENT_PENDING' : 'PENDING',
+      customerEmail: guestEmail || user?.email,
+      emailVerified: true,
+    };
+    const idempotencyKey = getOrCreateIdempotencyKey('customer_order_attempt', orderPayload);
     try {
-      const isOnline = Boolean(overrideTxId);
-      const response = await api.post('/orders', {
-        items,
-        tableId,
-        sessionId,
-        paymentMethod: overrideMethod || paymentMethod,
-        paymentStatus: isOnline ? 'PENDING_VERIFICATION' : 'UNPAID',
-        paymentTxId: overrideTxId || null,
-        status: isOnline ? 'PAYMENT_PENDING' : 'PENDING',
-        customerEmail: guestEmail || user?.email,
-        emailVerified: true,
-      });
+      const response = await api.post('/orders', orderPayload, { headers: { 'Idempotency-Key': idempotencyKey } });
       const placedOrder = response.data.order;
       if (placedOrder?.sessionId) {
         localStorage.setItem('customer_sessionId', placedOrder.sessionId);
@@ -523,6 +525,7 @@ const CustomerCartPage = ({ user }) => {
       }
       setActiveOrder(placedOrder);
       clearCart();
+      clearIdempotencyKey('customer_order_attempt', idempotencyKey);
       setShowOnlinePaymentModal(false);
       setCheckoutDone(true);
     } catch (err) {
