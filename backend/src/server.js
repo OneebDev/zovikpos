@@ -162,6 +162,7 @@ const { initSocket } = require('./sockets/socket');
 const { generalLimiter } = require('./middleware/rateLimitMiddleware');
 const corsOrigin = require('./middleware/corsPolicy');
 const { startApiIdempotencyCleanup } = require('./services/apiIdempotencyCleanup');
+const { requestTimeout } = require('./middleware/requestTimeout');
 
 // Route imports
 const authRoutes = require('./routes/authRoutes');
@@ -178,6 +179,8 @@ const etaRoutes = require('./routes/etaRoutes');
 // Initialize Express and HTTP server
 const app = express();
 const server = http.createServer(app);
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
 serverRef = server;
 
 // Request IDs and outcome-only logging; request bodies and headers are never captured.
@@ -249,10 +252,21 @@ app.use(cors({
   ],
 }));
 
-// Request body parsing
-app.use(express.json({ limit: '50mb' }));
+// Request timeout guard (25s): mounted after CORS so 504 responses carry CORS headers.
+// Skips: /socket.io, /health, /ready, /uploads/* (static), and any URL containing /upload-image.
+app.use(requestTimeout);
+
+// Route-scoped larger body parsing (max 10mb) for routes handling base64 images and bulk inventory imports
+const largeJsonParser = express.json({ limit: '10mb' });
+const largeUrlencodedParser = express.urlencoded({ limit: '10mb', extended: true });
+
+app.use('/api/menu/upload-image', largeJsonParser, largeUrlencodedParser);
+app.use('/api/inventory', largeJsonParser, largeUrlencodedParser);
+
+// Global request body parsing with strict 1mb limit
+app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({
-  limit: '50mb',
+  limit: '1mb',
   extended: true,
 }));
 
