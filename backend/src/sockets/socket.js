@@ -48,6 +48,11 @@ const initSocket = (server) => {
   });
 
   io.on('connection', (socket) => {
+    socket.on('disconnect', (reason) => {
+      exceptionLogger.log('info', 'socket.disconnect', 'Socket client disconnected', {
+        context: { code: reason },
+      });
+    });
     socket.on('error', (error) => {
       exceptionLogger.exception('socket.handler', error, { context: { action: 'socket error' } });
     });

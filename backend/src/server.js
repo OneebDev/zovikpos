@@ -116,6 +116,8 @@ const path = require('path');
 require('dotenv').config();
 
 const exceptionLogger = require('./utils/exceptionLogger');
+const redis = require('./config/redis');
+const { prisma } = require('./config/db');
 let serverRef = null;
 
 // Route existing application warnings/errors through the redacting logger.
@@ -125,6 +127,9 @@ console.warn = (...args) => exceptionLogger.captureConsole('warn', args);
 exceptionLogger.installProcessHandlers(() => serverRef);
 
 exceptionLogger.validateConfig();
+exceptionLogger.log('info', 'redis.configuration', redis.hasRedis
+  ? 'Redis-backed shared rate limiting enabled'
+  : 'Redis URL not configured; in-memory rate-limit fallback active');
 
 if (/(localhost|127\.0\.0\.1)/i.test(process.env.FRONTEND_URL || '')) {
   console.warn('⚠️ FRONTEND_URL contains localhost or 127.0.0.1; OTP email links will not work from a phone.');
@@ -286,6 +291,23 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Readiness includes the database and, when configured, the shared Redis limiter.
+// Liveness remains independent so a temporary dependency outage doesn't restart dynos.
+app.get('/ready', async (req, res) => {
+  const checks = await Promise.allSettled([
+    redis.withTimeout(prisma.$queryRaw`SELECT 1`, 300),
+    redis.hasRedis ? redis.ping() : Promise.resolve('disabled'),
+  ]);
+  const databaseReady = checks[0].status === 'fulfilled';
+  const redisReady = checks[1].status === 'fulfilled';
+  const ready = databaseReady && redisReady;
+  res.status(ready ? 200 : 503).json({
+    status: ready ? 'ready' : 'not_ready',
+    database: databaseReady ? 'ok' : 'unavailable',
+    redis: !redis.hasRedis ? 'disabled' : redisReady ? 'ok' : 'unavailable',
+  });
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.status(200).json({
@@ -366,11 +388,11 @@ function shutdown(signal) {
   server.close((err) => {
     if (err) {
       exceptionLogger.exception('process.shutdown', err);
-      exceptionLogger.flush().finally(() => process.exit(1));
+      redis.closeRedis().finally(() => exceptionLogger.flush()).finally(() => process.exit(1));
       return;
     }
 
-    exceptionLogger.flush().finally(() => process.exit(0));
+    redis.closeRedis().finally(() => exceptionLogger.flush()).finally(() => process.exit(0));
   });
 
   // Force shutdown if connections do not close in time.
