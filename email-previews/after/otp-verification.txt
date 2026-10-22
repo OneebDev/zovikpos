@@ -1,0 +1,17 @@
+Your ZovikPOS email verification code is ready. It is valid for 5 minutes.
+
+Hi Amina,
+
+Use this code to verify your email and continue ordering.
+
+482916
+
+Valid for 5 minutes.
+
+Copy & Open App: https://zovik-pos.vercel.app/customer?otp=482916&e=customer%40example.invalid&sid=session-preview-7
+Code fills in automatically.
+
+Security: Never share this code. If you did not request it, you can safely ignore this email.
+
+ZovikPOS
+© 2026 ZovikPOS

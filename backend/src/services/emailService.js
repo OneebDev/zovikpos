@@ -3,14 +3,23 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const { formatTableLabel } = require('../utils/tableLabel');
-
-const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-}[character]));
+const {
+  bodyParagraph,
+  buildPlainText,
+  divider,
+  emailLayout,
+  escapeHtml,
+  formatCurrency,
+  formatDateTime,
+  greeting,
+  headline,
+  itemizedOrderTable,
+  notice,
+  primaryButton,
+  summaryBox,
+  tokenBox,
+  totalsTable,
+} = require('./emailTemplateHelpers');
 
 const createTransporter = () => {
   const host = process.env.SMTP_HOST;
@@ -98,85 +107,16 @@ const sendMailGeneric = async (to, subject, textContent, htmlContent, attachment
   }
 };
 
-const emailWrapper = (title, headerSubtitle, contentHtml, footerNote = 'Smart Canteen Point of Sale System') => `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(title)}</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #FAF9F7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #171717;">
-  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #FAF9F7; padding: 32px 16px;">
-    <tr>
-      <td align="center">
-        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 540px; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(23, 23, 23, 0.08), 0 8px 10px -6px rgba(23, 23, 23, 0.04); border: 1px solid #E7E5E4;">
-          <!-- Header -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #E85D2A 0%, #F97316 100%); padding: 32px 24px; text-align: center; color: #ffffff;">
-              <div style="display: inline-block; background: rgba(255, 255, 255, 0.2); padding: 8px 16px; border-radius: 9999px; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.3);">
-                ZovikPOS
-              </div>
-              <h1 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; color: #ffffff;">${escapeHtml(title)}</h1>
-              ${headerSubtitle ? `<p style="margin: 6px 0 0 0; font-size: 13px; color: rgba(255, 255, 255, 0.9); font-weight: 500;">${escapeHtml(headerSubtitle)}</p>` : ''}
-            </td>
-          </tr>
-
-          <!-- Body Content -->
-          <tr>
-            <td style="padding: 32px 28px;">
-              ${contentHtml}
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #FFF8F2; border-top: 1px solid #E7E5E4; padding: 20px 24px; text-align: center;">
-              <p style="margin: 0; font-size: 11px; color: #78716C; font-weight: 600;">
-                © 2026 ZovikPOS · ${escapeHtml(footerNote)}
-              </p>
-              <p style="margin: 4px 0 0 0; font-size: 10px; color: #A8A29E;">
-                This is an automated system notification. Please do not reply directly to this email.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-`;
+const emailWrapper = (title, headerSubtitle, contentHtml, footerNote, preheader = headerSubtitle || title) => emailLayout({
+  title,
+  subtitle: headerSubtitle,
+  preheader,
+  contentHtml,
+  footerNote,
+});
 
 const buildItemsHtml = (orderItems = []) => {
-  let text = '';
-  let html = '';
-
-  orderItems.forEach((item) => {
-    const name = item.nameSnapshot || item.menuItem?.name || 'Item';
-    const safeName = escapeHtml(name);
-    const price = item.priceSnapshot ?? item.price ?? 0;
-    const subtotal = item.subtotal ?? (price * item.quantity);
-    text += `- ${name} x ${item.quantity} @ Rs. ${price.toFixed(2)} = Rs. ${subtotal.toFixed(2)}\n`;
-    html += `
-      <tr>
-        <td style="padding: 12px 10px; border-bottom: 1px solid #f1f5f9; font-size: 13px; font-weight: 600; color: #1e293b;">
-          ${safeName}
-        </td>
-        <td style="padding: 12px 10px; border-bottom: 1px solid #f1f5f9; text-align: center; font-size: 13px; font-weight: 600; color: #64748b;">
-          x${item.quantity}
-        </td>
-        <td style="padding: 12px 10px; border-bottom: 1px solid #f1f5f9; text-align: right; font-size: 13px; color: #64748b;">
-          Rs. ${price.toFixed(2)}
-        </td>
-        <td style="padding: 12px 10px; border-bottom: 1px solid #f1f5f9; text-align: right; font-size: 13px; font-weight: 700; color: #0f172a;">
-          Rs. ${subtotal.toFixed(2)}
-        </td>
-      </tr>
-    `;
-  });
-
-  return { text, html };
+  return itemizedOrderTable(orderItems);
 };
 
 /**
@@ -185,79 +125,21 @@ const buildItemsHtml = (orderItems = []) => {
 const sendOTPEmail = async (email, name, otp) => {
   const customerName = typeof name === 'string' && name !== 'Customer' && !name.startsWith('Table') ? name : 'Valued Guest';
   const firstName = customerName.trim().split(/\s+/)[0] || 'there';
-  const safeFirstName = escapeHtml(firstName);
-  const safeOtp = escapeHtml(otp);
   const subject = `${otp} is your ZOVIKPOS verification code`;
   const frontendUrl = (process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://zovik-pos.vercel.app' : 'http://localhost:5173')).trim().replace(/\/+$/, '');
   const appUrl = `${frontendUrl}/customer?otp=${encodeURIComponent(otp)}&e=${encodeURIComponent(email)}`;
-  const safeAppUrl = escapeHtml(appUrl);
-  const textContent = `Hi ${firstName},\n\nUse this code to verify your email and continue ordering.\n\n${otp}\n\nValid for 5 minutes.\n\nCopy & Open App: ${appUrl}\nCode fills in automatically.\n\nSecurity: If you did not request this code, you can safely ignore this email.\n\nZOVIKPOS`;
-
-  const htmlContent = `
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
-  <meta name="supported-color-schemes" content="light dark">
-  <title>${escapeHtml(subject)}</title>
-</head>
-<body style="margin:0;padding:0;background-color:#FAF9F7;color:#292524;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;-webkit-text-size-adjust:100%;">
-  <div style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all;">Your ZOVIKPOS verification code is ${safeOtp}. Valid for 5 minutes.</div>
-  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#FAF9F7" style="width:100%;border-collapse:collapse;background-color:#FAF9F7;">
-    <tr>
-      <td align="center" style="padding:28px 12px;">
-        <table role="presentation" width="480" border="0" cellspacing="0" cellpadding="0" bgcolor="#FFFFFF" style="width:100%;max-width:480px;border:1px solid #E7E5E4;border-radius:20px;border-collapse:separate;background-color:#FFFFFF;">
-          <tr>
-            <td height="4" bgcolor="#E85D2A" style="height:4px;line-height:4px;font-size:0;background-color:#E85D2A;border-radius:20px 20px 0 0;">&nbsp;</td>
-          </tr>
-          <tr>
-            <td style="padding:20px 24px;border-bottom:1px solid #E7E5E4;">
-              <span style="color:#E85D2A;font-size:16px;font-weight:800;letter-spacing:.08em;">ZOVIKPOS</span>
-              <span style="padding-left:8px;color:#78716C;font-size:10px;font-weight:600;letter-spacing:.1em;">SMART DINING</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:28px 24px 24px;">
-              <p style="margin:0 0 10px;color:#1C1917;font-size:18px;line-height:1.4;font-weight:700;">Hi ${safeFirstName},</p>
-              <p style="margin:0 0 22px;color:#57534E;font-size:14px;line-height:1.6;">Use this code to verify your email and continue ordering.</p>
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;">
-                <tr>
-                  <td align="center" style="padding:2px 0 10px;">
-                    <div style="display:inline-block;max-width:100%;box-sizing:border-box;padding:16px 18px;border:1.5px solid #E85D2A;border-radius:16px;background-color:#FFF8F2;color:#E85D2A;font-family:'Courier New',Courier,monospace;font-size:36px;font-weight:700;line-height:1.2;letter-spacing:.3em;text-align:center;white-space:nowrap;user-select:all;-webkit-user-select:all;">${safeOtp}</div>
-                  </td>
-                </tr>
-              </table>
-              <p style="margin:4px 0 0;color:#78716C;font-size:12px;line-height:1.6;text-align:center;">Valid for 5 minutes</p>
-              <table role="presentation" border="0" cellspacing="0" cellpadding="0" align="center" style="margin:24px auto 0;border-collapse:separate;">
-                <tr>
-                  <td align="center" valign="middle" height="48" bgcolor="#E85D2A" style="height:48px;border-radius:12px;background-color:#E85D2A;">
-                    <a href="${safeAppUrl}" style="display:block;padding:0 22px;border-radius:12px;color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:700;line-height:48px;text-align:center;text-decoration:none;white-space:nowrap;">Copy &amp; Open App</a>
-                  </td>
-                </tr>
-              </table>
-              <p style="margin:8px 0 0;color:#78716C;font-size:12px;line-height:1.6;text-align:center;">Code fills in automatically</p>
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin-top:24px;">
-                <tr>
-                  <td bgcolor="#FFF8F2" style="padding:14px 16px;border-left:3px solid #FB923C;border-radius:0 10px 10px 0;background-color:#FFF8F2;color:#57534E;font-size:12px;line-height:1.6;">
-                    Security note: If you did not request this code, you can safely ignore this email.
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:16px 24px 20px;border-top:1px solid #E7E5E4;color:#78716C;font-size:11px;line-height:1.6;">
-              ZOVIKPOS · Smart Dining<br>Automated message — please do not reply.
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+  const preheader = 'Your ZovikPOS email verification code is ready. It is valid for 5 minutes.';
+  const bodyText = `Hi ${firstName},\n\nUse this code to verify your email and continue ordering.\n\n${otp}\n\nValid for 5 minutes.\n\nCopy & Open App: ${appUrl}\nCode fills in automatically.\n\nSecurity: Never share this code. If you did not request it, you can safely ignore this email.`;
+  const contentHtml = `${greeting(firstName)}
+    ${headline('Verify your email', 'Verification', 'info')}
+    ${bodyParagraph('Use this code to verify your email and continue ordering.')}
+    ${tokenBox(otp)}
+    <p class="email-muted" align="center" style="margin:4px 0 16px;color:#64748b;font-size:14px;line-height:1.5;">Valid for 5 minutes</p>
+    ${primaryButton(appUrl, 'Copy & Open App')}
+    <p class="email-muted" align="center" style="margin:0 0 18px;color:#64748b;font-size:13px;line-height:1.5;">Code fills in automatically</p>
+    ${notice('Never share this code. If you did not request it, you can safely ignore this email.', 'info')}`;
+  const htmlContent = emailLayout({ title: subject, subtitle: 'Email verification', preheader, contentHtml });
+  const textContent = buildPlainText(preheader, bodyText);
 
   await sendMailGeneric(email, subject, textContent, htmlContent);
 };
@@ -269,13 +151,8 @@ const sendOrderPlacementEmail = async (order) => {
   const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
   const userName = order.user?.name || 'Customer';
   const orderNum = order.orderNumber || `#000${order.id}`;
-  const htmlUserName = escapeHtml(userName);
-  const htmlOrderNum = escapeHtml(orderNum);
-  const tableLabel = formatTableLabel(order);
-  const htmlTableNumber = escapeHtml(tableLabel);
+  const tableLabel = formatTableLabel({ tableLabel: order.tableLabel });
   const isCOD = (order.paymentMethod || '').toUpperCase() === 'COD';
-  const htmlPaymentMethod = isCOD ? 'Cash on Delivery (Pay at Counter)' : escapeHtml(order.paymentMethod || 'Online');
-  const htmlPaymentStatus = isCOD ? 'Unpaid (Due at Pickup)' : escapeHtml(order.paymentStatus);
 
   const subject = isCOD
     ? `COD Order Confirmed: ${orderNum} (Pay at Counter) - ZovikPOS`
@@ -291,114 +168,36 @@ const sendOrderPlacementEmail = async (order) => {
     // Keep the localhost tracking link when FRONTEND_URL is not a valid URL.
   }
   const trackingUrl = `${baseUrl}/customer/track/${encodeURIComponent(order.trackingToken || order.id)}`;
-  const htmlTrackingUrl = escapeHtml(trackingUrl);
 
   const { text: itemsText, html: itemsHtml } = buildItemsHtml(order.orderItems);
   const etaMins = order.etaPrediction?.adjustedEta ? `${Math.round(order.etaPrediction.adjustedEta)} mins` : '10-15 mins';
+  const paymentStatus = isCOD ? 'Payment due at pickup' : order.paymentStatus;
+  const preheader = `Order ${orderNum} is confirmed. View your receipt and live order status.`;
+  const bodyText = `Hi ${userName},\n\nYour order has been confirmed.\nOrder Number: ${orderNum}\nTable: ${tableLabel}\n${formatDateTime(order.createdAt) ? `Order date/time: ${formatDateTime(order.createdAt)}\n` : ''}Estimated Ready Time: ~${etaMins}\nPayment Method: ${isCOD ? 'Cash on Delivery (Pay at Counter)' : order.paymentMethod || 'Online'}\nPayment Status: ${paymentStatus || ''}\n\nOrder items:\n${itemsText}\n\nSubtotal: ${formatCurrency(order.subtotal)}\nTax: ${formatCurrency(order.tax)}\n${Number(order.discount) > 0 ? `Discount: ${formatCurrency(order.discount)}\n` : ''}Total: ${formatCurrency(order.total)}\n${isCOD ? `Payment is due at pickup. Please pay ${formatCurrency(order.total)} in cash at the counter.\n` : ''}\nTrack your live order status: ${trackingUrl}`;
 
-  const codInstructionText = isCOD
-    ? `\nPAYMENT NOTICE: Payment of Rs. ${order.total.toFixed(2)} is due at pickup. Please pay in cash at the counter.\n`
-    : '';
-
-  const textContent = `Hi ${userName},
-
-Thank you for your order!
-Order Number: ${orderNum}
-Table: ${tableLabel}
-Estimated Ready Time: ~${etaMins}
-Payment Method: ${isCOD ? 'Cash on Delivery (Pay at Counter)' : order.paymentMethod || 'Online'}
-Payment Status: ${isCOD ? 'Payment Due at Pickup / Counter' : order.paymentStatus}
-${codInstructionText}
-Order Breakdown:
-${itemsText}
-Total Amount: Rs. ${order.total.toFixed(2)}
-
-Track your live order status here:
-${trackingUrl}
-
-ZovikPOS Team`;
-
-  const codCalloutHtml = isCOD ? `
-    <div style="background-color: #FEF3C7; border: 1px solid #F59E0B; border-radius: 12px; padding: 14px 18px; margin-bottom: 24px;">
-      <p style="margin: 0; font-size: 13px; font-weight: 700; color: #92400E;">
-        💵 Payment Due at Counter: Please have Rs. ${escapeHtml(order.total.toFixed(2))} ready in cash to pay at the counter upon collecting your meal.
-      </p>
-    </div>
-  ` : '';
-
-  const contentHtml = `
-    <p style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600; color: #171717;">
-      Hi ${htmlUserName},
-    </p>
-    <p style="margin: 0 0 20px 0; font-size: 14px; color: #57534E; line-height: 1.5;">
-      ${isCOD
-        ? 'Your order has been confirmed. Payment is due at pickup or delivery according to the existing COD workflow. Here are your order details:'
-        : 'Your order has been received and is queued for preparation. Here are your order details:'}
-    </p>
-
-    ${codCalloutHtml}
-
-    <!-- Info Box -->
-    <div style="background-color: #FFF8F2; border: 1px solid #E7E5E4; border-radius: 14px; padding: 18px; margin-bottom: 24px;">
-      <table width="100%" border="0" cellspacing="0" cellpadding="4" style="font-size: 13px;">
-        <tr>
-          <td style="color: #78716C; font-weight: 500;">Order Number:</td>
-          <td style="text-align: right; font-weight: 800; color: #E85D2A; font-size: 14px;">${htmlOrderNum}</td>
-        </tr>
-        <tr>
-          <td style="color: #78716C; font-weight: 500;">Table / Location:</td>
-          <td style="text-align: right; font-weight: 700; color: #171717;">${htmlTableNumber}</td>
-        </tr>
-        <tr>
-          <td style="color: #78716C; font-weight: 500;">Estimated Preparation Time:</td>
-          <td style="text-align: right; font-weight: 700; color: #E85D2A;">~${escapeHtml(etaMins)}</td>
-        </tr>
-        <tr>
-          <td style="color: #78716C; font-weight: 500;">Payment Mode &amp; Status:</td>
-          <td style="text-align: right; font-weight: 600; color: #171717;">${htmlPaymentMethod} (${htmlPaymentStatus})</td>
-        </tr>
-      </table>
-    </div>
-
-    <!-- Items Table -->
-    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 20px; border-collapse: collapse;">
-      <thead>
-        <tr style="background-color: #FAF9F7; text-transform: uppercase; font-size: 11px; font-weight: 800; color: #78716C; letter-spacing: 0.5px;">
-          <th style="padding: 10px; text-align: left; border-radius: 8px 0 0 8px;">Item</th>
-          <th style="padding: 10px; text-align: center;">Qty</th>
-          <th style="padding: 10px; text-align: right;">Price</th>
-          <th style="padding: 10px; text-align: right; border-radius: 0 8px 8px 0;">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${itemsHtml}
-      </tbody>
-    </table>
-
-    <!-- Total Bill -->
-    <div style="background-color: #FFF8F2; border-radius: 12px; padding: 14px 18px; text-align: right; margin-bottom: 24px; border: 1px solid #E7E5E4;">
-      <span style="font-size: 14px; font-weight: 600; color: #78716C; margin-right: 12px;">Grand Total:</span>
-      <span style="font-size: 20px; font-weight: 900; color: #E85D2A;">Rs. ${escapeHtml(order.total.toFixed(2))}</span>
-    </div>
-
-    <!-- Live Order Tracking Button Card -->
-    <div style="text-align: center; padding: 24px; background: linear-gradient(135deg, #FFF8F2 0%, #FFFCF9 100%); border: 1px solid #FED7AA; border-radius: 16px; margin-top: 24px;">
-      <h4 style="margin: 0 0 6px 0; font-size: 15px; font-weight: 800; color: #E85D2A;">
-        Live Order Tracking
-      </h4>
-      <p style="margin: 0 0 16px 0; font-size: 13px; color: #57534E;">
-        View real-time kitchen preparation status, estimated time, and live updates.
-      </p>
-      <a href="${htmlTrackingUrl}" style="background: linear-gradient(135deg, #E85D2A 0%, #F97316 100%); color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 12px; font-size: 14px; font-weight: 800; display: inline-block; box-shadow: 0 4px 12px rgba(232, 93, 42, 0.3);">
-        Track My Order Live ➔
-      </a>
-    </div>
-  `;
+  const contentHtml = `${greeting(userName)}
+    ${headline('Your order is confirmed', isCOD ? 'Payment due at pickup' : 'Confirmed', isCOD ? 'warning' : 'success')}
+    ${bodyParagraph('Your order has been received. Here are your order details.')}
+    ${summaryBox([
+      ['Order number', orderNum],
+      ['Table', tableLabel],
+      ['Order date and time', formatDateTime(order.createdAt)],
+      ['Estimated ready time', `~${etaMins}`],
+      ['Payment method', isCOD ? 'Cash on Delivery (Pay at Counter)' : (order.paymentMethod || 'Online')],
+      ['Payment status', paymentStatus],
+    ])}
+    ${itemsHtml ? `<h2 class="email-text" style="margin:0 0 10px;color:#0f172a;font-size:16px;line-height:1.4;">Order items</h2>${itemsHtml}` : ''}
+    ${totalsTable({ subtotal: order.subtotal, tax: order.tax, discount: order.discount, total: order.total })}
+    ${isCOD ? notice(`Payment of ${escapeHtml(formatCurrency(order.total))} is due at pickup. Please pay in cash at the counter.`, 'warning') : ''}
+    ${divider()}
+    ${bodyParagraph('Follow your order as the kitchen prepares it.')}
+    ${primaryButton(trackingUrl, 'Track my order')}`;
 
   const headerTitle = isCOD ? 'COD Order Confirmed' : 'Order Confirmed!';
   const headerSubtitle = isCOD ? `Order ${orderNum} · Payment due at pickup` : `Order ${orderNum} is being prepared`;
-  const htmlContent = emailWrapper(headerTitle, headerSubtitle, contentHtml);
-  await sendMailGeneric(userEmail, subject, textContent, htmlContent);
+  const htmlContent = emailWrapper(headerTitle, headerSubtitle, contentHtml, undefined, preheader);
+  const finalTextContent = buildPlainText(preheader, bodyText);
+  await sendMailGeneric(userEmail, subject, finalTextContent, htmlContent);
 };
 
 /**
@@ -407,44 +206,34 @@ ZovikPOS Team`;
 const sendPaymentConfirmedEmail = async (order) => {
   const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
   const orderNum = order.orderNumber || `#000${order.id}`;
-  const htmlOrderNum = escapeHtml(orderNum);
   const isCOD = (order.paymentMethod || '').toUpperCase() === 'COD';
 
   const subject = isCOD
     ? `Cash Payment Received: ${orderNum} - ZovikPOS`
     : `Payment Verified: ${orderNum} - ZovikPOS`;
 
-  const textContent = isCOD
-    ? `Your cash payment of Rs. ${order.total.toFixed(2)} for ${orderNum} has been received at the counter.`
-    : `Your payment of Rs. ${order.total.toFixed(2)} for ${orderNum} has been verified and confirmed.`;
-
-  const contentHtml = `
-    <div style="text-align: center; margin-bottom: 20px;">
-      <div style="display: inline-block; background-color: #DCFCE7; border-radius: 50%; padding: 16px; margin-bottom: 12px;">
-        <span style="font-size: 28px;">${isCOD ? '💵' : '✅'}</span>
-      </div>
-      <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: #15803D;">
-        ${isCOD ? 'Cash Payment Received at Counter' : 'Online Payment Verified &amp; Confirmed'}
-      </h3>
-    </div>
-
-    <p style="font-size: 14px; color: #57534E; line-height: 1.6; text-align: center; margin-bottom: 24px;">
-      ${isCOD
-        ? `We have successfully received your cash payment of <strong style="color: #171717;">Rs. ${escapeHtml(order.total.toFixed(2))}</strong> at the counter for order <strong style="color: #E85D2A;">${htmlOrderNum}</strong>.`
-        : `We have successfully verified your payment of <strong style="color: #171717;">Rs. ${escapeHtml(order.total.toFixed(2))}</strong> via <strong style="color: #171717;">${escapeHtml(order.paymentMethod || 'Online')}</strong> for order <strong style="color: #E85D2A;">${htmlOrderNum}</strong>.`}
-    </p>
-
-    <div style="background-color: #FFF8F2; border: 1px solid #E7E5E4; border-radius: 12px; padding: 14px 18px; text-align: center;">
-      <p style="margin: 0; font-size: 13px; font-weight: 600; color: #57534E;">
-        🍳 Thank you! Your receipt has been generated.
-      </p>
-    </div>
-  `;
+  const amount = formatCurrency(order.total);
+  const paymentMethod = isCOD ? 'Cash at counter' : (order.paymentMethod || 'Online');
+  const dateTime = formatDateTime(order.createdAt);
+  const preheader = `Payment received for order ${orderNum}.`;
+  const bodyText = `${isCOD ? 'Your cash payment' : 'Your payment'} of ${amount} for order ${orderNum} has been ${isCOD ? 'received at the counter' : 'verified and confirmed'}.\n\nPayment method: ${paymentMethod}\n${order.paymentTxId ? `Transaction reference: ${order.paymentTxId}\n` : ''}${dateTime ? `Order date and time: ${dateTime}\n` : ''}\nYour receipt has been generated.`;
+  const contentHtml = `${headline(isCOD ? 'Cash payment received' : 'Payment verified', 'Payment received', 'success')}
+    ${bodyParagraph(isCOD
+      ? `Your cash payment of <strong>${escapeHtml(amount)}</strong> for order <strong>${escapeHtml(orderNum)}</strong> has been received at the counter.`
+      : `Your payment of <strong>${escapeHtml(amount)}</strong> via <strong>${escapeHtml(paymentMethod)}</strong> for order <strong>${escapeHtml(orderNum)}</strong> has been verified.`)}
+    ${summaryBox([
+      ['Order number', orderNum],
+      ['Amount received', amount, true],
+      ['Payment method', paymentMethod],
+      ['Transaction reference', order.paymentTxId],
+      ['Order date and time', dateTime],
+    ])}
+    ${notice('Your receipt has been generated. Thank you.', 'success')}`;
 
   const htmlTitle = isCOD ? 'Cash Payment Received' : 'Payment Confirmed';
   const htmlSub = isCOD ? `Counter Receipt for ${orderNum}` : `Receipt for ${orderNum}`;
-  const htmlContent = emailWrapper(htmlTitle, htmlSub, contentHtml);
-  await sendMailGeneric(userEmail, subject, textContent, htmlContent);
+  const htmlContent = emailWrapper(htmlTitle, htmlSub, contentHtml, undefined, preheader);
+  await sendMailGeneric(userEmail, subject, buildPlainText(preheader, bodyText), htmlContent);
 };
 
 /**
@@ -453,52 +242,31 @@ const sendPaymentConfirmedEmail = async (order) => {
 const sendOrderReadyEmail = async (order) => {
   const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
   const orderNum = order.orderNumber || `#000${order.id}`;
-  const htmlOrderNum = escapeHtml(orderNum);
-  const htmlTableNumber = escapeHtml(formatTableLabel(order));
+  const tableLabel = formatTableLabel({ tableLabel: order.tableLabel });
   const isCOD = (order.paymentMethod || '').toUpperCase() === 'COD';
   const isUnpaid = isCOD && order.paymentStatus !== 'PAID' && order.paymentStatus !== 'VERIFIED';
 
   const subject = isUnpaid
-    ? `Order Ready for Pickup — Payment Due at Pickup: ${orderNum} 🛎️ - ZovikPOS`
-    : `Order Ready for Pickup: ${orderNum} 🛎️ - ZovikPOS`;
+    ? `Order Ready for Pickup — Payment Due at Pickup: ${orderNum} - ZovikPOS`
+    : `Order Ready for Pickup: ${orderNum} - ZovikPOS`;
 
-  const textContent = isUnpaid
-    ? `Your order ${orderNum} is ready! Please pay Rs. ${order.total.toFixed(2)} in cash at the counter when collecting your meal.`
-    : `Your order ${orderNum} is ready! Please collect your meal.`;
-
-  const paymentReminderHtml = isUnpaid ? `
-    <div style="background-color: #FEF3C7; border: 1px solid #F59E0B; border-radius: 12px; padding: 14px 18px; text-align: center; margin-top: 16px;">
-      <p style="margin: 0; font-size: 13px; font-weight: 700; color: #92400E;">
-        💵 Payment Due at Pickup: Please pay Rs. ${escapeHtml(order.total.toFixed(2))} in cash at the counter before collecting your meal.
-      </p>
-    </div>
-  ` : '';
-
-  const contentHtml = `
-    <div style="text-align: center; margin-bottom: 20px;">
-      <div style="display: inline-block; background-color: #DCFCE7; border-radius: 50%; padding: 16px; margin-bottom: 12px;">
-        <span style="font-size: 28px;">🛎️</span>
-      </div>
-      <h3 style="margin: 0; font-size: 20px; font-weight: 800; color: #15803D;">Your Order is Ready!</h3>
-    </div>
-
-    <p style="font-size: 14px; color: #57534E; line-height: 1.6; text-align: center; margin-bottom: 24px;">
-      Order <strong style="color: #E85D2A;">${htmlOrderNum}</strong> has been prepared fresh and hot. Please proceed to the service counter to collect your meal.
-    </p>
-
-    <div style="background-color: #FFF8F2; border: 1px solid #E7E5E4; border-radius: 12px; padding: 14px 18px; text-align: center;">
-      <p style="margin: 0; font-size: 13px; font-weight: 700; color: #171717;">
-        📍 Pickup Table / Tag: ${htmlTableNumber}
-      </p>
-    </div>
-
-    ${paymentReminderHtml}
-  `;
+  const amount = formatCurrency(order.total);
+  const dateTime = formatDateTime(order.createdAt);
+  const preheader = isUnpaid ? `Order ${orderNum} is ready. Cash payment is due at pickup.` : `Order ${orderNum} is ready for pickup.`;
+  const bodyText = `Your order ${orderNum} is ready. Please proceed to the service counter to collect your meal.\n\nTable: ${tableLabel}\n${dateTime ? `Order date and time: ${dateTime}\n` : ''}${isUnpaid ? `Payment due at pickup: ${amount}. Please pay in cash at the counter before collecting your meal.` : ''}`;
+  const contentHtml = `${headline('Your order is ready', 'Ready for pickup', 'success')}
+    ${bodyParagraph(`Order <strong>${escapeHtml(orderNum)}</strong> has been prepared. Please proceed to the service counter to collect your meal.`)}
+    ${summaryBox([
+      ['Order number', orderNum],
+      ['Table', tableLabel],
+      ['Order date and time', dateTime],
+    ])}
+    ${isUnpaid ? notice(`Payment of ${escapeHtml(amount)} is due at pickup. Please pay in cash at the counter before collecting your meal.`, 'warning') : ''}`;
 
   const titleText = isUnpaid ? 'Meal Ready · Payment Due' : 'Meal Ready!';
   const subText = isUnpaid ? `Order ${orderNum} ready · Pay Rs. ${order.total.toFixed(2)} at counter` : `Order ${orderNum} ready at counter`;
-  const htmlContent = emailWrapper(titleText, subText, contentHtml);
-  await sendMailGeneric(userEmail, subject, textContent, htmlContent);
+  const htmlContent = emailWrapper(titleText, subText, contentHtml, undefined, preheader);
+  await sendMailGeneric(userEmail, subject, buildPlainText(preheader, bodyText), htmlContent);
 };
 
 /**
@@ -507,29 +275,24 @@ const sendOrderReadyEmail = async (order) => {
 const sendOrderCompletionEmail = async (order) => {
   const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
   const orderNum = order.orderNumber || `#000${order.id}`;
-  const htmlOrderNum = escapeHtml(orderNum);
   const subject = `Order Completed: ${orderNum} - Thank You for Dining with Us!`;
-  const textContent = `Thank you for dining with ZovikPOS! Order ${orderNum} is completed.`;
+  const paid = ['PAID', 'VERIFIED'].includes(String(order.paymentStatus || '').toUpperCase());
+  const totalLabel = paid ? 'Total paid' : 'Order total';
+  const total = formatCurrency(order.total);
+  const dateTime = formatDateTime(order.createdAt);
+  const preheader = `Thank you. Order ${orderNum} is complete.`;
+  const bodyText = `Thank you for dining with ZovikPOS. Order ${orderNum} is completed.\n${totalLabel}: ${total}\n${dateTime ? `Order date and time: ${dateTime}\n` : ''}We look forward to serving you again soon.`;
+  const contentHtml = `${headline('Thank you for dining with us', 'Completed', 'success')}
+    ${bodyParagraph(`Order <strong>${escapeHtml(orderNum)}</strong> is complete. We hope you enjoyed your meal.`)}
+    ${summaryBox([
+      ['Order number', orderNum],
+      [totalLabel, total, true],
+      ['Order date and time', dateTime],
+    ])}
+    ${bodyParagraph('We look forward to serving you again soon.')}`;
 
-  const contentHtml = `
-    <div style="text-align: center; margin-bottom: 20px;">
-      <div style="display: inline-block; background-color: #FFF8F2; border-radius: 50%; padding: 16px; margin-bottom: 12px;">
-        <span style="font-size: 28px;">✨</span>
-      </div>
-      <h3 style="margin: 0; font-size: 20px; font-weight: 800; color: #E85D2A;">Thank You for Dining with Us!</h3>
-    </div>
-
-    <p style="font-size: 14px; color: #57534E; line-height: 1.6; text-align: center; margin-bottom: 24px;">
-      We hope you thoroughly enjoyed your meal. Order <strong style="color: #E85D2A;">${htmlOrderNum}</strong> has been marked as completed.
-    </p>
-
-    <p style="text-align: center; font-size: 13px; color: #78716C;">
-      We look forward to serving you again soon!
-    </p>
-  `;
-
-  const htmlContent = emailWrapper('Order Completed', 'Thank You!', contentHtml);
-  await sendMailGeneric(userEmail, subject, textContent, htmlContent);
+  const htmlContent = emailWrapper('Order Completed', 'Thank you for dining with us', contentHtml, undefined, preheader);
+  await sendMailGeneric(userEmail, subject, buildPlainText(preheader, bodyText), htmlContent);
 };
 
 /**
@@ -538,32 +301,21 @@ const sendOrderCompletionEmail = async (order) => {
 const sendOrderCancellationEmail = async (order, reason = 'CANCELLED') => {
   const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
   const orderNum = order.orderNumber || `#000${order.id}`;
-  const htmlOrderNum = escapeHtml(orderNum);
-  const htmlReason = escapeHtml(reason);
   const subject = `Order ${reason}: ${orderNum} - ZovikPOS`;
-  const textContent = `Your order ${orderNum} has been marked as ${reason}.`;
+  const total = formatCurrency(order.total);
+  const preheader = `Order ${orderNum} has a status update.`;
+  const bodyText = `Your order ${orderNum} for ${total} has been marked as ${reason}. If you have questions or require a refund, please visit the cashier counter with your order number.`;
+  const contentHtml = `${headline(`Order ${reason}`, reason, 'danger')}
+    ${bodyParagraph(`Order <strong>${escapeHtml(orderNum)}</strong> for <strong>${escapeHtml(total)}</strong> has been marked as <strong>${escapeHtml(reason)}</strong>.`)}
+    ${summaryBox([
+      ['Order number', orderNum],
+      ['Order total', total, true],
+      ['Status', reason],
+    ])}
+    ${notice('If you have questions or require a refund, please visit the cashier counter with your order number.', 'danger')}`;
 
-  const contentHtml = `
-    <div style="text-align: center; margin-bottom: 20px;">
-      <div style="display: inline-block; background-color: #fee2e2; border-radius: 50%; padding: 16px; margin-bottom: 12px;">
-        <span style="font-size: 28px;">⚠️</span>
-      </div>
-      <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: #b91c1c;">Order ${htmlReason}</h3>
-    </div>
-
-    <p style="font-size: 14px; color: #475569; line-height: 1.6; text-align: center; margin-bottom: 24px;">
-      Your order <strong style="color: #0f172a;">${htmlOrderNum}</strong> for <strong style="color: #0f172a;">Rs. ${escapeHtml(order.total.toFixed(2))}</strong> has been marked as <span style="color: #dc2626; font-weight: 700;">${htmlReason}</span>.
-    </p>
-
-    <div style="background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 12px; padding: 14px 18px; text-align: center;">
-      <p style="margin: 0; font-size: 12px; color: #9f1239;">
-        If you have any questions or require a refund, please visit the cashier counter with your order number.
-      </p>
-    </div>
-  `;
-
-  const htmlContent = emailWrapper(`Order ${reason}`, `Status update for ${orderNum}`, contentHtml);
-  await sendMailGeneric(userEmail, subject, textContent, htmlContent);
+  const htmlContent = emailWrapper(`Order ${reason}`, `Status update for ${orderNum}`, contentHtml, undefined, preheader);
+  await sendMailGeneric(userEmail, subject, buildPlainText(preheader, bodyText), htmlContent);
 };
 
 module.exports = {

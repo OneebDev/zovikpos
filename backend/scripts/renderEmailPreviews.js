@@ -9,11 +9,18 @@ const outputDir = path.resolve(
 const rendered = [];
 
 process.env.NODE_ENV = 'development';
+process.env.FRONTEND_URL = 'https://zovik-pos.vercel.app';
 process.env.SMTP_HOST = 'preview.invalid';
 process.env.SMTP_PORT = '465';
 process.env.SMTP_USER = 'preview@example.invalid';
 process.env.SMTP_PASS = 'preview-only';
 delete process.env.RESEND_API_KEY;
+
+const originalConsoleLog = console.log;
+console.log = (...args) => {
+  if (String(args[0] || '').startsWith('[Email Service]')) return;
+  originalConsoleLog(...args);
+};
 
 // Capture the message before transport. No SMTP or Resend request can be made.
 nodemailer.createTransport = () => ({
