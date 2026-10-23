@@ -1,12 +1,59 @@
+# Secrets & environment files
 .env
 .env.*
 !.env.example
 .enve.production
 
+# Node
 node_modules/
 dist/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
+# Build outputs
+build/
+.next/
+out/
+
+# Logs
+logs/
+*.log
+
+# Python / AI Service
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
 .venv/
 venv/
+env/
+*.egg-info/
+dist/
+*.so
+
+# Test outputs & coverage
+coverage/
+.nyc_output/
+junit.xml
+test-results/
+*.test.log
+
+# OS & editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Heroku
+.heroku/
+
+# Uploads (local dev only — production uses Supabase Storage)
+backend/uploads/
+
+# Prisma generated
+backend/src/generated/
