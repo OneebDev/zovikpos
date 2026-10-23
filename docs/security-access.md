@@ -10,7 +10,7 @@ Authentication endpoints include registration, login, refresh-token, profile, lo
 
 ## Account/session handling
 
-The schema supports active/deactivated users and session lifecycle/expiry. Middleware includes session activity, rate limiting, role authorization, audit recording, and demo guards. Admin can change staff roles and statuses. The client listens for role/status changes and session-expiry events to show a modal or log out.
+The schema supports active/deactivated users and session lifecycle/expiry. Customer table session secrets are securely hashed using SHA-256 digests and compared with `crypto.timingSafeEqual` to eliminate timing attack vectors and plaintext session token exposures. Middleware includes session activity, rate limiting, role authorization, audit recording, and demo guards. Database transactions that handle high concurrency utilize deadlock retries (`withDeadlockRetry`) with exponential jitter backoff. Admin can change staff roles and statuses. The client listens for role/status changes and session-expiry events to show a modal or log out.
 
 ## Demo mode
 
@@ -22,4 +22,4 @@ Audit middleware and `AuditLog` capture action/entity, actor, values, IP, and ti
 
 ## Operational security
 
-Keep JWT, QR signing, SMTP, database, Supabase, and AI provider secrets in local environment configuration. Never publish real credentials in Markdown. Any credential committed to the repository should be treated as exposed and rotated. Use HTTPS and secure deployment configuration outside local development.
+Keep JWT, QR signing, Hostinger SMTP, PayFast secured key, database, Supabase Storage, and Groq API provider secrets in local environment configuration. Never publish real credentials in Markdown. Any credential committed to the repository should be treated as exposed and rotated. Use HTTPS and secure deployment configuration outside local development.

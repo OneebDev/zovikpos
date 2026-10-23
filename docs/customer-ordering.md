@@ -31,6 +31,11 @@ Cart routes apply session-activity middleware. The client also sends the stored 
 
 `Session` associates a table and optional customer with lifecycle timestamps/status. A `Cart` belongs to one session and contains `CartItem` rows. `Order` may link to a session, table, customer, and branch; `OrderItem` stores historical snapshots. `trackingToken` is unique and supports direct tracking links.
 
-## Customer-facing limits
+## Payment methods & Checkout
 
-Online payment availability is obtained from `/api/payments/settings`; order/payment status may require cashier verification. Exact payment methods and checkout transitions are controlled by current frontend/backend logic and settings, not by this guide's examples.
+- `/api/payments/settings`: Public/customer read for enabled payment channels (COD vs PayFast online payments).
+- `/api/payments/payfast/initiate`: Generates a PayFast access token and hosted checkout redirect URL for online mobile wallets (Easypaisa / JazzCash) and debit/credit cards.
+- `/api/payments/payfast/notify`: Instant Transaction Notification (ITN) webhook from PayFast to confirm transactions idempotently and trigger kitchen synchronization.
+- `/api/payments/submit`: Submits manual payment or counter billing.
+
+Cash on Delivery (COD) / Pay at Counter orders enter `PENDING` status and can be settled by the cashier. PayFast orders become `PAID` upon successful checkout and webhook confirmation.

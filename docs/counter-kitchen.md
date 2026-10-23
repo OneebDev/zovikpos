@@ -4,7 +4,7 @@
 
 The cashier route (`/cashier/*`, with `/vendor/*` as an alias) renders `CashierPOSPage` for users whose role is `VENDOR`. The UI supports counter sales and operational order handling. Backend capabilities include reading/updating orders, confirming/verifying payments, menu reads, table management for staff, and inventory work for ADMIN/VENDOR.
 
-Payment endpoints are `/api/payments/settings`, `/api/payments/submit`, and `/api/payments/:id/verify`. Admin/Vendor users can update payment availability settings and verify a transaction. Successful payment confirmation is part of the order lifecycle and inventory deduction is implemented by inventory services/controllers; consult those paths for the precise trigger and refund behavior.
+Payment endpoints include `/api/payments/settings`, `/api/payments/submit`, `/api/payments/:id/verify`, and PayFast gateway endpoints (`/api/payments/payfast/initiate`, `/api/payments/payfast/notify`). Admin/Vendor users can update payment availability settings and verify a transaction. Successful payment confirmation is part of the order lifecycle and inventory deduction is implemented by inventory services/controllers; consult those paths for the precise trigger and refund behavior.
 
 ## Kitchen workspace
 

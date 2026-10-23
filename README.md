@@ -81,11 +81,12 @@
 |---|---|---|
 | **Frontend UI** | Web Application | React 19, Vite, Vanilla CSS / TailwindCSS, Lucide Icons, Recharts |
 | **Backend API** | Application Server | Node.js, Express, Prisma ORM, Socket.io, JWT Authentication |
-| **Database** | Database Engine | PostgreSQL (Hosted on Heroku Postgres with Connection Pooling) |
-| **AI ML Engine**| Forecasting Service| Python 3.10+, FastAPI, Uvicorn, scikit-learn, NumPy |
+| **Database** | Database Engine | PostgreSQL (Hosted on Heroku Postgres with Connection Pooling `connection_limit=5`) |
+| **AI ML Engine**| Forecasting Service| Python 3.12+, FastAPI, Uvicorn, scikit-learn, NumPy |
+| **Payment Gateway**| Hosted Sandbox | PayFast (Easypaisa, JazzCash, Debit/Credit Card) + Cash on Delivery (COD) |
 | **AI LLM API**  | Vision & NLP | Groq Cloud Multimodal API (`qwen/qwen3.8-27b`, `openai/gpt-oss-120b`, `allam-2-7b`) |
 | **OCR Fallback**| Client OCR Engine| Tesseract.js |
-| **Notifications**| Email & OTP | Nodemailer (SMTP Authentication) |
+| **Notifications**| Email & OTP | Nodemailer (Hostinger SMTP Authentication) |
 
 ---
 
@@ -94,7 +95,7 @@
 Ensure the following runtimes are installed on your host system:
 
 - **Node.js**: `v18.0.0` or higher ([Download Node.js](https://nodejs.org))
-- **Python**: `v3.10.0` or higher ([Download Python](https://python.org))
+- **Python**: `v3.12.0` or higher ([Download Python](https://python.org))
 - **Git**: `v2.30.0` or higher ([Download Git](https://git-scm.com))
 - **Package Managers**: `npm` (included with Node.js) and `pip` (included with Python)
 
@@ -103,11 +104,11 @@ Ensure the following runtimes are installed on your host system:
 ## 💻 Complete Installation & Setup Guide
 
 ### Step 1: Clone Repository
-Open your terminal and clone the official repository:
+Open your terminal and clone the repository:
 ```bash
 git clone https://github.com/Bilal-Ahmed35/ZOVIK-POS.git
 cd ZOVIK-POS
-git checkout oneeb
+git checkout feat/phase4-traffic
 ```
 
 ---
@@ -119,32 +120,48 @@ Create a `.env` file inside the `backend/` directory:
 # Path: backend/.env
 ```
 
-Add the following environment variables:
+Add the following environment variables (refer to `backend/.env.example` for the full template):
 
 ```env
 PORT=5001
-DATABASE_URL="postgresql://<user>:<password>@<host>:5432/<database>?connection_limit=10&pool_timeout=15&sslmode=no-verify"
-JWT_SECRET="[GENERATE_A_UNIQUE_SECRET]"
-JWT_REFRESH_SECRET="[GENERATE_A_DIFFERENT_UNIQUE_SECRET]"
+NODE_ENV=development
+DATABASE_URL="postgresql://<user>:<password>@<host>:5432/<database>?connection_limit=5&pool_timeout=15&sslmode=no-verify"
+DB_POOL_MAX=5
+
+# Authentication & Session Security
+JWT_SECRET="[GENERATE_A_UNIQUE_64_CHAR_SECRET]"
+JWT_REFRESH_SECRET="[GENERATE_A_DIFFERENT_UNIQUE_64_CHAR_SECRET]"
+SESSION_IDLE_MINUTES=30
+SWEEP_ENABLED=true
+
+# URLs & CORS
 FRONTEND_URL="http://localhost:5173"
+CORS_ORIGINS="http://localhost:5173,http://localhost:3000"
 AI_SERVICE_URL="http://localhost:8000"
 QR_SECRET="[GENERATE_A_UNIQUE_SECRET]"
 
-# Supabase Storage Config
+# Supabase Storage Config (Images & Invoices)
 SUPABASE_URL="https://your-project.supabase.co"
 SUPABASE_ANON_KEY="[YOUR_SUPABASE_ANON_KEY]"
 
-# SMTP Email OTP Settings
-SMTP_HOST="smtp.gmail.com"
+# SMTP Email OTP Settings (Hostinger / Custom SMTP)
+SMTP_HOST="smtp.hostinger.com"
 SMTP_PORT=465
-SMTP_USER="[YOUR_SMTP_EMAIL]"
-SMTP_PASS="[YOUR_SMTP_APP_PASSWORD]"
+SMTP_SECURE=true
+SMTP_USER="support@zovikpos.store"
+SMTP_PASS="[YOUR_SMTP_PASSWORD]"
+EMAIL_FROM="ZovikPOS <support@zovikpos.store>"
+
+# PayFast Sandbox Payment Gateway (Easypaisa / JazzCash)
+PAYFAST_MERCHANT_ID="100001"
+PAYFAST_SECURED_KEY="[YOUR_PAYFAST_SECURED_KEY]"
+PAYFAST_SANDBOX=true
 
 # Groq Multimodal AI Keys (Multi-Key Failover Engine)
-GROQ_API_KEY="[YOUR_GROQ_API_KEY]"
-GROQ_API_KEY="[YOUR_GROQ_API_KEY]"
-GROQ_API_KEY="[YOUR_GROQ_API_KEY]"
-GROQ_API_KEY="[YOUR_GROQ_API_KEY]"
+GROQ_API_KEY_1="gsk_..."
+GROQ_API_KEY_2="gsk_..."
+GROQ_API_KEY_3="gsk_..."
+GROQ_API_KEY_4="gsk_..."
 GROQ_MODEL="qwen/qwen3.8-27b"
 ```
 
@@ -428,22 +445,53 @@ Key database models in `backend/prisma/schema.prisma`:
 
 ---
 
+## 💳 Payment Gateway Engine (PayFast Sandbox + COD)
+
+ZovikPOS supports modern digital and counter payments:
+- **Cash on Delivery (COD) / Pay at Counter:** Traditional cashier billing with atomic status updates and kitchen sync.
+- **PayFast Hosted Sandbox Gateway:**
+  - Supports **Easypaisa**, **JazzCash**, and UnionPay/Bank cards.
+  - Generates secure customer access token via `POST /api/payments/payfast/initiate`.
+  - Automatically redirects customer to hosted checkout page with return and cancel routes.
+  - Secure **Instant Transaction Notification (ITN)** webhook via `POST /api/payments/payfast/notify` with transaction validation, idempotency, and atomic order status update.
+  - Automatic fallback to Cash on Delivery if online payments are toggled off in Admin settings.
+
+---
+
+## 🔒 Enterprise Security Hardening
+
+- **Session Secret Hashing:** Table and customer session tokens are stored using SHA-256 digests (`crypto.timingSafeEqual`) to prevent timing attacks and plaintext database token leaks.
+- **SQL Injection Prevention:** 100% parameterized data access via Prisma ORM; zero unescaped raw SQL interpolations.
+- **Deadlock Resilience:** High-concurrency transaction wrapper (`withDeadlockRetry`) with exponential jitter backoff on PostgreSQL error codes `40P01` and `40001`.
+- **Idempotency Protection:** Payment and order mutations verify unique client request keys to prevent double-charging or duplicate order placement.
+- **Heroku Connection Cap:** Explicit pool limit of 5 connections prevents connection exhaustion on Heroku Postgres Essential tiers.
+- **Request Timeout:** Express request timeout at 25 seconds prevents slow-client resource exhaustion.
+- **CORS & Rate Limiting:** Strict CORS origin matching (supporting Vercel preview environments) alongside in-memory sliding window rate limiters for auth, OTP, and general API routes.
+
+---
+
 ## 🔌 API Endpoint Reference Guide
 
 | Endpoint Route | HTTP Method | Role Required | Description |
 |---|---|---|---|
 | `/api/auth/login` | `POST` | Public | Authenticates user and returns JWT tokens |
+| `/api/auth/send-otp` | `POST` | Public | Sends 6-digit email OTP via Hostinger SMTP |
+| `/api/auth/verify-otp` | `POST` | Public | Verifies customer email OTP |
 | `/api/admin/dashboard-stats` | `GET` | `ADMIN` | Returns executive dashboard metrics (15s cached) |
 | `/api/menu` | `GET` | Public | Returns menu items catalog (10s cached) |
 | `/api/menu` | `POST` | `ADMIN`, `VENDOR` | Creates a new menu item |
-| `/api/inventory` | `GET` | `ADMIN`, `VENDOR` | Returns inventory catalog items |
+| `/api/inventory` | `GET` | `ADMIN`, `VENDOR`, `KITCHEN` | Returns inventory catalog items |
 | `/api/inventory/recipes/:id` | `GET` | `ADMIN`, `VENDOR` | Returns recipe map for menu item |
 | `/api/inventory/recipes/:id` | `POST` | `ADMIN`, `VENDOR` | Saves recipe mapping for menu item |
 | `/api/inventory/recipes/ai-suggest` | `POST` | `ADMIN`, `VENDOR` | Generates AI recipe suggestions |
 | `/api/inventory/receivings/import/preview` | `POST` | `ADMIN`, `VENDOR` | Previews Excel stock upload |
 | `/api/inventory/receivings/ocr-preview` | `POST` | `ADMIN`, `VENDOR` | Previews AI Vision invoice scan |
-| `/api/orders` | `POST` | Public / Customer| Places a new order |
-| `/api/payments/confirm` | `POST` | `ADMIN`, `VENDOR` | Confirms payment and triggers inventory deduction |
+| `/api/orders` | `POST` | Public / Customer | Places a new order |
+| `/api/orders/track/:token` | `GET` | Public | Real-time order tracking via secure token |
+| `/api/payments/payfast/initiate` | `POST` | Public / Customer | Generates PayFast hosted checkout token & URL |
+| `/api/payments/payfast/notify` | `POST` | Public / Webhook | PayFast Instant Transaction Notification (ITN) webhook |
+| `/api/payments/submit` | `POST` | Authenticated | Submits manual / cashier payment |
+| `/api/payments/:id/verify` | `POST` | `ADMIN`, `VENDOR` | Verifies and completes payment |
 
 ---
 

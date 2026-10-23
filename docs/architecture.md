@@ -23,9 +23,9 @@ Configuration belongs in environment files, especially `backend/.env`; required 
 
 ## Technology
 
-- Frontend: React, React Router, Axios, TanStack Query, Socket.IO client, Recharts, Lucide, Vite.
-- Backend: Node.js, Express, Prisma, Heroku Postgres, Socket.IO, JWT, bcrypt, Supabase Storage client, Nodemailer, XLSX, Tesseract.js, PDF parsing, QR generation.
-- AI service: Python, FastAPI, NumPy, pandas, scikit-learn (with fallbacks).
+- Frontend: React 19, React Router, Axios, TanStack Query, Socket.IO client, Recharts, Lucide, Vite.
+- Backend: Node.js, Express, Prisma, Heroku Postgres, Socket.IO, JWT, bcrypt, Supabase Storage client, Nodemailer, PayFast SDK/API, XLSX, Tesseract.js, PDF parsing, QR generation.
+- AI service: Python 3.12, FastAPI, NumPy, pandas, scikit-learn (with fallbacks).
 
 ## Runtime caveats
 

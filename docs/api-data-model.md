@@ -12,7 +12,7 @@ All API routes below are mounted under `/api` unless noted. Authentication/role 
 | Tables | `/tables/active`, `/:id/qr`, `/qr/batch`, staff CRUD | QR/active reads public; staff reads Admin/Vendor; table mutation Admin |
 | Menu | `/menu`, `/:id`, `/:id/qr`, item/image mutations | Reads public; writes Admin/Vendor |
 | Orders | `/orders`, `/:id`, `/:id/status`, `/:id/transfer-table`, `/track/:token` | Tracking public; protected order APIs; writes/status have role constraints |
-| Payments | `/payments/settings`, `/submit`, `/:id/verify` | Settings read public/optional auth; update and verify Admin/Vendor; submit authenticated |
+| Payments | `/payments/settings`, `/submit`, `/:id/verify`, `/payfast/initiate`, `/payfast/notify` | Settings read public/optional auth; update and verify Admin/Vendor; submit authenticated; PayFast initiate public/customer; notify public webhook |
 | Inventory | `/inventory/*` | Router requires authenticated staff; most mutations Admin/Vendor; Kitchen has reads |
 | Admin | `/admin/*` | Authenticated Admin only |
 | ETA | `/eta` | Controller endpoint; route has no router-level auth middleware |
