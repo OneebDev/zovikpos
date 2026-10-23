@@ -787,13 +787,20 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   // expandedGroup: the groupKey of the currently-open food card (only one open at a time)
   const [expandedGroup, setExpandedGroup] = useState(null);
   const expandedScrollTargetRef = React.useRef(null);
+  const isAddingToCartRef = React.useRef(false);
+  const lastClosedTimeRef = React.useRef(0);
   // pendingVariant: { [groupKey]: variantObject } — the selected variant pill per group
   const [pendingVariant, setPendingVariant] = useState({});
   // pendingQty: { [variantId]: number } — EACH VARIANT has its own quantity, independent
   const [pendingQty, setPendingQty] = useState({});
 
   useEffect(() => {
-    if (!expandedGroup || !expandedScrollTargetRef.current) return undefined;
+    if (!expandedGroup) {
+      lastClosedTimeRef.current = Date.now();
+      return undefined;
+    }
+    isAddingToCartRef.current = false;
+    if (!expandedScrollTargetRef.current) return undefined;
     const target = expandedScrollTargetRef.current;
     const timer = window.setTimeout(() => scrollCardWithinNearestContainer(target), 280);
     return () => window.clearTimeout(timer);
@@ -3442,7 +3449,10 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                     const toggleCard = (event) => {
                       if (isOutOfStock) return;
                       const willOpen = !isExpanded;
-                      if (willOpen) expandedScrollTargetRef.current = event.currentTarget.closest('.customer-food-card');
+                      if (willOpen) {
+                        if (Date.now() - lastClosedTimeRef.current < 400) return;
+                        expandedScrollTargetRef.current = event.currentTarget.closest('.customer-food-card');
+                      }
                       setExpandedGroup(willOpen ? groupKey : null);
                     };
 
@@ -3456,6 +3466,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                         tabIndex={isOutOfStock ? -1 : 0}
                         onClick={(event) => {
                           if (isOutOfStock || event.target.closest('button')) return;
+                          if (!isExpanded && Date.now() - lastClosedTimeRef.current < 400) return;
                           toggleCard(event);
                         }}
                         onKeyDown={(event) => {
@@ -3559,7 +3570,12 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                                 <span>{variants.length > 1 ? 'Choose size' : 'Customize item'}</span>
                                 <button
                                   type="button"
-                                  onClick={(event) => { event.stopPropagation(); setExpandedGroup(null); }}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    lastClosedTimeRef.current = Date.now();
+                                    setExpandedGroup(null);
+                                  }}
                                   aria-label={`Collapse ${groupKey} options`}
                                  className="icon-btn icon-btn--32">
                                   <ChevronDown aria-hidden="true" />
@@ -3635,7 +3651,12 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                               <div className="customer-food-card__actions">
                                 <button
                                   type="button"
-                                  onClick={(event) => { event.stopPropagation(); setExpandedGroup(null); }}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    lastClosedTimeRef.current = Date.now();
+                                    setExpandedGroup(null);
+                                  }}
                                   className="customer-food-card__cancel"
                                 >
                                   Cancel
@@ -3644,7 +3665,12 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                                   type="button"
                                   disabled={isSelectedOutOfStock}
                                   onClick={(event) => {
+                                    event.preventDefault();
                                     event.stopPropagation();
+                                    if (isAddingToCartRef.current || isSelectedOutOfStock) return;
+                                    isAddingToCartRef.current = true;
+                                    lastClosedTimeRef.current = Date.now();
+                                    setExpandedGroup(null);
                                     animateCartFlight(event.currentTarget);
                                     handleAddWithVariantAndQty(selectedVariant, groupKey);
                                   }}
