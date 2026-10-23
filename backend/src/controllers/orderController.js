@@ -19,6 +19,7 @@ const { validateStudentEmail } = require('./authController');
 const { COUNTER_TABLE_LABEL, formatTableLabel, withTableLabel, isPhysicalTable } = require('../utils/tableLabel');
 const { isValid, OrderStatus } = require('../utils/statusValues');
 const { roundMoney } = require('../utils/money');
+const { touchSessionActivity } = require('../utils/sessionActivity');
 
 // Statuses that count as an 'open' order for the per-session cap.
 // Exclude terminal statuses: COMPLETED, CANCELLED, PAYMENT_FAILED, REFUNDED.
@@ -143,20 +144,28 @@ const createOrder = async (req, res) => {
 
     const existingSession = await prisma.session.findUnique({
       where: { id: sessionId },
-      include: { table: { include: { branch: true } } },
+      include: {
+        table: { include: { branch: true } },
+        cart: { select: { items: { select: { id: true } } } },
+      },
     });
 
-    if (!existingSession || existingSession.status !== 'ACTIVE' || new Date(existingSession.expiresAt) <= new Date()) {
-      console.warn('[OrderTable] Rejected order with an invalid or expired session.', { userId, sessionId });
+    if (!existingSession || existingSession.status !== 'ACTIVE') {
       if (userRole === 'CUSTOMER') {
         return res.status(403).json({ error: 'Your table session has expired. Scan the table QR code again.', message: 'Your table session has expired. Scan the table QR code again.', code: 'TABLE_SESSION_REQUIRED' });
       }
       return res.status(400).json({ error: 'Your dining session has expired. Please scan your table QR again.' });
     }
 
+    // Rule B: expiresAt is only a hard deadline for sessions with nothing to protect.
+    // Placing an order is itself activity, so we always permit it on an ACTIVE session
+    // (the session activity helper will extend expiresAt). The idle-expiry path in
+    // getSession / requireActivePhysicalSession handles non-mutation checks.
     if (req.user.role === 'CUSTOMER' && existingSession.customerId && existingSession.customerId !== userId) {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
+    // Throttled touch: placing an order is explicit activity
+    touchSessionActivity(sessionId, existingSession.lastActivityAt).catch(() => {});
 
     // --- OPEN ORDER CAP (env: ORDER_MAX_OPEN_PER_SESSION, default 5) ---
     // Counts unfinished orders tied to this session. Applied ONLY to CUSTOMER role;

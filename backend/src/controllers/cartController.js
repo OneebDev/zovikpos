@@ -1,6 +1,7 @@
 const { prisma } = require('../config/db');
 const { convertUnit } = require('../utils/unitConverter');
 const { isPhysicalTable } = require('../utils/tableLabel');
+const { isSessionIdleExpired, touchSessionActivity } = require('../utils/sessionActivity');
 
 // Cart caps (read from env each call so tests can override without module reload).
 // CART_MAX_ITEMS: max distinct menu items per cart (default 30).
@@ -8,16 +9,22 @@ const { isPhysicalTable } = require('../utils/tableLabel');
 const CART_MAX_ITEMS = () => Number(process.env.CART_MAX_ITEMS) || 30;
 const CART_MAX_QTY = () => Number(process.env.CART_MAX_QTY) || 50;
 
+// Retrieve a session with its cart item count and order count for idle expiry evaluation.
 const getPhysicalCustomerSession = async (sessionId) => prisma.session.findUnique({
   where: { id: sessionId },
   select: {
     status: true,
+    startedAt: true,
     expiresAt: true,
+    lastActivityAt: true,
     tableId: true,
     table: { select: { id: true, isActive: true, tableNumber: true, branchId: true, qrToken: true } },
+    cart: { select: { items: { select: { id: true } } } },
+    orders: { select: { id: true } },
   },
 });
 
+// Rule B: check idle expiry only when cart empty AND no orders.
 const requireActivePhysicalSession = async (sessionId, res) => {
   const session = await getPhysicalCustomerSession(sessionId);
   if (!session || session.status !== 'ACTIVE') {
@@ -28,11 +35,16 @@ const requireActivePhysicalSession = async (sessionId, res) => {
     res.status(403).json({ error: 'Scan the QR code attached to your table before using the cart.', code: 'TABLE_SESSION_REQUIRED' });
     return null;
   }
-  if (new Date() > new Date(session.expiresAt)) {
-    await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } });
+  const cartItemCount = session.cart?.items?.length || 0;
+  const orderCount = session.orders?.length || 0;
+  if (isSessionIdleExpired(session, cartItemCount, orderCount)) {
+    // Mark expired only if Rule B permits it (idle + empty cart + no orders)
+    await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } }).catch(() => {});
     res.status(403).json({ error: 'Your dining session has expired due to inactivity. Please scan the QR code again to start a new session.', code: 'TABLE_SESSION_REQUIRED' });
     return null;
   }
+  // Throttled activity touch (fire-and-forget)
+  touchSessionActivity(sessionId, session.lastActivityAt).catch(() => {});
   return session;
 };
 

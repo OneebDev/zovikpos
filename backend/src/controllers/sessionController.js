@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { prisma } = require('../config/db');
 const { verifyTableToken } = require('../services/qrSecurityService');
 const { formatTableLabel, isPhysicalTable } = require('../utils/tableLabel');
+const { isSessionIdleExpired, touchSessionActivity } = require('../utils/sessionActivity');
 
 /**
  * Start a new dining session from a validated table QR
@@ -60,7 +61,8 @@ const startSession = async (req, res) => {
 
     // Create a new distinct session UUID for this customer visit
     const sessionId = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes inactivity window
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes inactivity window
 
     const session = await prisma.session.create({
       data: {
@@ -69,6 +71,8 @@ const startSession = async (req, res) => {
         tableLabel: formatTableLabel({ table }),
         customerId,
         status: 'ACTIVE',
+        startedAt: now,
+        lastActivityAt: now,
         expiresAt,
         cart: {
           create: {},
@@ -156,23 +160,25 @@ const getSession = async (req, res) => {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
 
-    // A session is renewed only by explicit customer activity (or customer
-    // mutations handled by sessionActivityMiddleware). Health checks and the
-    // presence of a login/cart/order must not keep an idle session alive.
+    // Rule B: A session is only expired by idleness when ALL of the following are true:
+    // - idle time > SESSION_IDLE_MINUTES (env, default 10)
+    // - server cart is empty
+    // - no orders on the session
+    // If the session has cart items OR any order, it must never be expired by idleness.
     if (session.status === 'ACTIVE') {
-      const sessionIsUnexpired = new Date(session.expiresAt) > new Date();
-      const explicitCustomerActivity = req.get('X-Session-Activity') === 'true';
+      const cartItemCount = session.cart?.items?.length || 0;
+      const orderCount = session.orders?.length || 0;
+      const idleExpired = isSessionIdleExpired(session, cartItemCount, orderCount);
 
-      if (explicitCustomerActivity && sessionIsUnexpired) {
-        const renewedExpiry = new Date(Date.now() + 10 * 60 * 1000);
-        await prisma.session.update({ where: { id: sessionId }, data: { expiresAt: renewedExpiry } });
-        session.expiresAt = renewedExpiry;
-      } else if (!sessionIsUnexpired) {
+      if (idleExpired) {
         const updated = await prisma.session.update({
           where: { id: sessionId },
           data: { status: 'EXPIRED' },
         });
         session.status = updated.status;
+      } else {
+        // Throttled activity touch (fire-and-forget, no await)
+        touchSessionActivity(sessionId, session.lastActivityAt).catch(() => {});
       }
     }
 
@@ -226,16 +232,26 @@ const closeSession = async (req, res) => {
 };
 
 /**
- * Seamlessly transfer an active dining session and its pending/cooking orders to a new physical table
+ * Transfer an ACTIVE dining session (cart only – no orders) to a different physical table.
+ *
+ * Rule A:
+ *  - If the session has ANY order (any status), return 409 SESSION_HAS_ORDERS.
+ *  - Only the signed QR token of the NEW table is accepted; tableNumber/tableId from
+ *    the request body is NEVER trusted for CUSTOMER callers.
+ *  - The order-count check and the table-id update happen inside a single Prisma
+ *    interactive transaction so there is no race window between reading and writing.
  */
 const transferSessionTable = async (req, res) => {
   const { sessionId, qrToken, targetTableNumber } = req.body;
-  const customerId = req.user?.id || null;
+  const callerId = req.user?.id || null;
+  const callerRole = req.user?.role;
 
   if (!sessionId) {
     return res.status(400).json({ error: 'Current session ID is required.' });
   }
 
+  // ---- Resolve the target table ----------------------------------------
+  // CUSTOMERS may ONLY use the signed QR token.  Staff may fall back to tableNumber.
   try {
     let targetTable = null;
 
@@ -243,19 +259,20 @@ const transferSessionTable = async (req, res) => {
       const verification = verifyTableToken(qrToken);
       if (verification.valid) {
         const searchToken = verification.normalizedToken || qrToken;
-        targetTable = await prisma.table.findFirst({
+        const candidate = await prisma.table.findFirst({
           where: { qrToken: searchToken },
           include: { branch: true },
         });
         const tokenTableNumber = String(verification.tableNumber || '').trim().replace(/^table\s*/i, '').toLowerCase();
-        const storedTableNumber = String(targetTable?.tableNumber || '').trim().replace(/^table\s*/i, '').toLowerCase();
-        if (targetTable && (storedTableNumber !== tokenTableNumber || targetTable.branchId !== verification.branchId)) {
-          targetTable = null;
+        const storedTableNumber = String(candidate?.tableNumber || '').trim().replace(/^table\s*/i, '').toLowerCase();
+        if (candidate && storedTableNumber === tokenTableNumber && candidate.branchId === verification.branchId) {
+          targetTable = candidate;
         }
       }
     }
 
-    if (req.user?.role !== 'CUSTOMER' && !targetTable && targetTableNumber) {
+    // Staff-only fallback: accept tableNumber from body when no signed token resolved a table.
+    if (callerRole !== 'CUSTOMER' && !targetTable && targetTableNumber) {
       const cleanNumber = String(targetTableNumber).toLowerCase().startsWith('table')
         ? String(targetTableNumber)
         : `Table ${targetTableNumber}`;
@@ -266,13 +283,14 @@ const transferSessionTable = async (req, res) => {
     }
 
     if (!targetTable) {
-      return res.status(404).json({ error: 'Target table not found.' });
+      return res.status(404).json({ error: 'Target table not found or QR token invalid.' });
     }
 
     if (!targetTable.isActive) {
       return res.status(403).json({ error: `${targetTable.tableNumber} is currently deactivated by management.` });
     }
 
+    // ---- Validate caller ownership of the current session ----------------
     const currentSession = await prisma.session.findUnique({
       where: { id: sessionId },
       include: { table: true },
@@ -282,13 +300,12 @@ const transferSessionTable = async (req, res) => {
       return res.status(404).json({ error: 'Current dining session not found.' });
     }
 
-    if (req.user?.role === 'CUSTOMER' && currentSession.customerId && currentSession.customerId !== req.user.id) {
+    if (callerRole === 'CUSTOMER' && currentSession.customerId && currentSession.customerId !== callerId) {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
 
-    if (req.user?.role === 'CUSTOMER' && (
+    if (callerRole === 'CUSTOMER' && (
       currentSession.status !== 'ACTIVE'
-      || new Date(currentSession.expiresAt) <= new Date()
       || !currentSession.tableId
       || !isPhysicalTable(currentSession.table)
     )) {
@@ -301,91 +318,54 @@ const transferSessionTable = async (req, res) => {
     const oldTableDisplay = formatTableLabel(currentSession);
     const newTableDisplay = formatTableLabel({ table: targetTable });
 
-    // 1. Update session to point to the new physical table
-    const updatedSession = await prisma.session.update({
-      where: { id: sessionId },
-      data: {
-        tableId: targetTable.id,
-        tableLabel: newTableDisplay,
-      },
-      include: {
-        table: {
-          select: { id: true, tableNumber: true, branchId: true, isActive: true },
-        },
-      },
-    });
+    // ---- Transaction: order-count check + table update (race-safe) -------
+    // We use an interactive transaction so the count and the update are atomic.
+    // If any order exists on this session the update is skipped and 409 is returned.
+    const result = await prisma.$transaction(async (tx) => {
+      // Lock the session row by reading it inside the transaction.
+      const lockedSession = await tx.session.findUnique({
+        where: { id: sessionId },
+        select: { id: true, status: true, tableId: true },
+      });
 
-    // 2. Find active orders attached to this session that are not completed or cancelled
-    const activeOrders = await prisma.order.findMany({
-      where: {
-        sessionId: sessionId,
-        status: { in: ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY'] },
-      },
-      include: {
-        orderItems: { include: { menuItem: true } },
-        user: { select: { id: true, name: true, email: true } },
-        payment: true,
-        etaPrediction: true,
-        statusHistory: { orderBy: { createdAt: 'asc' } },
-      },
-    });
+      if (!lockedSession || lockedSession.status !== 'ACTIVE') {
+        return { type: 'error', status: 403, code: 'TABLE_SESSION_REQUIRED', message: 'Session is no longer active.' };
+      }
 
-    const updatedOrders = [];
-    const { emitToKitchen, emitToVendor, emitToAdmin, emitToUser } = require('../sockets/socket');
+      // Rule A: any order = block
+      const orderCount = await tx.order.count({ where: { sessionId } });
+      if (orderCount > 0) {
+        return { type: 'error', status: 409, code: 'SESSION_HAS_ORDERS', message: 'Cannot change table after orders have been placed. Start a new session.' };
+      }
 
-    for (const ord of activeOrders) {
-      const updatedOrd = await prisma.order.update({
-        where: { id: ord.id },
+      // Perform the table change (cart-only session)
+      const updated = await tx.session.update({
+        where: { id: sessionId },
         data: {
           tableId: targetTable.id,
-          tableNumber: newTableDisplay,
           tableLabel: newTableDisplay,
         },
         include: {
-          table: { select: { id: true, tableNumber: true } },
-          orderItems: { include: { menuItem: true } },
-          user: { select: { id: true, name: true, email: true } },
-          payment: true,
-          etaPrediction: true,
-          statusHistory: { orderBy: { createdAt: 'asc' } },
+          table: { select: { id: true, tableNumber: true, branchId: true, isActive: true } },
         },
       });
+      return { type: 'ok', session: updated };
+    });
 
-      // Record in status history for audit
-      await prisma.orderStatusHistory.create({
-        data: {
-          orderId: ord.id,
-          previousStatus: ord.status,
-          newStatus: ord.status,
-          changedByUserId: customerId || ord.userId,
-          note: `Customer moved table: Shifted from ${oldTableDisplay} to ${newTableDisplay}`,
-        },
-      });
-
-      // Realtime notification to Kitchen, Cashier/Vendor, Admin, and Customer
-      emitToKitchen('order:update', updatedOrd);
-      emitToVendor('order:update', updatedOrd);
-      emitToAdmin('order:update', updatedOrd);
-      emitToUser(updatedOrd.userId, 'order:update', updatedOrd);
-
-      emitToKitchen('table:shift', {
-        orderId: updatedOrd.id,
-        orderNumber: updatedOrd.orderNumber,
-        oldTable: oldTableDisplay,
-        newTable: newTableDisplay,
-      });
-
-      updatedOrders.push(updatedOrd);
+    if (result.type === 'error') {
+      return res.status(result.status).json({ error: result.message, code: result.code });
     }
 
+    const updatedSession = result.session;
+
     return res.json({
-      message: `Successfully transferred to ${newTableDisplay}. Kitchen and staff have been notified.`,
+      message: `Successfully transferred to ${newTableDisplay}.`,
       session: {
         ...updatedSession,
         tableNumber: updatedSession.table?.tableNumber || formatTableLabel(updatedSession),
         tableLabel: formatTableLabel(updatedSession),
       },
-      orders: updatedOrders,
+      orders: [],
       oldTable: oldTableDisplay,
       newTable: newTableDisplay,
     });

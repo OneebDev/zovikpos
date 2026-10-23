@@ -38,6 +38,12 @@ const sessionStartSchema = z.object({
   validateOnly: z.boolean().optional(),
 }).passthrough();
 
+const sessionTransferSchema = z.object({
+  sessionId: z.string().trim().min(1, 'Session ID is required').max(100),
+  qrToken: z.string().trim().min(1, 'Target table QR token is required').max(500),
+  targetTableNumber: z.string().max(50).optional(),
+}).passthrough();
+
 // --- Order Schemas ---
 const createOrderSchema = z.object({
   sessionId: z.string().trim().max(100).optional(),
@@ -160,6 +166,7 @@ module.exports = {
   sendOtpSchema,
   verifyOtpSchema,
   sessionStartSchema,
+  sessionTransferSchema,
   createOrderSchema,
   submitPaymentSchema,
   createTableSchema,

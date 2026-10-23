@@ -65,9 +65,10 @@ model Session {
   customerId  Int?
   customer    User?      @relation(fields: [customerId], references: [id])
   status      String     @default("ACTIVE") // ACTIVE, CHECKOUT, COMPLETED, EXPIRED, CANCELLED
-  startedAt   DateTime   @default(now())
-  expiresAt   DateTime
-  completedAt DateTime?
+  startedAt      DateTime   @default(now())
+  expiresAt      DateTime
+  lastActivityAt DateTime?
+  completedAt    DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   cart        Cart?
