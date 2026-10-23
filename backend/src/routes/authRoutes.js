@@ -11,13 +11,21 @@ const {
 const authMiddleware = require('../middleware/authMiddleware');
 const { authLimiter, otpLimiter, otpVerificationLimiter } = require('../middleware/rateLimitMiddleware');
 
+const { validateBody } = require('../middleware/validate');
+const {
+  registerSchema,
+  loginSchema,
+  sendOtpSchema,
+  verifyOtpSchema,
+} = require('../schemas/apiSchemas');
+
 const router = express.Router();
 
-router.post('/register', authLimiter, register);
-router.post('/login', authLimiter, login);
+router.post('/register', authLimiter, validateBody(registerSchema), register);
+router.post('/login', authLimiter, validateBody(loginSchema), login);
 router.post('/refresh-token', refreshToken);
-router.post('/send-otp', otpLimiter, sendOTP);
-router.post('/verify-otp', otpVerificationLimiter, verifyOTP);
+router.post('/send-otp', otpLimiter, validateBody(sendOtpSchema), sendOTP);
+router.post('/verify-otp', otpVerificationLimiter, validateBody(verifyOtpSchema), verifyOTP);
 router.post('/logout', authMiddleware, logout);
 router.get('/profile', authMiddleware, getProfile);
 

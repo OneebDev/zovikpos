@@ -51,6 +51,9 @@ const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
 const { saveReceivingBatch, confirmReceivingBatch } = require('../controllers/inventoryReceivingBatchController');
 
+const { validateBody, validateParams } = require('../middleware/validate');
+const { createInventoryItemSchema, updateInventoryItemSchema, idParamSchema } = require('../schemas/apiSchemas');
+
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -61,10 +64,10 @@ router.get('/summary', getInventorySummary);
 router.get('/', getInventoryItems);
 router.post('/bulk', roleMiddleware(['ADMIN', 'VENDOR']), bulkAddInventoryItems);
 router.post('/items/bulk', roleMiddleware(['ADMIN', 'VENDOR']), bulkAddInventoryItems);
-router.post('/', roleMiddleware(['ADMIN', 'VENDOR']), addInventoryItem);
-router.put('/:id', roleMiddleware(['ADMIN', 'VENDOR']), updateInventoryItem);
+router.post('/', roleMiddleware(['ADMIN', 'VENDOR']), validateBody(createInventoryItemSchema), addInventoryItem);
+router.put('/:id', roleMiddleware(['ADMIN', 'VENDOR']), validateParams(idParamSchema), validateBody(updateInventoryItemSchema), updateInventoryItem);
 router.delete('/items/bulk', roleMiddleware(['ADMIN', 'VENDOR']), bulkDeleteInventoryItems);
-router.delete('/:id', roleMiddleware(['ADMIN', 'VENDOR']), deleteInventoryItem);
+router.delete('/:id', roleMiddleware(['ADMIN', 'VENDOR']), validateParams(idParamSchema), deleteInventoryItem);
 
 // Learned Aliases & Intelligent Item Matching
 router.get('/aliases', getLearnedAliasesController);

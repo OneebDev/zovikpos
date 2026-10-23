@@ -15,6 +15,9 @@ const sessionActivityMiddleware = require('../middleware/sessionActivityMiddlewa
 const { idempotencyMiddleware } = require('../middleware/idempotencyMiddleware');
 const { orderCreateCombinedLimiter } = require('../middleware/rateLimitMiddleware');
 
+const { validateBody, validateParams } = require('../middleware/validate');
+const { createOrderSchema, idParamSchema } = require('../schemas/apiSchemas');
+
 const router = express.Router();
 
 router.use(sessionActivityMiddleware);
@@ -25,12 +28,12 @@ router.get('/track/:token', getOrderByTrackingToken);
 // Protected Order Management Endpoints
 router.use(authMiddleware);
 
-router.post('/', orderCreateCombinedLimiter, idempotencyMiddleware, createOrder);
+router.post('/', orderCreateCombinedLimiter, validateBody(createOrderSchema), idempotencyMiddleware, createOrder);
 router.get('/', getAllOrders);
 router.delete('/bulk', roleMiddleware(['ADMIN', 'VENDOR']), bulkDeleteOrders);
-router.delete('/:id', roleMiddleware(['ADMIN', 'VENDOR']), deleteOrder);
-router.get('/:id', getOrderById);
-router.put('/:id/status', roleMiddleware(['ADMIN', 'VENDOR', 'KITCHEN', 'CUSTOMER']), updateOrderStatus);
-router.put('/:id/transfer-table', roleMiddleware(['ADMIN', 'VENDOR', 'CUSTOMER']), transferSingleOrderTable);
+router.delete('/:id', roleMiddleware(['ADMIN', 'VENDOR']), validateParams(idParamSchema), deleteOrder);
+router.get('/:id', validateParams(idParamSchema), getOrderById);
+router.put('/:id/status', roleMiddleware(['ADMIN', 'VENDOR', 'KITCHEN', 'CUSTOMER']), validateParams(idParamSchema), updateOrderStatus);
+router.put('/:id/transfer-table', roleMiddleware(['ADMIN', 'VENDOR', 'CUSTOMER']), validateParams(idParamSchema), transferSingleOrderTable);
 
 module.exports = router;
