@@ -189,19 +189,20 @@ const getInventoryItems = async (req, res) => {
  * Add a new inventory item
  */
 const addInventoryItem = async (req, res) => {
-  const {
-    name,
-    stockLevel,
-    unit,
-    minThreshold,
-    maxThreshold,
-    category,
-    sku,
-    costPrice,
-    expiryDate,
-    supplierId,
-    branchId
-  } = req.body;
+    const {
+      name,
+      stockLevel,
+      unit,
+      minThreshold,
+      maxThreshold,
+      category,
+      sku,
+      costPrice,
+      expiryDate,
+      supplierId,
+      branchId,
+      packageConversions
+    } = req.body;
 
   if (!name || !unit) {
     return res.status(400).json({ error: 'Name and unit are required.' });
@@ -262,6 +263,7 @@ const addInventoryItem = async (req, res) => {
         sku: sku || null,
         costPrice: costPrice ? parseFloat(costPrice) : 0.0,
         expiryDate: expiryDate ? new Date(expiryDate) : null,
+        packageConversions: packageConversions && typeof packageConversions === 'object' ? packageConversions : null,
         supplierId: supplierId ? parseInt(supplierId, 10) : null,
         branchId: resolvedBranchId
       },
@@ -310,7 +312,8 @@ const updateInventoryItem = async (req, res) => {
     costPrice,
     expiryDate,
     supplierId,
-    branchId
+    branchId,
+    packageConversions
   } = req.body;
 
   try {
@@ -334,7 +337,8 @@ const updateInventoryItem = async (req, res) => {
         ...(costPrice !== undefined ? { costPrice: parseFloat(costPrice) } : {}),
         ...(expiryDate !== undefined ? { expiryDate: expiryDate ? new Date(expiryDate) : null } : {}),
         ...(supplierId !== undefined ? { supplierId: supplierId ? parseInt(supplierId, 10) : null } : {}),
-        ...(branchId !== undefined ? { branchId: parseInt(branchId, 10) } : {})
+        ...(branchId !== undefined ? { branchId: parseInt(branchId, 10) } : {}),
+        ...(packageConversions !== undefined ? { packageConversions } : {})
       },
       include: { supplier: true, branch: true }
     });
@@ -756,7 +760,7 @@ const getRecipeMargins = async (req, res) => {
           const inv = r.inventoryItem;
           if (inv && inv.costPrice) {
             try {
-              const convertedQty = convertUnit(r.quantity, r.unit, inv.unit);
+              const convertedQty = convertUnit(r.quantity, r.unit, inv.unit, inv.packageConversions);
               foodCost += convertedQty * inv.costPrice;
             } catch {
               foodCost += r.quantity * inv.costPrice;
@@ -2103,6 +2107,7 @@ const confirmReceiving = async (req, res) => {
                   stockLevel: 0, // stock will be added below via STOCK_IN
                   minThreshold: parseFloat(ni.minThreshold) || 10,
                   maxThreshold: parseFloat(ni.maxThreshold) || 100,
+                  packageConversions: ni.packageConversions && typeof ni.packageConversions === 'object' ? ni.packageConversions : null,
                   supplierId: resolvedSupplierId || null,
                   branchId: branchIdForNew,
                   expiryDate: ni.expiryDate ? new Date(ni.expiryDate) : null,
@@ -2148,10 +2153,13 @@ const confirmReceiving = async (req, res) => {
           throw new Error(`Inventory item ID ${item.inventoryItemId} not found.`);
         }
 
+        const convertedReceivedQty = convertUnit(item.quantity, item.unit, existingItem.unit, existingItem.packageConversions);
         const qtyBefore = existingItem.stockLevel;
-        const qtyAfter = qtyBefore + item.quantity;
-        const purchaseQty = item.quantity;
-        const purchaseUnitCost = item.unitCost > 0 ? item.unitCost : (existingItem.costPrice || 0);
+        const qtyAfter = qtyBefore + convertedReceivedQty;
+        const purchaseQty = convertedReceivedQty;
+        const purchaseUnitCost = item.unitCost > 0
+          ? (item.quantity > 0 ? (item.quantity * item.unitCost) / convertedReceivedQty : item.unitCost)
+          : (existingItem.costPrice || 0);
 
         // Weighted-Average Costing: ((qtyBefore * oldCost) + (purchaseQty * purchaseCost)) / qtyAfter
         let calculatedCostPrice = existingItem.costPrice || 0;
@@ -2185,12 +2193,12 @@ const confirmReceiving = async (req, res) => {
         logsToCreate.push({
           inventoryItemId: existingItem.id,
           type: 'STOCK_IN',
-          quantity: item.quantity,
+          quantity: convertedReceivedQty,
           quantityBefore: qtyBefore,
           quantityAfter: qtyAfter,
-          changeQty: item.quantity,
+          changeQty: convertedReceivedQty,
           cost: item.totalCost,
-          reason: `Stock receiving #${existingReceiving.receivingNumber} (Inv: ${existingReceiving.invoiceNumber || 'N/A'})`,
+          reason: `Stock receiving #${existingReceiving.receivingNumber} (Inv: ${existingReceiving.invoiceNumber || 'N/A'}, Unit: ${item.quantity} ${item.unit} -> ${convertedReceivedQty} ${existingItem.unit})`,
           batchNumber: item.batchNumber,
           expiryDate: item.expiryDate,
           supplierId: resolvedSupplierId,

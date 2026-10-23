@@ -255,19 +255,27 @@ app.use((err, req, res, next) => {
   }
 
   const statusCode =
-    Number.isInteger(err.statusCode) &&
-    err.statusCode >= 400 &&
-    err.statusCode < 600
-      ? err.statusCode
+    Number.isInteger(err.statusCode || err.status) &&
+    (err.statusCode || err.status) >= 400 &&
+    (err.statusCode || err.status) < 600
+      ? (err.statusCode || err.status)
       : 500;
 
-  const message =
-    process.env.NODE_ENV === 'production'
-      ? 'An unexpected server error occurred.'
-      : err.message || 'An unexpected server error occurred.';
+  // Preserve user-facing errors (like unit conversion errors, validation errors, 4xx errors)
+  const isClientSafe = statusCode < 500 || err.code === 'UNIT_CONVERSION_ERROR' || Boolean(err.card);
+  const message = (isClientSafe || process.env.NODE_ENV !== 'production')
+    ? (err.message || 'An unexpected error occurred.')
+    : 'An unexpected server error occurred.';
 
   res.status(statusCode).json({
     error: message,
+    message,
+    code: err.code || (statusCode >= 500 ? 'INTERNAL_SERVER_ERROR' : 'BAD_REQUEST'),
+    card: err.card || null,
+    fromUnit: err.fromUnit || null,
+    toUnit: err.toUnit || null,
+    details: err.details || null,
+    requestId: req.requestId || null,
   });
 });
 

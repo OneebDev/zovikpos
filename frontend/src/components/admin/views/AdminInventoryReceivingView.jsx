@@ -1,4 +1,4 @@
-﻿import ThemedSelect from '../../common/ThemedSelect';
+import ThemedSelect from '../../common/ThemedSelect';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -413,7 +413,7 @@ const previewConvertedQuantity = (amount, fromUnit, toUnit) => {
   return null;
 };
 
-const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh, showToast, onNavigateToCatalog }) => {
+const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh, showToast, showErrorDialog, onNavigateToCatalog }) => {
   const initialDraft = useMemo(() => getStoredDraft(), []);
 
   const [subTab, setSubTab] = useState(initialDraft?.subTab || 'NEW_RECEIVING'); // NEW_RECEIVING | HISTORY
@@ -1924,8 +1924,49 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       return true;
     } catch (err) {
       console.error('Submit receiving error:', err);
-      if (targetStatus === 'DRAFT') setDraftSaveResult({ success: false, message: err.response?.data?.error || 'Draft could not be saved. Your entered data has been kept.' });
-      if (showToast) showToast(err.response?.data?.error || 'Something went wrong. Please try again.', 'error');
+      const errData = err.response?.data;
+      const errorMsg = errData?.error || errData?.message || err.message || 'Something went wrong. Please try again.';
+
+      if (targetStatus === 'DRAFT') {
+        setDraftSaveResult({ success: false, message: errorMsg });
+      }
+
+      // Check for unit conversion failure or persistent dialog trigger
+      if (errData?.code === 'UNIT_CONVERSION_ERROR' || errorMsg.includes('Incompatible unit conversion')) {
+        const itemMatch = errorMsg.match(/^([^:]+): Incompatible unit conversion from "([^"]+)" \(([^)]+)\) to "([^"]+)" \(([^)]+)\)/);
+        const itemName = itemMatch ? itemMatch[1].trim() : null;
+        const fromUnit = itemMatch ? itemMatch[2].trim() : (errData?.fromUnit || null);
+        const toUnit = itemMatch ? itemMatch[4].trim() : (errData?.toUnit || null);
+
+        if (showErrorDialog) {
+          showErrorDialog({
+            title: 'Stock could not be received',
+            message: 'The selected unit cannot be converted to the item’s stock unit because the required conversion has not been configured.',
+            itemName,
+            fromUnit,
+            toUnit,
+            missingConfig: `Configure an item-specific conversion factor (e.g. 1 ${fromUnit || 'PACK'} = X ${toUnit || 'KG'}) or select the item's base unit.`,
+            onConfigure: onNavigateToCatalog ? () => onNavigateToCatalog() : null,
+            actionLabel: 'Change Receiving Unit',
+            onAction: () => {
+              if (showErrorDialog) showErrorDialog(null);
+            }
+          });
+        } else if (showToast) {
+          showToast(errorMsg, 'error');
+        }
+      } else {
+        if (showErrorDialog && (err.response?.status >= 400 || !err.response)) {
+          showErrorDialog({
+            title: 'Stock could not be received',
+            message: errorMsg,
+            details: errData?.details || null,
+            onRetry: () => executeSubmitReceiving(targetStatus, rowsOverride, draftNewRowsOverride),
+          });
+        } else if (showToast) {
+          showToast(errorMsg, 'error');
+        }
+      }
       return false;
     } finally {
       setLoading(false);
@@ -3011,7 +3052,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-3">
                   {/* Method 1: Add Items Manually */}
                   <button
                     type="button"
@@ -3025,9 +3066,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <div className="p-2.5 rounded-xl bg-orange-500/20 text-orange-400 shrink-0">
                       <Edit3 className="w-5 h-5" />
                     </div>
-                    <div className="min-w-0">
-                      <h4 className="break-words text-xs font-black text-[var(--text-main)]">Add Items Manually</h4>
-                      <p className="break-words text-[10px] leading-relaxed text-[var(--text-muted)] mt-0.5">Enter items and quantities using touch-friendly form.</p>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="whitespace-normal [overflow-wrap:anywhere] text-xs font-black text-[var(--text-main)]">Add Items Manually</h4>
+                      <p className="whitespace-normal [overflow-wrap:anywhere] text-[10px] leading-relaxed text-[var(--text-muted)] mt-0.5">Enter items and quantities using touch-friendly form.</p>
                     </div>
                   </button>
 
@@ -3044,9 +3085,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0">
                       <FileSpreadsheet className="w-5 h-5" />
                     </div>
-                    <div className="min-w-0">
-                      <h4 className="break-words text-xs font-black text-[var(--text-main)]">Upload Excel / CSV</h4>
-                      <p className="break-words text-[10px] leading-relaxed text-[var(--text-muted)] mt-0.5">Upload stock Excel file and auto-match catalog items.</p>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="whitespace-normal [overflow-wrap:anywhere] text-xs font-black text-[var(--text-main)]">Upload Excel / CSV</h4>
+                      <p className="whitespace-normal [overflow-wrap:anywhere] text-[10px] leading-relaxed text-[var(--text-muted)] mt-0.5">Upload stock Excel file and auto-match catalog items.</p>
                     </div>
                   </button>
 
@@ -3066,9 +3107,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     <div className="p-2.5 rounded-xl bg-orange-500/20 text-orange-400 shrink-0">
                       <Camera className="w-5 h-5" />
                     </div>
-                    <div className="min-w-0">
-                      <h4 className="break-words text-xs font-black text-[var(--text-main)]">Upload Invoice</h4>
-                      <p className="break-words text-[10px] leading-relaxed text-[var(--text-muted)] mt-0.5">Upload paper bill, image, or PDF for AI recognition.</p>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="whitespace-normal [overflow-wrap:anywhere] text-xs font-black text-[var(--text-main)]">Upload Invoice</h4>
+                      <p className="whitespace-normal [overflow-wrap:anywhere] text-[10px] leading-relaxed text-[var(--text-muted)] mt-0.5">Upload paper bill, image, or PDF for AI recognition.</p>
                     </div>
                   </button>
                 </div>

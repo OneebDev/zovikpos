@@ -76,8 +76,8 @@ const AdminLayout = ({ activeTab, onSelectTab, user, onLogout, children, onRefre
       {/* Floating Main Content Panel */}
       <div className="floating-main flex-1 flex flex-col min-w-0 transition-all duration-300 relative z-[1]">
         {/* Floating Topbar / Header */}
-        <header className="floating-header staff-admin-header">
-          <div className="staff-admin-header__controls flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto">
+        <header className="floating-header staff-admin-header flex-wrap">
+          <div className="staff-admin-header__controls flex flex-1 items-center gap-2 sm:gap-3 min-w-0">
             {/* Mobile Sidebar Toggle Button */}
             <button
               onClick={() => setIsMobileOpen(true)}
@@ -144,7 +144,7 @@ const AdminLayout = ({ activeTab, onSelectTab, user, onLogout, children, onRefre
           </div>
 
           {/* Mode Indicator Badge (Demo vs Live DB), Theme Toggle, User info & Logout */}
-          <div className="staff-admin-header__account flex items-center gap-2 sm:gap-3 self-end sm:self-auto min-w-0">
+          <div className="staff-admin-header__account flex shrink-0 items-center gap-2 sm:gap-3 self-center min-w-0">
             <DemoStatusBadge user={user} />
 
             {/* Theme Toggle Button — shows active theme icon highlighted */}

@@ -1,4 +1,4 @@
-﻿import ThemedSelect from '../../common/ThemedSelect';
+import ThemedSelect from '../../common/ThemedSelect';
 import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -232,7 +232,7 @@ const inventoryLineSubtotal = (quantity, unitCost) => roundInventoryMoney((Numbe
 const sumInventorySubtotals = (rows, getQuantity = row => row.stockLevel ?? row.quantity, getCost = row => row.costPrice) =>
   roundInventoryMoney((rows || []).reduce((sum, row) => sum + inventoryLineSubtotal(getQuantity(row), getCost(row)), 0));
 
-const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, focusRequest, onFocusHandled }) => {
+const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, showErrorDialog, focusRequest, onFocusHandled }) => {
   const [activeTab, setActiveTab] = useState('CATALOG');
   const [hasVisitedReceiving, setHasVisitedReceiving] = useState(false);
 
@@ -2966,8 +2966,8 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
           <div className="min-w-0 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-5xl w-full p-3 sm:p-6 space-y-4 shadow-2xl animate-scale-up my-auto max-h-[92dvh] flex flex-col overflow-hidden">
 
             {/* Modal Header */}
-            <div className="flex min-w-0 flex-col gap-3 border-b border-[var(--border-color)] pb-3.5 shrink-0">
-              <div className="flex min-w-0 items-start justify-between gap-2">
+            <div className="relative flex min-w-0 flex-col gap-3 border-b border-[var(--border-color)] pb-3.5 shrink-0">
+              <div className="flex min-w-0 items-start justify-between gap-2 pr-10">
                 <div className="min-w-0">
                 <h3 className="text-base sm:text-lg font-black text-[var(--text-main)] font-display flex items-center gap-2">
                   <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-400">📦</span>
@@ -2981,7 +2981,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                   type="button"
                   onClick={() => setShowAddItemModal(false)}
                   aria-label="Close add ingredient form"
-                  className="shrink-0 p-1 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
+                  className="absolute right-0 top-0 shrink-0 p-1 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -3030,8 +3030,8 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, f
                 <div className="min-w-0 bg-[var(--bg-color)]/70 border border-[var(--border-color)] p-3 sm:p-4 rounded-2xl space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--border-color)]/60 pb-2.5">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="p-1 rounded-lg bg-orange-500/10 text-orange-400 font-bold">⚡ Card A</span>
-                      <h4 className="min-w-0 font-black text-[11px] sm:text-xs text-[var(--text-main)] uppercase tracking-wider">
+                      <span className="shrink-0 whitespace-nowrap p-1 rounded-lg bg-orange-500/10 text-orange-400 font-bold">⚡ Card A</span>
+                      <h4 className="min-w-0 flex-1 break-words font-black text-[11px] sm:text-xs text-[var(--text-main)] uppercase tracking-wider">
                         Quick Pick Presets (Click to Auto-Fill):
                       </h4>
                     </div>

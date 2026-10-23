@@ -93,7 +93,7 @@ const verifyStockForQty = (menuItem, qty) => {
       const rawNeeded = recipe.quantity * qty;
       let neededInInvUnit;
       try {
-        neededInInvUnit = convertUnit(rawNeeded, recipe.unit, invItem.unit);
+        neededInInvUnit = convertUnit(rawNeeded, recipe.unit, invItem.unit, invItem.packageConversions);
       } catch {
         neededInInvUnit = rawNeeded;
       }

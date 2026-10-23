@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { getSocket } from '../services/socket';
 import AdminLayout from './admin/AdminLayout';
+import PersistentErrorDialog from './common/PersistentErrorDialog';
 
 // Import Views
 const AdminHomeView = lazy(() => import('./admin/views/AdminHomeView'));
@@ -56,6 +57,7 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [forecastingLoading, setForecastingLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+  const [persistentError, setPersistentError] = useState(null);
   const [inventoryFocus, setInventoryFocus] = useState(null);
   const statsRequestRef = useRef(0);
   const statsAbortRef = useRef(null);
@@ -73,6 +75,18 @@ const AdminDashboard = ({ user, onLogout }) => {
   const showToast = useCallback((msg, type = 'success') => {
     setToastMessage({ text: msg, type });
     setTimeout(() => setToastMessage(null), 3500);
+  }, []);
+
+  const showErrorDialog = useCallback((errorConfig) => {
+    if (!errorConfig) {
+      setPersistentError(null);
+      return;
+    }
+    if (typeof errorConfig === 'string') {
+      setPersistentError({ message: errorConfig, title: 'Action Failed' });
+    } else {
+      setPersistentError(errorConfig);
+    }
   }, []);
 
   const refreshBranchOptions = async () => {
@@ -387,6 +401,7 @@ const AdminDashboard = ({ user, onLogout }) => {
           logs={logs}
           onRefresh={fetchDashboardData}
           showToast={showToast}
+          showErrorDialog={showErrorDialog}
           focusRequest={inventoryFocus}
           onFocusHandled={() => setInventoryFocus(null)}
         />
@@ -444,6 +459,23 @@ const AdminDashboard = ({ user, onLogout }) => {
 
       {activeTab === 'branches' && <AdminBranchesView showToast={showToast} onBranchesChanged={refreshBranchOptions} />}
       </Suspense>
+
+      {/* Persistent Error Dialog for Critical Issues (e.g. Incompatible Units, DB failures) */}
+      <PersistentErrorDialog
+        isOpen={Boolean(persistentError)}
+        title={persistentError?.title || 'Action Could Not Be Completed'}
+        message={persistentError?.message || ''}
+        itemName={persistentError?.itemName}
+        fromUnit={persistentError?.fromUnit}
+        toUnit={persistentError?.toUnit}
+        missingConfig={persistentError?.missingConfig}
+        details={persistentError?.details}
+        onClose={() => setPersistentError(null)}
+        onRetry={persistentError?.onRetry}
+        onConfigure={persistentError?.onConfigure}
+        actionLabel={persistentError?.actionLabel}
+        onAction={persistentError?.onAction}
+      />
     </AdminLayout>
   );
 };

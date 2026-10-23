@@ -247,6 +247,7 @@ const materializeDeferredItems = async (tx, receiving) => {
         stockLevel: 0,
         minThreshold: Number(raw.minThreshold) || 10,
         maxThreshold: Number(raw.maxThreshold) || 100,
+        packageConversions: raw.packageConversions && typeof raw.packageConversions === 'object' ? raw.packageConversions : null,
         supplierId: receiving.supplierId,
         branchId: receiving.branchId,
         expiryDate: raw.expiryDate ? new Date(raw.expiryDate) : null,
@@ -300,7 +301,7 @@ const receiveOneInTransaction = async (tx, receivingId) => {
     const item = await tx.inventoryItem.findUnique({ where: { id: line.inventoryItemId } });
     if (!item) throw new BatchError(`Catalog item ${line.inventoryItemId} no longer exists.`, 400, receiving.receivingNumber);
     let quantity;
-    try { quantity = convertUnit(line.quantity, line.unit, item.unit); }
+    try { quantity = convertUnit(line.quantity, line.unit, item.unit, item.packageConversions); }
     catch (error) {
       throw new BatchError(`${item.name}: ${error.message}`, 400, receiving.receivingNumber);
     }

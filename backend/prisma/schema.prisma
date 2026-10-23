@@ -263,6 +263,7 @@ model InventoryItem {
   maxThreshold   Float                    @default(100.0)
   costPrice      Float                    @default(0.0)
   expiryDate     DateTime?
+  packageConversions Json?
   supplierId     Int?
   supplier       Supplier?                @relation(fields: [supplierId], references: [id])
   createdAt      DateTime                 @default(now())

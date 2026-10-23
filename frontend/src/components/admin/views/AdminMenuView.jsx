@@ -890,14 +890,14 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                     return (
                       <div
                         key={v.id}
-                        className={`admin-menu-variant-row flex min-w-0 items-center justify-between gap-2 p-2 sm:p-2.5 rounded-xl border transition-all ${
+                        className={`admin-menu-variant-row flex min-w-0 flex-wrap items-center justify-between gap-2 p-2 sm:p-2.5 rounded-xl border transition-all ${
                           isVActive
                             ? 'bg-[var(--bg-color)] border-[var(--border-color)]'
                             : 'bg-rose-500/5 border-rose-500/20 opacity-70'
                         }`}
                       >
                         {/* Left: Checkbox + Unit + Price */}
-                        <div className="admin-menu-variant-details flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
+                        <div className="admin-menu-variant-details flex min-w-0 flex-[1_1_120px] items-center gap-1.5 sm:gap-2">
                           {selectionMode && <input
                             type="checkbox"
                             checked={selectedMenuItemIds.has(v.id)}
@@ -916,7 +916,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                         </div>
 
                         {/* Right: Actions */}
-                        <div className="admin-menu-variant-actions flex items-center gap-1 shrink-0 ml-auto">
+                        <div className="admin-menu-variant-actions flex shrink-0 items-center justify-end gap-1 ml-auto">
                           <button
                             type="button"
                             onClick={() => handleToggleAvailability(v)}

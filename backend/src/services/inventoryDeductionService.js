@@ -180,7 +180,7 @@ const deductInventoryForConfirmedOrder = async (orderId, userId = null, tx = nul
           const rawNeededQty = recipe.quantity * itemQty;
           let convertedQty;
           try {
-            convertedQty = convertUnit(rawNeededQty, recipe.unit, invItem.unit);
+            convertedQty = convertUnit(rawNeededQty, recipe.unit, invItem.unit, invItem.packageConversions);
           } catch (convErr) {
             console.warn(`[InventoryDeduction] Unit conversion failed from '${recipe.unit}' to '${invItem.unit}' for '${invItem.name}': ${convErr.message}. Falling back to raw qty ${rawNeededQty}.`);
             convertedQty = rawNeededQty;
