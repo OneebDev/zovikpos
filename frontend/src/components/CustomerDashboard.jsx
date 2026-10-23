@@ -629,6 +629,13 @@ const scrollCardWithinNearestContainer = (card) => {
   else scrollContainer.scrollBy({ top: delta, behavior: reduceMotion ? 'auto' : 'smooth' });
 };
 
+// Returns true only for genuine network failures (no response, timeout, ECONNABORTED, or 5xx server errors)
+const isNetworkOrServerError = (err) => {
+  if (!err) return false;
+  if (!err.response) return true; // No response = offline, network error, timeout, aborted
+  return Number(err.response.status) >= 500;
+};
+
 const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   useEffect(() => {
     const dismissTooltipOnEscape = (event) => {
@@ -641,6 +648,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   const navigate = useNavigate();
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
 
+  const [tableRateLimitError, setTableRateLimitError] = useState('');
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -982,10 +990,13 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
 
   // Table Switching Modal State
   const [showTableSwitchModal, setShowTableSwitchModal] = useState(false);
+  const [tableSwitchMode, setTableSwitchMode] = useState('DIFFERENT_TABLE'); // 'SAME_TABLE' | 'DIFFERENT_TABLE'
   const [pendingTableToken, setPendingTableToken] = useState(null);
   const [pendingTableNumber, setPendingTableNumber] = useState('');
   // Snapshot of the OLD table name so modal always shows correct "from" table
   const [currentTableSnapshot, setCurrentTableSnapshot] = useState('');
+  const [tableSwitchOrderConflictMessage, setTableSwitchOrderConflictMessage] = useState('');
+  const isTableSwitchingRef = React.useRef(false);
 
   // Change Delivery Table (post-order) state
   const [availableTables, setAvailableTables] = useState([]);
@@ -1230,15 +1241,22 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
           validatedQr = validationResponse.data;
         } catch (validationError) {
           if (!isActive || timedOut) return;
+          if (validationError.response?.status === 429) {
+            setTableRateLimitError('Too many attempts. Please wait a moment and try again.');
+            window.setTimeout(() => setTableRateLimitError(''), 5000);
+          }
           const invalidQr = validationError.response?.data?.code === 'TABLE_QR_REQUIRED'
             || ((validationError.response?.status === 400 || validationError.response?.status === 401)
               && /invalid|expired|token|qr code/i.test(validationError.response?.data?.error || validationError.response?.data?.message || ''));
           if (invalidQr) {
             setTableConnectionRetryable(false);
             setTableConnectionError('This table link is no longer valid. Copy the current table link from Admin and try again.');
-          } else {
-            setTableConnectionRetryable(!validationError.response || validationError.response.status >= 500);
+          } else if (isNetworkOrServerError(validationError)) {
+            setTableConnectionRetryable(true);
             setTableConnectionError(validationError.response?.data?.error || 'The table service is temporarily unavailable.');
+          } else {
+            setTableConnectionRetryable(false);
+            setTableError(validationError.response?.data?.error || 'Could not verify table link.');
           }
           return;
         }
@@ -1248,34 +1266,6 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
           setTableConnectionError('This table link is not connected to an active table. Copy the current table link from Admin.');
           return;
         }
-        const previouslyScannedToken = parseTableToken(storedTableToken).token;
-        const scannedNewQr = Boolean(
-          storedSession
-          && previouslyScannedToken
-          && previouslyScannedToken !== cleanRouteToken
-        );
-        if (scannedNewQr) {
-          // A newly generated QR for the same table represents a new dining
-          // visit. Do not attach the old visit's session or cart to it.
-          ['customer_sessionId', 'customer_verifiedSessionId', 'customer_cart', 'customer_checkoutStep'].forEach((key) => {
-            localStorage.removeItem(key);
-            sessionStorage.removeItem(key);
-          });
-          storedSession = '';
-          storedTable = '';
-          setSessionId('');
-          setCart({});
-          setIsSessionVerified(false);
-        }
-        // Persist the verified QR immediately. Login or email-app navigation
-        // can reload the app before session creation finishes; the table link
-        // must still be available for recovery on /customer.
-        localStorage.setItem('customer_tableToken', cleanRouteToken);
-        sessionStorage.setItem('customer_tableToken', cleanRouteToken);
-        localStorage.setItem('customer_tableId', newTableDisplay);
-        sessionStorage.setItem('customer_tableId', newTableDisplay);
-        setRequiresTableQr(false);
-        setTableError('');
 
         // A table-switch choice is offered only when the saved session is still
         // active and linked to a real table. Stale counter sessions are discarded.
@@ -1288,10 +1278,14 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             const currentSession = currentSessionResponse.data.session;
             savedSessionIsPhysical = Boolean(currentSession?.status === 'ACTIVE' && currentSession.tableId && currentSession.table?.isActive);
             savedSessionTableId = String(currentSession?.tableId || currentSession?.table?.id || '');
-          } catch {
-            // A server/network error must not discard a customer's session or cart.
-            setTableConnectionError('The table service is temporarily unavailable.');
-            return;
+          } catch (sessionErr) {
+            if (isNetworkOrServerError(sessionErr)) {
+              setTableConnectionRetryable(true);
+              setTableConnectionError('The table service is temporarily unavailable.');
+              return;
+            }
+            // 4xx error (e.g. 403, 404) means this session is not valid; treat as non-physical so it can be cleared/reset
+            savedSessionIsPhysical = false;
           }
           if (!savedSessionIsPhysical) {
             const protectedCustomer = checkIsCustomerLoggedIn()
@@ -1308,30 +1302,78 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
           }
         }
 
+        // Check if the scanned token belongs to the SAME table or a DIFFERENT table.
         const isDifferentTable = savedSessionIsPhysical
           && Boolean(savedSessionTableId)
           && savedSessionTableId !== String(validatedQr.table?.id || '');
 
+        const previouslyScannedToken = parseTableToken(storedTableToken).token;
+        const isSameTableRegeneratedQr = Boolean(
+          storedSession
+          && savedSessionIsPhysical
+          && !isDifferentTable
+          && previouslyScannedToken
+          && previouslyScannedToken !== cleanRouteToken
+        );
+
+        if (isSameTableRegeneratedQr) {
+          // A newly generated QR for the SAME table represents a new dining
+          // visit. Do not attach the old visit's session or cart to it.
+          ['customer_sessionId', 'customer_verifiedSessionId', 'customer_cart', 'customer_checkoutStep'].forEach((key) => {
+            localStorage.removeItem(key);
+            sessionStorage.removeItem(key);
+          });
+          storedSession = '';
+          storedTable = '';
+          setSessionId('');
+          setCart({});
+          setIsSessionVerified(false);
+        }
+
         if (isDifferentTable) {
-          // Await active orders and cart BEFORE showing modal so the correct card opens instantly without flickering
+          // Fetch existing cart and orders to evaluate decision table
+          let cartCount = Object.values(cart).reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0);
+          let orderCount = (activeOrders || []).length;
           if (storedSession) {
-            await checkForExistingOrder(storedSession);
-            if (!isActive || timedOut) return;
-            await fetchServerCart(storedSession);
-            if (!isActive || timedOut) return;
+            try {
+              const [cartRes, orderRes] = await Promise.all([
+                api.get(`/cart/${storedSession}`, { signal: abortController.signal }),
+                api.get(`/orders?sessionId=${storedSession}`, { signal: abortController.signal }),
+              ]);
+              if (!isActive || timedOut) return;
+              if (cartRes.data?.cart?.items) {
+                cartCount = cartRes.data.cart.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+              }
+              if (orderRes.data?.orders) {
+                const ACTIVE_STATUSES = ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY'];
+                orderCount = orderRes.data.orders.filter((o) => ACTIVE_STATUSES.includes(o.status)).length;
+              }
+            } catch (err) {
+              if (isNetworkOrServerError(err)) {
+                setTableConnectionRetryable(true);
+                setTableConnectionError('The table service is temporarily unavailable. Could not verify saved table data.');
+                return;
+              }
+            }
           }
-          // Snapshot current table BEFORE we trigger the modal so it shows correctly
-          const oldTable = storedTable ? parseTableDisplay(storedTable) : (tableId || 'your table');
-          setCurrentTableSnapshot(oldTable);
-          setPendingTableToken(cleanRouteToken);
-          setPendingTableNumber(newTableDisplay);
-          setShowTableSwitchModal(true);
-          return;
+
+          // Decision table: different table | empty | none -> start new session directly, no popup
+          if (cartCount === 0 && orderCount === 0) {
+            // Silently start fresh session for the new table
+            // Fall through to start session below with cleanRouteToken
+          } else {
+            // Snapshot current table BEFORE we trigger the modal so it shows correctly
+            const oldTable = storedTable ? parseTableDisplay(storedTable) : (tableId || 'your table');
+            setCurrentTableSnapshot(oldTable);
+            setPendingTableToken(cleanRouteToken);
+            setPendingTableNumber(newTableDisplay);
+            setTableSwitchMode('DIFFERENT_TABLE');
+            setShowTableSwitchModal(true);
+            return;
+          }
         }
 
         // Reuse an active stored session when it already belongs to this table.
-        // /sessions/start always creates a new UUID, so calling it on remount would
-        // otherwise replace the customer's current session and its cart context.
         if (storedSession) {
           try {
             const existingRes = await api.get(`/sessions/${storedSession}`, { signal: abortController.signal });
@@ -1342,6 +1384,48 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
               : '';
 
             if (existingSession?.status === 'ACTIVE' && existingTable === newTableDisplay) {
+              // Fetch existing cart and orders to evaluate decision table
+              let cartCount = Object.values(cart).reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0);
+              let orderCount = (activeOrders || []).length;
+              try {
+                const [cartRes, orderRes] = await Promise.all([
+                  api.get(`/cart/${storedSession}`, { signal: abortController.signal }),
+                  api.get(`/orders?sessionId=${storedSession}`, { signal: abortController.signal }),
+                ]);
+                if (!isActive || timedOut) return;
+                if (cartRes.data?.cart?.items) {
+                  cartCount = cartRes.data.cart.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+                }
+                if (orderRes.data?.orders) {
+                  const ACTIVE_STATUSES = ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY'];
+                  orderCount = orderRes.data.orders.filter((o) => ACTIVE_STATUSES.includes(o.status)).length;
+                }
+              } catch (err) {
+                if (isNetworkOrServerError(err)) {
+                  setTableConnectionRetryable(true);
+                  setTableConnectionError('The table service is temporarily unavailable. Could not verify saved table data.');
+                  return;
+                }
+              }
+
+              // Check if already continued in this session/page load for this table
+              const dismissedKey = `customer_same_table_prompt_${existingSession.id}`;
+              const alreadyContinued = sessionStorage.getItem(dismissedKey) === 'true';
+
+              // Decision table:
+              // same table | items | none -> popup: "Continue this session" + "Start new session"
+              // same table | any | exists -> popup: "Continue this session" + "Start new session"
+              if (!alreadyContinued && (cartCount > 0 || orderCount > 0)) {
+                const oldTable = storedTable ? parseTableDisplay(storedTable) : (tableId || newTableDisplay);
+                setCurrentTableSnapshot(oldTable);
+                setPendingTableToken(cleanRouteToken);
+                setPendingTableNumber(newTableDisplay);
+                setTableSwitchMode('SAME_TABLE');
+                setShowTableSwitchModal(true);
+                return;
+              }
+
+              // same table | empty | none (or already continued): resume silently, no popup
               setSessionId(existingSession.id);
               const sessionDisplay = resolveTableLabel({
                 tableLabel: existingSession.tableLabel,
@@ -1373,12 +1457,12 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             }
           } catch (existingSessionError) {
             if (!isActive || timedOut) return;
-            if (!([404, 410].includes(existingSessionError.response?.status))) {
-              setTableConnectionRetryable(!existingSessionError.response || existingSessionError.response.status >= 500);
+            if (isNetworkOrServerError(existingSessionError)) {
+              setTableConnectionRetryable(true);
               setTableConnectionError(existingSessionError.response?.data?.error || 'The table service is temporarily unavailable.');
               return;
             }
-            // A truly missing/expired stored session falls through to start from the scanned QR.
+            // For 4xx errors (403, 404, 410, etc.), fall through to start from the scanned QR
           }
         }
 
@@ -1423,17 +1507,24 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
         } catch (err) {
           if (!isActive || timedOut) return;
           console.warn('Session start error:', err.response?.data?.error || err.message);
+          if (err.response?.status === 429) {
+            setTableRateLimitError('Too many attempts. Please wait a moment and try again.');
+            window.setTimeout(() => setTableRateLimitError(''), 5000);
+          }
           const invalidQr = err.response?.data?.code === 'TABLE_QR_REQUIRED'
             || ((err.response?.status === 400 || err.response?.status === 401)
               && /invalid|expired|token|qr code/i.test(err.response?.data?.error || err.response?.data?.message || ''));
           if (invalidQr) {
             setTableConnectionRetryable(false);
             setTableConnectionError('This table link is no longer valid. Copy the current table link from Admin and try again.');
+          } else if (isNetworkOrServerError(err)) {
+            setTableConnectionRetryable(true);
+            setTableConnectionError(err.response?.data?.error || 'The table service is temporarily unavailable.');
           } else {
-            setTableConnectionRetryable(!err.response || err.response.status >= 500);
-            setTableConnectionError(err.response?.data?.error || (err.response?.status === 403
+            setTableConnectionRetryable(false);
+            setTableError(err.response?.data?.error || (err.response?.status === 403
               ? 'This table is currently unavailable.'
-              : 'The table service is temporarily unavailable.'));
+              : 'Could not connect to table.'));
           }
         }
       } else {
@@ -1443,7 +1534,8 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
           const restored = await restoreFromPendingScannedQr();
           if (!restored) {
             if (restoreToken) {
-              setTableConnectionError('The table service is temporarily unavailable.');
+              setRequiresTableQr(true);
+              setTableError('Reconnect to your table by scanning the QR code.');
               return;
             }
             const protectedCustomer = checkIsCustomerLoggedIn()
@@ -1455,7 +1547,8 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
               setCart({});
               setRequiresTableQr(true);
             } else {
-              setTableConnectionError('Reconnect to your table to continue your saved session.');
+              setRequiresTableQr(true);
+              setTableError('Reconnect to your table to continue your saved session.');
             }
           }
         } else {
@@ -1492,9 +1585,8 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             }
           } catch (sessionError) {
             if (!isActive || timedOut) return;
-            const sessionIsInvalid = sessionError.code === 'SESSION_INVALID' || [404, 410].includes(sessionError.response?.status);
-            if (!sessionIsInvalid) {
-              setTableConnectionRetryable(!sessionError.response || sessionError.response.status >= 500);
+            if (sessionError.code !== 'SESSION_INVALID' && isNetworkOrServerError(sessionError)) {
+              setTableConnectionRetryable(true);
               setTableConnectionError(sessionError.response?.data?.error || 'The table service is temporarily unavailable.');
               return;
             }
@@ -1517,7 +1609,8 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                 setIsSessionVerified(false);
                 setRequiresTableQr(true);
               } else {
-                setTableConnectionError('Reconnect to your table to continue your saved session.');
+                setRequiresTableQr(true);
+                setTableError('Reconnect to your table to continue your saved session.');
               }
             }
           }
@@ -1624,14 +1717,15 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   }, [sessionId, sessionExpired, cart, activeOrders]);
 
   const handleTransferTableAndOrders = async () => {
+    if (isTableSwitchingRef.current) return;
     const curSessionId = sessionId || localStorage.getItem('customer_sessionId');
     if (!curSessionId || !pendingTableToken) return;
+    isTableSwitchingRef.current = true;
     setTransferLoading(true);
     try {
       const res = await api.post('/sessions/transfer-table', {
         sessionId: curSessionId,
         qrToken: pendingTableToken,
-        targetTableNumber: pendingTableNumber,
       });
 
       if (res.data) {
@@ -1651,34 +1745,51 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
         setPendingTableToken(null);
         setPendingTableNumber('');
         setCurrentTableSnapshot('');
-        const hasOrders = activeOrders.length > 0;
+        setTableSwitchOrderConflictMessage('');
         const hasCart = totalCartQuantity > 0;
-        const msg = hasOrders
-          ? `Orders successfully shifted to ${newTableDisplay}! Kitchen and staff notified.`
-          : hasCart
-            ? `Your cart has been moved to ${newTableDisplay}. Continue ordering!`
-            : `Session moved to ${newTableDisplay}. Welcome!`;
+        const msg = hasCart
+          ? `Your cart has been moved to ${newTableDisplay}. Continue ordering!`
+          : `Session moved to ${newTableDisplay}. Welcome!`;
         setTransferSuccessMessage(msg);
         setTimeout(() => setTransferSuccessMessage(''), 6000);
         navigate('/customer', { replace: true });
       }
     } catch (err) {
       console.error('Transfer table error:', err);
+      if (err.response?.status === 409 && err.response?.data?.code === 'SESSION_HAS_ORDERS') {
+        // Rule A: switch modal to the "Start new session only" view with the requested message
+        setTableSwitchOrderConflictMessage('Your table has an order. Start a new session for the new table.');
+        return;
+      }
+      if (isNetworkOrServerError(err)) {
+        setTableConnectionRetryable(true);
+        setTableConnectionError(err.response?.data?.error || 'The table service is temporarily unavailable.');
+        setShowTableSwitchModal(false);
+        return;
+      }
+      if (err.response?.data?.code === 'TABLE_QR_REQUIRED' || err.response?.data?.code === 'TABLE_SESSION_REQUIRED') {
+        setRequiresTableQr(true);
+        setTableError(err.response?.data?.error || 'Scan a valid table QR code.');
+        setShowTableSwitchModal(false);
+        return;
+      }
+      // General 4xx inline error
       setTableError(err.response?.data?.error || 'Failed to transfer table.');
       setShowTableSwitchModal(false);
     } finally {
       setTransferLoading(false);
+      isTableSwitchingRef.current = false;
     }
   };
 
   const handleConfirmTableSwitch = async () => {
-    if (transferLoading) return;
-    setTransferLoading(true);
+    if (isTableSwitchingRef.current) return;
     if (!pendingTableToken) {
       setShowTableSwitchModal(false);
-      setTransferLoading(false);
       return;
     }
+    isTableSwitchingRef.current = true;
+    setTransferLoading(true);
 
     try {
       const payload = { qrToken: pendingTableToken };
@@ -1719,6 +1830,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
         setPendingTableToken(null);
         setPendingTableNumber('');
         setCurrentTableSnapshot('');
+        setTableSwitchOrderConflictMessage('');
 
         fetchServerCart(newSessionId);
         checkForExistingOrder(newSessionId);
@@ -1727,11 +1839,36 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       }
     } catch (err) {
       console.error('Table switch confirmation error:', err);
+      if (isNetworkOrServerError(err)) {
+        setTableConnectionRetryable(true);
+        setTableConnectionError(err.response?.data?.error || 'The table service is temporarily unavailable.');
+        setShowTableSwitchModal(false);
+        return;
+      }
+      if (err.response?.data?.code === 'TABLE_QR_REQUIRED' || err.response?.data?.code === 'TABLE_SESSION_REQUIRED') {
+        setRequiresTableQr(true);
+        setTableError(err.response?.data?.error || 'Scan a valid table QR code.');
+        setShowTableSwitchModal(false);
+        return;
+      }
       setTableError(err.response?.data?.error || 'Failed to switch tables.');
       setShowTableSwitchModal(false);
     } finally {
       setTransferLoading(false);
+      isTableSwitchingRef.current = false;
     }
+  };
+
+  const handleContinueSameTableSession = () => {
+    if (sessionId) {
+      sessionStorage.setItem(`customer_same_table_prompt_${sessionId}`, 'true');
+    }
+    setShowTableSwitchModal(false);
+    setPendingTableToken(null);
+    setPendingTableNumber('');
+    setCurrentTableSnapshot('');
+    setTableSwitchOrderConflictMessage('');
+    navigate('/customer', { replace: true });
   };
 
   const handleCancelTableSwitch = () => {
@@ -1739,6 +1876,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     setPendingTableToken(null);
     setPendingTableNumber('');
     setCurrentTableSnapshot('');
+    setTableSwitchOrderConflictMessage('');
     const storedTable = localStorage.getItem('customer_tableId');
     if (storedTable) {
       setTableId(parseTableDisplay(storedTable));
@@ -2523,7 +2661,6 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                 }}
                 className="customer-modal__button customer-modal__button--primary"
               >
-                <QrCode aria-hidden="true" />
                 Scan Table QR
               </button>
 
@@ -2699,80 +2836,104 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       {/* Table Switching Confirmation Modal */}
       {showTableSwitchModal && (
         <ModalShell isOpen onClose={undefined} labelledBy="table-switch-title" closeOnBackdrop={false} closeOnEscape={false} className="customer-modal customer-modal--switch">
-          <div className="customer-modal__header">
-            <span className="customer-modal__icon"><RotateCcw aria-hidden="true" /></span>
-            <div><h2 id="table-switch-title">Switch to {pendingTableNumber}?</h2><p>You're currently at {currentTableSnapshot || stableTableLabel}.</p></div>
+          <div className="tsw-header">
+            <h2 id="table-switch-title" className="tsw-header__title">
+              {tableSwitchMode === 'SAME_TABLE'
+                ? `Welcome back to ${pendingTableNumber || stableTableLabel}`
+                : `Switch to ${pendingTableNumber}?`}
+            </h2>
+            <p className="tsw-header__sub">Currently at <strong>{currentTableSnapshot || stableTableLabel}</strong></p>
           </div>
-          <div className="customer-modal__body">
-              <p className="customer-modal__copy">
-                {activeOrders.length > 0 ? (
-                  <>
-                    You scanned <strong>{pendingTableNumber}</strong>, but you have{' '}
-                    <strong className="customer-modal__copy-success">{activeOrders.length} active order(s)</strong>{' '}
-                    placed from <strong>{currentTableSnapshot || stableTableLabel}</strong>.
-                    {totalCartQuantity > 0 && (
-                      <> Your cart with <strong className="customer-modal__copy-warning">{totalCartQuantity} item(s)</strong> will also move.</>
-                    )}
-                    {' '}Do you want to transfer your current session &amp; active orders to <strong>{pendingTableNumber}</strong>, or start a fresh session?
-                  </>
-                ) : totalCartQuantity > 0 ? (
-                  <>
-                    You have <strong className="customer-modal__copy-warning">{totalCartQuantity} item(s)</strong> in your cart from{' '}
-                    <strong>{currentTableSnapshot || stableTableLabel}</strong>. Transfer your session to{' '}
-                    <strong>{pendingTableNumber}</strong> to keep your items!
-                  </>
-                ) : (
-                  <>
-                    Switch your active session from <strong>{currentTableSnapshot || stableTableLabel}</strong> to{' '}
-                    <strong>{pendingTableNumber}</strong>.
-                  </>
-                )}
-              </p>
-            <div className="customer-modal__actions">
-              {/* Primary Option 1: Move/Transfer current session & orders to new table */}
-              {(activeOrders.length > 0 || totalCartQuantity > 0) && (
+          <div className="tsw-body">
+            {tableSwitchOrderConflictMessage && (
+              <div className="tsw-conflict-notice" role="alert">
+                <AlertCircle className="tsw-conflict-notice__icon" aria-hidden="true" />
+                <span>{tableSwitchOrderConflictMessage}</span>
+              </div>
+            )}
+            <p className="tsw-body__copy">
+              {tableSwitchMode === 'SAME_TABLE' ? (
+                <>
+                  You have an existing session at <strong className="tsw-hl">{pendingTableNumber || stableTableLabel}</strong>
+                  {activeOrders.length > 0 ? (
+                    <> with <strong className="tsw-hl">{activeOrders.length} active order{activeOrders.length > 1 ? 's' : ''}</strong>.</>
+                  ) : totalCartQuantity > 0 ? (
+                    <> with <strong className="tsw-hl">{totalCartQuantity} item{totalCartQuantity > 1 ? 's' : ''}</strong> in your cart.</>
+                  ) : '.'}
+                  {' '}Continue or start fresh?
+                </>
+              ) : (activeOrders.length > 0 || tableSwitchOrderConflictMessage) ? (
+                <>
+                  You have <strong className="tsw-hl">{activeOrders.length || 1} active order{(activeOrders.length || 1) > 1 ? 's' : ''}</strong> at{' '}
+                  <strong className="tsw-hl">{currentTableSnapshot || stableTableLabel}</strong>. Orders stay with that table.
+                  Start a new session for <strong className="tsw-hl">{pendingTableNumber}</strong>.
+                </>
+              ) : totalCartQuantity > 0 ? (
+                <>
+                  You have <strong className="tsw-hl">{totalCartQuantity} item{totalCartQuantity > 1 ? 's' : ''}</strong> from{' '}
+                  <strong className="tsw-hl">{currentTableSnapshot || stableTableLabel}</strong>.
+                  Convert your session or start fresh at <strong className="tsw-hl">{pendingTableNumber}</strong>.
+                </>
+              ) : (
+                <>
+                  Move your session from <strong className="tsw-hl">{currentTableSnapshot || stableTableLabel}</strong> to{' '}
+                  <strong className="tsw-hl">{pendingTableNumber}</strong>.
+                </>
+              )}
+            </p>
+            <div className="tsw-actions">
+              {/* Option A: SAME TABLE -> Continue this session (primary orange) */}
+              {tableSwitchMode === 'SAME_TABLE' && (
                 <button
+                  type="button"
                   disabled={transferLoading}
-                  onClick={handleTransferTableAndOrders}
-                  className="customer-modal__button customer-modal__button--primary customer-modal__button--transfer"
+                  onClick={handleContinueSameTableSession}
+                  className="tsw-btn tsw-btn--primary"
                 >
-                  <Sparkles className="w-4 h-4" />
-                  <span className="customer-modal__option-copy">
-                    <strong>{transferLoading
-                      ? 'Transferring...'
-                      : activeOrders.length > 0
-                        ? `Transfer Session & Orders to ${pendingTableNumber}`
-                        : `Move Cart to ${pendingTableNumber}`}</strong>
-                    <small>{activeOrders.length > 0
-                      ? `Keep your active orders and cart with you at ${pendingTableNumber}.`
-                      : `Move your current cart to ${pendingTableNumber}.`}</small>
-                  </span>
+                  {transferLoading ? 'Loading…' : 'Continue this session'}
                 </button>
               )}
 
-              {/* Primary Option 2: Start Fresh */}
+              {/* Option B: DIFFERENT TABLE -> Convert current session (primary orange, cart-only, NO orders) */}
+              {tableSwitchMode === 'DIFFERENT_TABLE' && activeOrders.length === 0 && !tableSwitchOrderConflictMessage && (
+                <button
+                  type="button"
+                  disabled={transferLoading}
+                  onClick={handleTransferTableAndOrders}
+                  className="tsw-btn tsw-btn--primary"
+                >
+                  {transferLoading
+                    ? 'Converting…'
+                    : totalCartQuantity > 0
+                      ? 'Convert current session to this table'
+                      : `Switch to ${pendingTableNumber}`}
+                </button>
+              )}
+
+              {/* Option C: Start Fresh / New Session */}
+              {/* Primary orange when no other primary is shown (orders exist), outlined secondary otherwise */}
               <button
+                type="button"
                 disabled={transferLoading}
                 onClick={handleConfirmTableSwitch}
-                className="customer-modal__button customer-modal__button--primary customer-modal__button--fresh"
+                className={
+                  // Primary when: DIFFERENT_TABLE + orders exist (only option) OR no primary button rendered
+                  (tableSwitchMode === 'DIFFERENT_TABLE' && (activeOrders.length > 0 || tableSwitchOrderConflictMessage))
+                    ? 'tsw-btn tsw-btn--primary'
+                    : 'tsw-btn tsw-btn--secondary'
+                }
               >
-                <RotateCcw className="w-4 h-4" aria-hidden="true" />
-                <span className="customer-modal__option-copy">
-                  <strong>{transferLoading
-                    ? 'Switching...'
-                    : totalCartQuantity > 0 || activeOrders.length > 0
-                    ? `Start Fresh Session at ${pendingTableNumber}`
-                    : `Switch to ${pendingTableNumber}`}</strong>
-                  <small>Start a new session at this table.</small>
-                </span>
+                {transferLoading ? 'Starting…' : 'Start new session'}
               </button>
 
-              {/* Cancel Option */}
+              {/* Cancel */}
               <button
+                type="button"
+                disabled={transferLoading}
                 onClick={handleCancelTableSwitch}
-                className="customer-modal__button customer-modal__button--secondary"
+                className="tsw-btn tsw-btn--ghost"
               >
-                Cancel & Close
+                Cancel
               </button>
             </div>
           </div>
@@ -2799,7 +2960,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             <span className="customer-table-gate__mark" aria-hidden="true"><AlertCircle /></span>
             <p className="customer-table-gate__eyebrow">{stableTableLabel || 'TABLE SERVICE'}</p>
             <h1 id="customer-server-error-title">Can't reach the server</h1>
-            <p>{tableConnectionError}</p>
+            <p>{/prisma|invocation|syntax|column|table `public\./i.test(tableConnectionError) ? 'The table service is temporarily unavailable. Please retry in a moment.' : tableConnectionError}</p>
             <button
               type="button"
               className="customer-table-gate__button"
@@ -2809,8 +2970,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                 setSessionRetryAttempt((attempt) => attempt + 1);
               }}
             >
-              <RotateCcw aria-hidden="true" />
-              <span>Retry</span>
+              Retry
             </button>
           </section>
         ) : requiresTableQr && !tableIdFromRoute ? (
@@ -2820,8 +2980,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             <h1 id="customer-table-gate-title">Scan your table QR</h1>
             <p>{tableError || 'Scan the QR code attached to your table to view the menu and start ordering.'}</p>
             <button type="button" className="customer-table-gate__button" onClick={() => setShowInAppScanner(true)}>
-              <QrCode aria-hidden="true" />
-              <span>Scan table QR</span>
+              Scan table QR
             </button>
             {tableIdFromRoute && (
               <button
@@ -2839,6 +2998,13 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             )}
           </section>
         ) : <>
+            {/* Rate Limit Banner */}
+            {tableRateLimitError && (
+              <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl text-xs font-semibold flex items-center space-x-2.5 shadow-sm" role="alert">
+                <AlertCircle className="w-5 h-5 shrink-0 text-amber-600" />
+                <span>{tableRateLimitError}</span>
+              </div>
+            )}
 
         {/* Table QR Error */}
         {tableError && (
@@ -3024,8 +3190,8 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
           <>
             {/* Transfer Success Notification */}
             {transferSuccessMessage && (
-              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-2xl flex items-center space-x-3 text-xs font-bold shadow-sm animate-fade-in">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
+              <div className="bg-orange-50 border border-orange-200 text-orange-800 dark:bg-orange-950/30 dark:border-orange-900/50 dark:text-orange-300 p-4 rounded-2xl flex items-center space-x-3 text-xs font-bold shadow-sm animate-fade-in">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#E85D2A] animate-ping shrink-0" />
                 <span>{transferSuccessMessage}</span>
               </div>
             )}
@@ -3119,7 +3285,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
               <div className="bg-white dark:bg-[#1E1E1E] border border-[#E85D2A]/25 dark:border-[#E85D2A]/40 p-4 sm:p-5 rounded-3xl space-y-3 shadow-md shadow-[#E85D2A]/8">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#E85D2A] animate-ping" />
                     <span className="text-xs font-black uppercase tracking-wider text-orange-950 dark:text-orange-300">
                       Active Orders in Progress ({activeOrders.length})
                     </span>
@@ -3140,7 +3306,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                             <strong className="text-xs font-bold text-gray-900">
                               {ord.orderNumber || `#000${ord.id}`}
                             </strong>
-                            <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-emerald-100 text-emerald-800">
+                            <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
                               {ord.status}
                             </span>
                           </div>
@@ -3175,7 +3341,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                             <button
                               disabled={deliveryChangeLoading || availableTablesLoading || !deliveryChangeTarget}
                               onClick={() => handleDeliveryTableChange(ord.id, deliveryChangeTarget)}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-[11px] rounded-lg transition-all"
+                              className="px-2.5 py-1 bg-[#E85D2A] hover:bg-[#F97316] disabled:opacity-50 text-white font-bold text-[11px] rounded-lg transition-all"
                             >
                               {deliveryChangeLoading ? '...' : 'Save'}
                             </button>

@@ -152,14 +152,143 @@
 .customer-session-expired__actions .customer-modal__button--primary { color: var(--text-on-accent); }
 .customer-session-expired__actions .customer-modal__button svg { width: 18px; height: 18px; flex: 0 0 18px; }
 .customer-session-expired__actions .customer-modal__button--secondary { background: var(--surface-2); }
+/* Old switch rules — kept for backward compat but neutralized (green removed) */
 .customer-modal--switch .customer-modal__body { padding-bottom: 0; }
 .customer-modal--switch .customer-modal__actions { display: grid; grid-template-columns: 1fr; padding-top: 4px; }
-.customer-modal--switch .customer-modal__button--transfer { border-color: var(--success); color: var(--surface); background: var(--success); }
+.customer-modal--switch .customer-modal__button--transfer { border-color: var(--accent); color: var(--text-on-accent); background: var(--accent); }
 .customer-modal--switch .customer-modal__button--fresh { border-color: var(--accent); }
 .customer-modal--switch .customer-modal__actions button:nth-last-child(1) { background: transparent; box-shadow: none; }
 .customer-modal__option-copy { display: grid; gap: 4px; text-align: left; }
 .customer-modal__option-copy strong { font-size: 14px; }
 .customer-modal__option-copy small { color: color-mix(in srgb, currentColor 78%, transparent); font-size: 12px; font-weight: 500; line-height: 1.4; }
+
+/* ── Table Switch Modal (tsw-*) ──────────────────────────────────────────────
+   All new switch modal markup uses these classes.
+   Modal shell sizing override comes first, then inner layout.
+   Brand token reference: --accent #E85D2A, --accent-hover #F97316,
+   --border #E7E5E4 (light) / #27272A (dark), --surface, --text, --text-secondary.
+────────────────────────────────────────────────────────────────────────────── */
+.zovik-modal-panel.customer-modal--switch {
+  width: min(100%, 480px);
+  max-width: 480px;
+  box-sizing: border-box;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+.customer-modal--switch,
+.customer-modal--switch * { box-sizing: border-box; }
+
+.tsw-header {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.tsw-header__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.tsw-header__sub {
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.tsw-header__sub strong { color: var(--accent); font-weight: 600; }
+
+.tsw-body { padding-top: 14px; }
+.tsw-body__copy {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.tsw-hl { color: var(--accent); font-weight: 700; }
+
+.tsw-conflict-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-radius: 12px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.tsw-conflict-notice__icon { width: 16px; height: 16px; flex: 0 0 16px; margin-top: 1px; }
+
+.tsw-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Base button */
+.tsw-btn {
+  display: inline-flex;
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 140ms ease, border-color 140ms ease, transform 120ms ease;
+}
+.tsw-btn:active { transform: scale(0.98); }
+.tsw-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Primary — solid orange */
+.tsw-btn--primary {
+  border-color: var(--accent);
+  color: #ffffff;
+  background: var(--accent);
+}
+.tsw-btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover, #F97316);
+  border-color: var(--accent-hover, #F97316);
+}
+
+/* Secondary — outlined, orange text */
+.tsw-btn--secondary {
+  border-color: var(--border);
+  color: var(--accent);
+  background: transparent;
+}
+.tsw-btn--secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* Ghost — plain text, muted */
+.tsw-btn--ghost {
+  border-color: transparent;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 14px;
+  min-height: 40px;
+}
+.tsw-btn--ghost:hover:not(:disabled) { color: var(--text-secondary); }
+
+@media (min-width: 768px) {
+  .zovik-modal-panel.customer-modal--switch { padding: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tsw-btn { transition: none; }
+}
 
 .zovik-modal-panel.customer-modal--install {
   position: relative;
