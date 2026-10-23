@@ -1198,6 +1198,9 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
           setTableId(restoredLabel);
           lastValidTableLabelRef.current = restoredLabel;
           localStorage.setItem('customer_sessionId', restoredSession.id);
+          if (restoredSession.secret) {
+            localStorage.setItem('customer_sessionSecret', restoredSession.secret);
+          }
           localStorage.setItem('customer_tableToken', restoreToken);
           localStorage.setItem('customer_tableId', restoredLabel);
           if (checkIsCustomerLoggedIn()) {
@@ -1481,6 +1484,9 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
             const s = res.data.session;
             setSessionId(s.id);
             localStorage.setItem('customer_sessionId', s.id);
+            if (s.secret) {
+              localStorage.setItem('customer_sessionSecret', s.secret);
+            }
             const tName = resolveTableLabel({ tableLabel: s.tableLabel, table: s.table, routeToken: cleanRouteToken, forCustomer: true });
             setTableId(tName);
             localStorage.setItem('customer_tableId', tName);
@@ -1807,6 +1813,9 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
         setSessionId(newSessionId);
         setTableId(newTableDisplay);
         localStorage.setItem('customer_sessionId', newSessionId);
+        if (s.secret) {
+          localStorage.setItem('customer_sessionSecret', s.secret);
+        }
         localStorage.setItem('customer_tableId', newTableDisplay);
         localStorage.setItem('customer_tableToken', pendingTableToken);
 

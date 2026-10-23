@@ -161,9 +161,37 @@ const initSocket = (server) => {
     }
 
     // Allow customers to subscribe to their active dining session and order tracking updates
-    socket.on('join:session', (sessionId) => {
-      if (typeof sessionId === 'string' && sessionId.length > 5) {
-        socket.join(`session-${sessionId}`);
+    socket.on('join:session', async (payload) => {
+      try {
+        const sessionId = typeof payload === 'object' && payload !== null ? payload.sessionId : payload;
+        const secret = typeof payload === 'object' && payload !== null ? payload.secret : null;
+
+        if (typeof sessionId === 'string' && sessionId.length > 5) {
+          // Verify session exists and is ACTIVE
+          const session = await prisma.session.findUnique({
+            where: { id: sessionId },
+            select: { id: true, status: true, secretHash: true, customerId: true },
+          });
+
+          if (!session || session.status !== 'ACTIVE') {
+            return;
+          }
+
+          // If session has secretHash, allow if socket is authenticated or secret matches
+          if (session.secretHash) {
+            const hasAuthToken = Boolean(socket.data?.user?.id);
+            const { verifySessionSecret } = require('../utils/sessionSecurity');
+            const secretMatches = secret ? verifySessionSecret(secret, session.secretHash) : false;
+
+            if (!hasAuthToken && !secretMatches) {
+              return;
+            }
+          }
+
+          socket.join(`session-${sessionId}`);
+        }
+      } catch (err) {
+        exceptionLogger.exception('socket.join_session', err, { context: { action: 'join:session' } });
       }
     });
 

@@ -3,7 +3,7 @@ const { prisma } = require('../config/db');
 const { verifyTableToken } = require('../services/qrSecurityService');
 const { formatTableLabel, isPhysicalTable } = require('../utils/tableLabel');
 const { isSessionIdleExpired, touchSessionActivity } = require('../utils/sessionActivity');
-const { generateSessionSecret, hashSessionSecret } = require('../utils/sessionSecurity');
+const { generateSessionSecret, hashSessionSecret, verifySessionSecret } = require('../utils/sessionSecurity');
 
 /**
  * Start a new dining session from a validated table QR
@@ -220,6 +220,17 @@ const closeSession = async (req, res) => {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
 
+    // Verify session secret if caller is customer or anonymous table user
+    const providedSecret = req.headers['x-session-secret'] || req.body?.secret || req.query?.secret;
+    if (session.secretHash) {
+      const isValidSecret = verifySessionSecret(providedSecret, session.secretHash);
+      if (!isValidSecret) {
+        return res.status(403).json({ error: 'Invalid or missing session secret.', code: 'INVALID_SESSION_SECRET' });
+      }
+    } else {
+      console.warn(`[SessionSecurity] Session #${session.id} has no secretHash (legacy session). Allowing close with warning.`);
+    }
+
     const updated = await prisma.session.update({
       where: { id: sessionId },
       data: {
@@ -306,6 +317,17 @@ const transferSessionTable = async (req, res) => {
 
     if (callerRole === 'CUSTOMER' && currentSession.customerId && currentSession.customerId !== callerId) {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+    }
+
+    // Verify session secret if session has a secretHash (backward compatible with legacy null hashes)
+    const providedSecret = req.headers['x-session-secret'] || req.body?.secret || req.body?.sessionSecret;
+    if (currentSession.secretHash) {
+      const isValidSecret = verifySessionSecret(providedSecret, currentSession.secretHash);
+      if (!isValidSecret) {
+        return res.status(403).json({ error: 'Invalid or missing session secret.', code: 'INVALID_SESSION_SECRET' });
+      }
+    } else {
+      console.warn(`[SessionSecurity] Session #${currentSession.id} has no secretHash (legacy session). Allowing transfer with warning.`);
     }
 
     if (callerRole === 'CUSTOMER' && (

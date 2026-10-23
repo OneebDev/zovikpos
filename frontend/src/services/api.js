@@ -247,6 +247,18 @@ api.interceptors.request.use(
       }
     }
 
+    const sessionSecret =
+      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('customer_sessionSecret')) ||
+      (typeof localStorage !== 'undefined' && localStorage.getItem('customer_sessionSecret'));
+
+    if (sessionSecret) {
+      if (config.headers && typeof config.headers.set === 'function') {
+        config.headers.set('X-Session-Secret', sessionSecret);
+      } else if (config.headers) {
+        config.headers['X-Session-Secret'] = sessionSecret;
+      }
+    }
+
     return config;
   },
   (error) => Promise.reject(error)
