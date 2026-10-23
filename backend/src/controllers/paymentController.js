@@ -5,6 +5,7 @@ const { logAudit } = require('../middleware/auditMiddleware');
 const { deductInventoryForConfirmedOrder, restoreInventoryForOrder } = require('../services/inventoryDeductionService');
 const { clearDashboardStatsCache } = require('./adminController');
 const { withTableLabel } = require('../utils/tableLabel');
+const { withDeadlockRetry, TX_OPTIONS } = require('../utils/dbRetry');
 
 /**
  * Get current Payment Availability Settings (COD & Online)
@@ -233,37 +234,80 @@ const verifyTransaction = async (req, res) => {
     const newStatus = approve ? 'PAID' : 'PAYMENT_FAILED';
     const newPaymentStatus = approve ? 'VERIFIED' : 'FAILED';
 
-    // STEP 1: Update order status + history in a FAST minimal transaction (no inventory here)
-    const updatedOrder = await prisma.$transaction(async (tx) => {
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: order.id,
-          previousStatus,
-          newStatus,
-          changedByUserId: staffUserId,
-          note: approve
-            ? 'Payment verified and approved by staff.'
-            : (reason || 'Payment verification rejected by staff.'),
-        },
-      });
+    let updatedOrder;
+    try {
+      updatedOrder = await withDeadlockRetry(async () => {
+        return await prisma.$transaction(async (tx) => {
+          // Conditional atomic update
+          const updateResult = await tx.order.updateMany({
+            where: { id: order.id, status: previousStatus },
+            data: {
+              paymentStatus: newPaymentStatus,
+              status: newStatus,
+            },
+          });
 
-      return tx.order.update({
-        where: { id: order.id },
-        data: {
-          paymentStatus: newPaymentStatus,
-          status: newStatus,
-        },
-        include: {
-          table: { select: { id: true, tableNumber: true } },
-          orderItems: { include: { menuItem: true } },
-          user: { select: { id: true, name: true, email: true } },
-          etaPrediction: true,
-        },
+          if (updateResult.count === 0) {
+            // Concurrently updated by another process
+            const conflictErr = new Error('Order status has already been processed by another request.');
+            conflictErr.isConflict = true;
+            throw conflictErr;
+          }
+
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: order.id,
+              previousStatus,
+              newStatus,
+              changedByUserId: staffUserId,
+              note: approve
+                ? 'Payment verified and approved by staff.'
+                : (reason || 'Payment verification rejected by staff.'),
+            },
+          });
+
+          // In-transaction inventory deduction / restoration (Option A)
+          // If deduction fails, entire transaction rolls back and order is NOT marked PAID
+          if (approve && previousStatus !== 'PAID') {
+            await deductInventoryForConfirmedOrder(order.id, staffUserId, tx);
+          } else if (!approve && previousStatus !== 'PAYMENT_FAILED') {
+            await restoreInventoryForOrder(order.id, staffUserId, reason || 'Payment verification rejected by staff.', tx);
+          }
+
+          return await tx.order.findUnique({
+            where: { id: order.id },
+            include: {
+              table: { select: { id: true, tableNumber: true } },
+              orderItems: { include: { menuItem: true } },
+              user: { select: { id: true, name: true, email: true } },
+              etaPrediction: true,
+            },
+          });
+        }, TX_OPTIONS);
       });
-    });
+    } catch (txErr) {
+      if (txErr.isConflict) {
+        // Fetch current order state to return consistent shape
+        const currentOrder = await prisma.order.findUnique({
+          where: { id: order.id },
+          include: {
+            table: { select: { id: true, tableNumber: true } },
+            orderItems: { include: { menuItem: true } },
+            user: { select: { id: true, name: true, email: true } },
+            etaPrediction: true,
+          },
+        });
+        return res.json({
+          message: 'Payment already processed by another request.',
+          order: withTableLabel(currentOrder || order),
+        });
+      }
+      throw txErr;
+    }
 
     const orderWithTableLabel = withTableLabel(updatedOrder);
-    // STEP 2: Immediately emit to all realtime layers (kitchen gets order right away)
+
+    // STEP 2: Emit to realtime layers strictly AFTER transaction commit
     emitToUser(orderWithTableLabel.userId, 'order:update', orderWithTableLabel);
     emitToVendor('order:update', orderWithTableLabel);
     emitToAdmin('order:update', orderWithTableLabel);
@@ -272,18 +316,8 @@ const verifyTransaction = async (req, res) => {
       emitToKitchen('order:new', orderWithTableLabel);
     }
 
-    // STEP 3: Run heavy inventory deduction + email + audit asynchronously (non-blocking)
+    // STEP 3: Asynchronous non-blocking side effects (emails, audit)
     setImmediate(async () => {
-      try {
-        if (approve && previousStatus !== 'PAID') {
-          await deductInventoryForConfirmedOrder(order.id, staffUserId, null);
-        } else if (!approve && previousStatus !== 'PAYMENT_FAILED') {
-          await restoreInventoryForOrder(order.id, staffUserId, reason || 'Payment verification rejected by staff.', null);
-        }
-      } catch (invErr) {
-        console.error('[InventoryDeduction] Background deduction error:', invErr.message);
-      }
-
       if (approve) {
         sendPaymentConfirmedEmail(orderWithTableLabel).catch((err) =>
           console.error('[Email] Payment confirmed email error:', err.message)

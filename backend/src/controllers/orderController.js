@@ -555,6 +555,13 @@ const updateOrderStatus = async (req, res) => {
             },
           });
 
+          // In-transaction inventory deduction / restoration (Option A)
+          if (needsInventoryDeduction) {
+            await deductInventoryForConfirmedOrder(order.id, userId, tx);
+          } else if (needsInventoryRestore) {
+            await restoreInventoryForOrder(order.id, userId, note || `Order status updated to ${status}`, tx);
+          }
+
           const fresh = await tx.order.findUnique({
             where: { id: order.id },
             include: {
@@ -576,17 +583,8 @@ const updateOrderStatus = async (req, res) => {
       throw txErr;
     }
 
-    // STEP 2: Background — inventory, ETA, emails, audit (non-blocking)
+    // STEP 2: Background — ETA, emails, audit (non-blocking)
     setImmediate(async () => {
-      try {
-        if (needsInventoryDeduction) {
-          await deductInventoryForConfirmedOrder(order.id, userId, null);
-        } else if (needsInventoryRestore) {
-          await restoreInventoryForOrder(order.id, userId, note || `Order status updated to ${status}`, null);
-        }
-      } catch (invErr) {
-        console.error('[InventoryDeduction] Background error:', invErr.message);
-      }
 
       if (['READY', 'COMPLETED'].includes(status)) {
         try {

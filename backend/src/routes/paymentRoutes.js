@@ -24,6 +24,6 @@ router.use(authMiddleware);
 
 router.put('/settings', roleMiddleware(['ADMIN', 'VENDOR']), updatePaymentSettings);
 router.post('/submit', roleMiddleware(['ADMIN', 'VENDOR', 'CUSTOMER']), paymentSubmitLimiter, validateBody(submitPaymentSchema), idempotencyMiddleware, submitTransactionId);
-router.put('/:id/verify', roleMiddleware(['ADMIN', 'VENDOR']), validateParams(idParamSchema), verifyTransaction);
+router.put('/:id/verify', roleMiddleware(['ADMIN', 'VENDOR']), validateParams(idParamSchema), idempotencyMiddleware, verifyTransaction);
 
 module.exports = router;

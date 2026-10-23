@@ -1,4 +1,5 @@
 const { prisma: defaultPrisma } = require('../config/db');
+const { Prisma } = require('@prisma/client');
 const { convertUnit } = require('../utils/unitConverter');
 const { emitToAdmin, emitToVendor } = require('../sockets/socket');
 
@@ -44,7 +45,6 @@ async function _fifoBatchDeduct(db, invItem, neededQty, logMeta) {
     await db.inventoryLog.create({
       data: {
         inventoryItemId: invItem.id,
-        type: 'USAGE',
         quantityBefore: qtyBefore,
         quantityAfter: qtyAfter,
         changeQty: -takeFromBatch,
@@ -73,198 +73,249 @@ async function _fifoBatchDeduct(db, invItem, neededQty, logMeta) {
 /**
  * Deducts inventory for a confirmed order (status: PAID).
  * Uses FIFO batch-layer deduction from InventoryReceivingItem records when available.
- * Falls back to a single aggregate USAGE log if no batch records exist.
+ * Sorts inventory rows in ascending order to prevent deadlocks.
  *
  * @param {number} orderId Order ID to deduct stock for
  * @param {number|null} userId Staff/System User ID triggering deduction
- * @param {object} [tx] Optional Prisma Transaction Client
+ * @param {object} [tx] Optional Prisma Transaction Client. If null, creates its own transaction.
  */
 const deductInventoryForConfirmedOrder = async (orderId, userId = null, tx = null) => {
-  const db = tx || defaultPrisma;
-
-  const order = await db.order.findUnique({
-    where: { id: parseInt(orderId, 10) },
-    include: {
-      orderItems: {
-        include: {
-          menuItem: {
-            include: {
-              recipeItems: {
-                include: {
-                  inventoryItem: true
+  const runDeduction = async (db) => {
+    const order = await db.order.findUnique({
+      where: { id: parseInt(orderId, 10) },
+      include: {
+        orderItems: {
+          include: {
+            menuItem: {
+              include: {
+                recipeItems: {
+                  include: {
+                    inventoryItem: true
+                  }
                 }
               }
             }
           }
         }
       }
-    }
-  });
+    });
 
-  if (!order) {
-    throw new Error(`Order #${orderId} not found for inventory deduction.`);
-  }
-
-  // Idempotency check: if USAGE logs already exist for this orderId, skip double deduction
-  const existingUsageLogs = await db.inventoryLog.findMany({
-    where: {
-      orderId: order.id,
-      type: 'USAGE'
-    }
-  });
-
-  if (existingUsageLogs.length > 0) {
-    console.log(`[InventoryDeduction] Order #${order.orderNumber} already has USAGE logs. Skipping redundant deduction.`);
-    return { success: true, message: 'Already deducted.' };
-  }
-
-  const itemsToEmit = [];
-
-  for (const orderItem of order.orderItems) {
-    const menuItem = orderItem.menuItem;
-    const itemQty = orderItem.quantity;
-
-    // Deduct MenuItem front-end display stock
-    if (menuItem) {
-      const updatedMenuItemStock = Math.max(0, menuItem.stock - itemQty);
-      await db.menuItem.update({
-        where: { id: menuItem.id },
-        data: { stock: updatedMenuItemStock }
-      });
+    if (!order) {
+      throw new Error(`Order #${orderId} not found for inventory deduction.`);
     }
 
-    // Check if menuItem has explicit RecipeItems mapped
-    const recipes = menuItem?.recipeItems || [];
-
-    if (recipes.length > 0) {
-      for (const recipe of recipes) {
-        const invItem = recipe.inventoryItem;
-        if (!invItem) continue;
-
-        // Branch consistency check
-        if (order.branchId && invItem.branchId && invItem.branchId !== order.branchId) {
-          console.warn(`[InventoryDeduction] Branch mismatch: Order branch ${order.branchId} vs Inventory branch ${invItem.branchId} for ${invItem.name}`);
-        }
-
-        const rawNeededQty = recipe.quantity * itemQty;
-        let convertedQty;
-        try {
-          convertedQty = convertUnit(rawNeededQty, recipe.unit, invItem.unit);
-        } catch (convErr) {
-          console.warn(`[InventoryDeduction] Unit conversion failed from '${recipe.unit}' to '${invItem.unit}' for '${invItem.name}': ${convErr.message}. Falling back to raw qty ${rawNeededQty}.`);
-          convertedQty = rawNeededQty;
-        }
-
-        const qtyBefore = invItem.stockLevel;
-        const qtyAfter = Math.max(0, qtyBefore - convertedQty);
-
-        // Update InventoryItem stockLevel first
-        const updatedInv = await db.inventoryItem.update({
-          where: { id: invItem.id },
-          data: { stockLevel: qtyAfter }
-        });
-
-        const logMeta = {
-          reason: `Order #${order.orderNumber} confirmed (${orderItem.nameSnapshot} x${itemQty})`,
-          orderId: order.id,
-          orderItemId: orderItem.id,
-          userId: userId || order.userId || null
-        };
-
-        // Check for available FIFO batches
-        const hasBatches = await db.inventoryReceivingItem.count({
-          where: { inventoryItemId: invItem.id, remainingQuantity: { gt: 0 } }
-        });
-
-        if (hasBatches > 0) {
-          // FIFO batch deduction — logs one record per batch consumed
-          await _fifoBatchDeduct(db, { ...invItem, stockLevel: qtyBefore }, convertedQty, logMeta);
-        } else {
-          // No batch records — single fallback USAGE log
-          await db.inventoryLog.create({
-            data: {
-              inventoryItemId: invItem.id,
-              quantityBefore: qtyBefore,
-              quantityAfter: qtyAfter,
-              changeQty: -convertedQty,
-              cost: (invItem.costPrice || 0) * convertedQty,
-              unitCost: invItem.costPrice || 0,
-              type: 'USAGE',
-              reason: logMeta.reason,
-              orderId: order.id,
-              orderItemId: orderItem.id,
-              userId: userId || order.userId || null
-            }
-          });
-        }
-
-        itemsToEmit.push(updatedInv);
+    // Idempotency check: if USAGE logs already exist for this orderId, skip double deduction
+    const existingUsageLogs = await db.inventoryLog.findMany({
+      where: {
+        orderId: order.id,
+        type: 'USAGE'
       }
-    } else {
-      // Fallback: search for inventory item with matching name
-      const targetName = orderItem.nameSnapshot || menuItem?.name;
-      const matchingInvItem = targetName ? await db.inventoryItem.findFirst({
-        where: {
-          name: { equals: targetName, mode: 'insensitive' },
-          ...(order.branchId ? { branchId: order.branchId } : {})
+    });
+
+    if (existingUsageLogs.length > 0) {
+      console.log(`[InventoryDeduction] Order #${order.orderNumber} already has USAGE logs. Skipping redundant deduction.`);
+      return { success: true, message: 'Already deducted.', itemsToEmit: [] };
+    }
+
+    // Identify and lock all target inventory items in ASCENDING ID order to avoid deadlocks
+    const targetInvItemIds = new Set();
+    for (const orderItem of order.orderItems) {
+      const recipes = orderItem.menuItem?.recipeItems || [];
+      if (recipes.length > 0) {
+        for (const recipe of recipes) {
+          if (recipe.inventoryItem?.id) targetInvItemIds.add(recipe.inventoryItem.id);
         }
-      }) : null;
-
-      if (matchingInvItem) {
-        const qtyBefore = matchingInvItem.stockLevel;
-        const qtyAfter = Math.max(0, qtyBefore - itemQty);
-        const updatedInv = await db.inventoryItem.update({
-          where: { id: matchingInvItem.id },
-          data: { stockLevel: qtyAfter }
-        });
-
-        const logMeta = {
-          reason: `Order #${order.orderNumber} confirmed (${orderItem.nameSnapshot} x${itemQty})`,
-          orderId: order.id,
-          orderItemId: orderItem.id,
-          userId: userId || order.userId || null
-        };
-
-        const hasBatches = await db.inventoryReceivingItem.count({
-          where: { inventoryItemId: matchingInvItem.id, remainingQuantity: { gt: 0 } }
-        });
-
-        if (hasBatches > 0) {
-          await _fifoBatchDeduct(db, { ...matchingInvItem, stockLevel: qtyBefore }, itemQty, logMeta);
-        } else {
-          await db.inventoryLog.create({
-            data: {
-              inventoryItemId: matchingInvItem.id,
-              quantityBefore: qtyBefore,
-              quantityAfter: qtyAfter,
-              changeQty: -itemQty,
-              cost: (matchingInvItem.costPrice || 0) * itemQty,
-              unitCost: matchingInvItem.costPrice || 0,
-              type: 'USAGE',
-              reason: logMeta.reason,
-              orderId: order.id,
-              orderItemId: orderItem.id,
-              userId: userId || order.userId || null
-            }
-          });
-        }
-
-        itemsToEmit.push(updatedInv);
       } else {
-        console.warn(`[InventoryDeduction] No recipe or name match for "${orderItem.nameSnapshot || menuItem?.name}" in Order #${order.orderNumber}. Skipping stock deduction for this item.`);
+        const targetName = orderItem.nameSnapshot || orderItem.menuItem?.name;
+        if (targetName) {
+          const match = await db.inventoryItem.findFirst({
+            where: {
+              name: { equals: targetName, mode: 'insensitive' },
+              ...(order.branchId ? { branchId: order.branchId } : {})
+            },
+            select: { id: true }
+          });
+          if (match) targetInvItemIds.add(match.id);
+        }
       }
     }
+
+    const sortedInvIds = Array.from(targetInvItemIds).sort((a, b) => a - b);
+    if (sortedInvIds.length > 0) {
+      await db.$queryRaw`
+        SELECT id FROM "InventoryItem"
+        WHERE id IN (${Prisma.join(sortedInvIds)})
+        ORDER BY id ASC
+        FOR UPDATE;
+      `;
+    }
+
+    const itemsToEmit = [];
+
+    for (const orderItem of order.orderItems) {
+      const menuItem = orderItem.menuItem;
+      const itemQty = orderItem.quantity;
+
+      // Deduct MenuItem front-end display stock
+      if (menuItem) {
+        await db.menuItem.update({
+          where: { id: menuItem.id },
+          data: { stock: { decrement: itemQty } }
+        });
+      }
+
+      // Check if menuItem has explicit RecipeItems mapped
+      const recipes = menuItem?.recipeItems || [];
+
+      if (recipes.length > 0) {
+        for (const recipe of recipes) {
+          const invItem = recipe.inventoryItem;
+          if (!invItem) continue;
+
+          // Branch consistency check
+          if (order.branchId && invItem.branchId && invItem.branchId !== order.branchId) {
+            console.warn(`[InventoryDeduction] Branch mismatch: Order branch ${order.branchId} vs Inventory branch ${invItem.branchId} for ${invItem.name}`);
+          }
+
+          const rawNeededQty = recipe.quantity * itemQty;
+          let convertedQty;
+          try {
+            convertedQty = convertUnit(rawNeededQty, recipe.unit, invItem.unit);
+          } catch (convErr) {
+            console.warn(`[InventoryDeduction] Unit conversion failed from '${recipe.unit}' to '${invItem.unit}' for '${invItem.name}': ${convErr.message}. Falling back to raw qty ${rawNeededQty}.`);
+            convertedQty = rawNeededQty;
+          }
+
+          // Atomic stock update & re-fetch current value
+          const currentInv = await db.inventoryItem.findUnique({
+            where: { id: invItem.id },
+            select: { stockLevel: true, costPrice: true, name: true }
+          });
+          const qtyBefore = currentInv?.stockLevel ?? invItem.stockLevel;
+
+          const updatedInv = await db.inventoryItem.update({
+            where: { id: invItem.id },
+            data: { stockLevel: { decrement: convertedQty } }
+          });
+          const qtyAfter = updatedInv.stockLevel;
+
+          const logMeta = {
+            reason: `Order #${order.orderNumber} confirmed (${orderItem.nameSnapshot} x${itemQty})`,
+            orderId: order.id,
+            orderItemId: orderItem.id,
+            userId: userId || order.userId || null
+          };
+
+          const hasBatches = await db.inventoryReceivingItem.count({
+            where: { inventoryItemId: invItem.id, remainingQuantity: { gt: 0 } }
+          });
+
+          if (hasBatches > 0) {
+            await _fifoBatchDeduct(db, { ...invItem, stockLevel: qtyBefore }, convertedQty, logMeta);
+          } else {
+            await db.inventoryLog.create({
+              data: {
+                inventoryItemId: invItem.id,
+                quantityBefore: qtyBefore,
+                quantityAfter: qtyAfter,
+                changeQty: -convertedQty,
+                cost: (invItem.costPrice || 0) * convertedQty,
+                unitCost: invItem.costPrice || 0,
+                type: 'USAGE',
+                reason: logMeta.reason,
+                orderId: order.id,
+                orderItemId: orderItem.id,
+                userId: userId || order.userId || null
+              }
+            });
+          }
+
+          itemsToEmit.push(updatedInv);
+        }
+      } else {
+        // Fallback: search for inventory item with matching name
+        const targetName = orderItem.nameSnapshot || menuItem?.name;
+        const matchingInvItem = targetName ? await db.inventoryItem.findFirst({
+          where: {
+            name: { equals: targetName, mode: 'insensitive' },
+            ...(order.branchId ? { branchId: order.branchId } : {})
+          }
+        }) : null;
+
+        if (matchingInvItem) {
+          const currentInv = await db.inventoryItem.findUnique({
+            where: { id: matchingInvItem.id },
+            select: { stockLevel: true, costPrice: true }
+          });
+          const qtyBefore = currentInv?.stockLevel ?? matchingInvItem.stockLevel;
+
+          const updatedInv = await db.inventoryItem.update({
+            where: { id: matchingInvItem.id },
+            data: { stockLevel: { decrement: itemQty } }
+          });
+          const qtyAfter = updatedInv.stockLevel;
+
+          const logMeta = {
+            reason: `Order #${order.orderNumber} confirmed (${orderItem.nameSnapshot} x${itemQty})`,
+            orderId: order.id,
+            orderItemId: orderItem.id,
+            userId: userId || order.userId || null
+          };
+
+          const hasBatches = await db.inventoryReceivingItem.count({
+            where: { inventoryItemId: matchingInvItem.id, remainingQuantity: { gt: 0 } }
+          });
+
+          if (hasBatches > 0) {
+            await _fifoBatchDeduct(db, { ...matchingInvItem, stockLevel: qtyBefore }, itemQty, logMeta);
+          } else {
+            await db.inventoryLog.create({
+              data: {
+                inventoryItemId: matchingInvItem.id,
+                quantityBefore: qtyBefore,
+                quantityAfter: qtyAfter,
+                changeQty: -itemQty,
+                cost: (matchingInvItem.costPrice || 0) * itemQty,
+                unitCost: matchingInvItem.costPrice || 0,
+                type: 'USAGE',
+                reason: logMeta.reason,
+                orderId: order.id,
+                orderItemId: orderItem.id,
+                userId: userId || order.userId || null
+              }
+            });
+          }
+
+          itemsToEmit.push(updatedInv);
+        } else {
+          console.warn(`[InventoryDeduction] No recipe or name match for "${orderItem.nameSnapshot || menuItem?.name}" in Order #${order.orderNumber}. Skipping stock deduction for this item.`);
+        }
+      }
+    }
+
+    return { success: true, message: `Inventory deducted for Order #${order.orderNumber}`, itemsToEmit };
+  };
+
+  let result;
+  if (tx) {
+    result = await runDeduction(tx);
+  } else {
+    result = await defaultPrisma.$transaction(async (innerTx) => {
+      return await runDeduction(innerTx);
+    });
   }
 
   // Emit socket events asynchronously after DB operations complete
-  setImmediate(() => {
-    for (const item of itemsToEmit) {
-      emitToAdmin('inventory:update', item);
-      emitToVendor('inventory:update', item);
-    }
-  });
+  if (result.itemsToEmit && result.itemsToEmit.length > 0) {
+    setImmediate(() => {
+      for (const item of result.itemsToEmit) {
+        emitToAdmin('inventory:update', item);
+        emitToVendor('inventory:update', item);
+      }
+    });
+  }
 
-  return { success: true, message: `Inventory deducted for Order #${order.orderNumber}` };
+  return { success: true, message: result.message };
 };
 
 /**
@@ -275,128 +326,150 @@ const deductInventoryForConfirmedOrder = async (orderId, userId = null, tx = nul
  * @param {number} orderId Order ID to restore stock for
  * @param {number|null} userId Staff/System User ID triggering restoration
  * @param {string} reason Reason for restoration
- * @param {object} [tx] Optional Prisma Transaction Client
+ * @param {object} [tx] Optional Prisma Transaction Client. If null, runs in own transaction.
  */
 const restoreInventoryForOrder = async (orderId, userId = null, reason = 'Order cancelled', tx = null) => {
-  const db = tx || defaultPrisma;
-
-  const order = await db.order.findUnique({
-    where: { id: parseInt(orderId, 10) },
-    include: {
-      orderItems: {
-        include: {
-          menuItem: true
+  const runRestoration = async (db) => {
+    const order = await db.order.findUnique({
+      where: { id: parseInt(orderId, 10) },
+      include: {
+        orderItems: {
+          include: {
+            menuItem: true
+          }
         }
       }
-    }
-  });
-
-  if (!order) {
-    throw new Error(`Order #${orderId} not found for inventory restoration.`);
-  }
-
-  // Find all USAGE logs generated for this order
-  const usageLogs = await db.inventoryLog.findMany({
-    where: {
-      orderId: order.id,
-      type: 'USAGE'
-    }
-  });
-
-  // Find any existing RESTORATION logs for this order to guarantee idempotency
-  const existingRestorations = await db.inventoryLog.findMany({
-    where: {
-      orderId: order.id,
-      type: 'RESTORATION'
-    }
-  });
-
-  // Restore MenuItem stock if not already restored
-  for (const orderItem of order.orderItems) {
-    if (orderItem.menuItem) {
-      await db.menuItem.update({
-        where: { id: orderItem.menuItemId },
-        data: { stock: { increment: orderItem.quantity } }
-      });
-    }
-  }
-
-  const itemsToEmit = [];
-
-  // Restore raw inventory stock based on USAGE logs
-  for (const usageLog of usageLogs) {
-    // Check idempotency — include receivingItemId for per-batch precision
-    const alreadyRestored = existingRestorations.some(
-      r => r.orderItemId === usageLog.orderItemId &&
-           r.inventoryItemId === usageLog.inventoryItemId &&
-           r.receivingItemId === usageLog.receivingItemId
-    );
-
-    if (alreadyRestored) {
-      console.log(`[InventoryRestoration] Usage log ID ${usageLog.id} already restored for Order #${order.orderNumber}. Skipping.`);
-      continue;
-    }
-
-    const invItem = await db.inventoryItem.findUnique({
-      where: { id: usageLog.inventoryItemId }
     });
 
-    if (invItem) {
-      const restoreQty = Math.abs(usageLog.changeQty);
-      const qtyBefore = invItem.stockLevel;
-      const qtyAfter = qtyBefore + restoreQty;
+    if (!order) {
+      throw new Error(`Order #${orderId} not found for inventory restoration.`);
+    }
 
-      const updatedInv = await db.inventoryItem.update({
-        where: { id: invItem.id },
-        data: { stockLevel: qtyAfter }
-      });
+    // Find all USAGE logs generated for this order
+    const usageLogs = await db.inventoryLog.findMany({
+      where: {
+        orderId: order.id,
+        type: 'USAGE'
+      }
+    });
 
-      // If this log was tied to a specific FIFO batch, restore that batch's remainingQuantity
-      if (usageLog.receivingItemId) {
-        const batch = await db.inventoryReceivingItem.findUnique({
-          where: { id: usageLog.receivingItemId }
+    // Find any existing RESTORATION logs for this order to guarantee idempotency
+    const existingRestorations = await db.inventoryLog.findMany({
+      where: {
+        orderId: order.id,
+        type: 'RESTORATION'
+      }
+    });
+
+    // Restore MenuItem stock if not already restored
+    for (const orderItem of order.orderItems) {
+      if (orderItem.menuItem) {
+        await db.menuItem.update({
+          where: { id: orderItem.menuItemId },
+          data: { stock: { increment: orderItem.quantity } }
         });
-        if (batch) {
-          const restoredBatchRemaining = (batch.remainingQuantity ?? 0) + restoreQty;
-          // Cap at the original batch quantity to avoid over-restoration
-          const cappedRemaining = Math.min(restoredBatchRemaining, batch.quantity);
-          await db.inventoryReceivingItem.update({
-            where: { id: batch.id },
-            data: { remainingQuantity: cappedRemaining }
-          });
-        }
+      }
+    }
+
+    // Sort target inventory item IDs in ascending order for lock
+    const targetInvItemIds = [...new Set(usageLogs.map(l => l.inventoryItemId).filter(Boolean))].sort((a, b) => a - b);
+    if (targetInvItemIds.length > 0) {
+      await db.$queryRaw`
+        SELECT id FROM "InventoryItem"
+        WHERE id IN (${Prisma.join(targetInvItemIds)})
+        ORDER BY id ASC
+        FOR UPDATE;
+      `;
+    }
+
+    const itemsToEmit = [];
+
+    // Restore raw inventory stock based on USAGE logs
+    for (const usageLog of usageLogs) {
+      const alreadyRestored = existingRestorations.some(
+        r => r.orderItemId === usageLog.orderItemId &&
+             r.inventoryItemId === usageLog.inventoryItemId &&
+             r.receivingItemId === usageLog.receivingItemId
+      );
+
+      if (alreadyRestored) {
+        console.log(`[InventoryRestoration] Usage log ID ${usageLog.id} already restored for Order #${order.orderNumber}. Skipping.`);
+        continue;
       }
 
-      await db.inventoryLog.create({
-        data: {
-          inventoryItemId: invItem.id,
-          quantityBefore: qtyBefore,
-          quantityAfter: qtyAfter,
-          changeQty: restoreQty,
-          cost: (usageLog.unitCost || invItem.costPrice || 0) * restoreQty,
-          unitCost: usageLog.unitCost || invItem.costPrice || 0,
-          batchNumber: usageLog.batchNumber || null,
-          receivingItemId: usageLog.receivingItemId || null,
-          type: 'RESTORATION',
-          reason: `${reason} - Order #${order.orderNumber}`,
-          orderId: order.id,
-          orderItemId: usageLog.orderItemId,
-          userId: userId || null
-        }
+      const invItem = await db.inventoryItem.findUnique({
+        where: { id: usageLog.inventoryItemId }
       });
 
-      itemsToEmit.push(updatedInv);
+      if (invItem) {
+        const restoreQty = Math.abs(usageLog.changeQty);
+        const qtyBefore = invItem.stockLevel;
+
+        const updatedInv = await db.inventoryItem.update({
+          where: { id: invItem.id },
+          data: { stockLevel: { increment: restoreQty } }
+        });
+        const qtyAfter = updatedInv.stockLevel;
+
+        // If this log was tied to a specific FIFO batch, restore that batch's remainingQuantity
+        if (usageLog.receivingItemId) {
+          const batch = await db.inventoryReceivingItem.findUnique({
+            where: { id: usageLog.receivingItemId }
+          });
+          if (batch) {
+            const restoredBatchRemaining = (batch.remainingQuantity ?? 0) + restoreQty;
+            const cappedRemaining = Math.min(restoredBatchRemaining, batch.quantity);
+            await db.inventoryReceivingItem.update({
+              where: { id: batch.id },
+              data: { remainingQuantity: cappedRemaining }
+            });
+          }
+        }
+
+        await db.inventoryLog.create({
+          data: {
+            inventoryItemId: invItem.id,
+            quantityBefore: qtyBefore,
+            quantityAfter: qtyAfter,
+            changeQty: restoreQty,
+            cost: (usageLog.unitCost || invItem.costPrice || 0) * restoreQty,
+            unitCost: usageLog.unitCost || invItem.costPrice || 0,
+            batchNumber: usageLog.batchNumber || null,
+            receivingItemId: usageLog.receivingItemId || null,
+            type: 'RESTORATION',
+            reason: `${reason} - Order #${order.orderNumber}`,
+            orderId: order.id,
+            orderItemId: usageLog.orderItemId,
+            userId: userId || null
+          }
+        });
+
+        itemsToEmit.push(updatedInv);
+      }
     }
+
+    return { success: true, message: `Inventory restored for Order #${order.orderNumber}`, itemsToEmit };
+  };
+
+  let result;
+  if (tx) {
+    result = await runRestoration(tx);
+  } else {
+    result = await defaultPrisma.$transaction(async (innerTx) => {
+      return await runRestoration(innerTx);
+    });
   }
 
   setImmediate(() => {
-    for (const item of itemsToEmit) {
-      emitToAdmin('inventory:update', item);
-      emitToVendor('inventory:update', item);
+    if (result.itemsToEmit && result.itemsToEmit.length > 0) {
+      for (const item of result.itemsToEmit) {
+        emitToAdmin('inventory:update', item);
+        emitToVendor('inventory:update', item);
+      }
     }
   });
 
-  return { success: true, message: `Inventory restored for Order #${order.orderNumber}` };
+  return { success: true, message: result.message };
 };
 
 module.exports = {
