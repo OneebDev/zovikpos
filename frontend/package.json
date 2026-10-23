@@ -10,7 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.116.0",
     "@tanstack/react-query": "^5.102.8",
     "axios": "^1.16.1",
     "html5-qrcode": "^2.3.8",

@@ -166,7 +166,7 @@ const AdminStaffView = ({ showToast }) => {
     setActionLoading(true);
     try {
       await api.post('/admin/staff', formData);
-      if (showToast) showToast('Staff account created & synced with Supabase Auth!');
+      if (showToast) showToast('Staff account created successfully!');
       setShowAddModal(false);
       setFormData({ name: '', email: '', password: '', role: 'VENDOR', isDemo: false });
       fetchStaff();
@@ -252,7 +252,7 @@ const AdminStaffView = ({ showToast }) => {
             <span>Staff Accounts &amp; Authorization</span>
           </h2>
           <p className="text-xs text-[var(--text-muted)] mt-1 ml-10">
-            Manage administrative, cashier, and kitchen credentials synced directly with Supabase.
+            Manage administrative, cashier, and kitchen credentials securely.
           </p>
         </div>
         <div className="flex w-full min-w-0 items-center justify-start gap-1.5 overflow-x-auto pb-1 sm:w-auto sm:justify-end sm:overflow-visible">
@@ -543,7 +543,7 @@ const AdminStaffView = ({ showToast }) => {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[var(--text-main)]">Add New Staff Member</h3>
-                  <p className="text-[11px] text-[var(--text-muted)]">Account will sync to Supabase Auth automatically</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">Account credentials will be created securely</p>
                 </div>
               </div>
               <button

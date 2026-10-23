@@ -1,7 +1,6 @@
 const bcrypt = require('bcryptjs');
 const { prisma } = require('../config/db');
 const { logAudit } = require('../middleware/auditMiddleware');
-const supabaseAdmin = require('../config/supabaseAdmin');
 const { emitToAccount } = require('../sockets/socket');
 const { clearUserCache } = require('../middleware/authMiddleware');
 const { withTableLabel } = require('../utils/tableLabel');
@@ -12,41 +11,6 @@ const {
   createDispute,
   updateDisputeStatus: updateDisputeStatusService,
 } = require('../services/disputeService');
-
-/**
- * Helper: sync a user action to Supabase Auth (silent fail if admin client not ready)
- */
-async function syncToSupabaseAuth(action, payload) {
-  if (!supabaseAdmin) return null;
-  try {
-    let result;
-    if (action === 'create') {
-      result = await supabaseAdmin.auth.admin.createUser({
-        email: payload.email,
-        password: payload.password,
-        email_confirm: true,
-        user_metadata: { name: payload.name, role: payload.role },
-      });
-    } else if (action === 'updatePassword') {
-      result = await supabaseAdmin.auth.admin.updateUserById(payload.supabaseId, {
-        password: payload.password,
-      });
-    } else if (action === 'ban') {
-      result = await supabaseAdmin.auth.admin.updateUserById(payload.supabaseId, {
-        ban_duration: payload.banned ? '876000h' : 'none',
-      });
-    } else if (action === 'updateRole') {
-      result = await supabaseAdmin.auth.admin.updateUserById(payload.supabaseId, {
-        user_metadata: { role: payload.role },
-      });
-    }
-    if (result?.error) console.warn('⚠️  Supabase Auth sync warning:', result.error.message);
-    return result?.data || null;
-  } catch (err) {
-    console.warn('⚠️  Supabase Auth sync error:', err.message);
-    return null;
-  }
-}
 
 const dashboardStatsCache = new Map();
 const DASHBOARD_CACHE_TTL_MS = 15 * 1000; // 15s fast cache
@@ -673,23 +637,6 @@ const createStaff = async (req, res) => {
       },
     });
 
-    // Sync to Supabase Auth so real account appears in Supabase dashboard
-    const authUser = await syncToSupabaseAuth('create', {
-      email: normalizedEmail,
-      password,
-      name: name.trim(),
-      role: role.toUpperCase(),
-    });
-    if (authUser?.user?.id) {
-      exceptionLogger.log('info', 'auth.supabase_sync', 'Staff account synchronized', {
-        context: { recipientEmail: normalizedEmail, userId: authUser.user.id, provider: 'supabase' },
-      });
-    } else {
-      exceptionLogger.log('warn', 'auth.supabase_sync', 'Staff account synchronization skipped', {
-        context: { recipientEmail: normalizedEmail, provider: 'supabase' },
-      });
-    }
-
     await logAudit({
       userId: req.user?.id,
       action: 'STAFF_ACCOUNT_CREATED',
@@ -753,7 +700,7 @@ const updateStaff = async (req, res) => {
 };
 
 /**
- * Change Staff Role (Admin Only) — updates Prisma + Supabase Auth metadata
+ * Change Staff Role (Admin Only) — updates the user role in the database
  */
 const updateStaffRole = async (req, res) => {
   const { id } = req.params;
@@ -770,7 +717,7 @@ const updateStaffRole = async (req, res) => {
   }
 
   try {
-    // Get current user to find Supabase Auth ID by email
+    // Get current user (needed for 404 check and old role)
     const current = await prisma.user.findUnique({ where: { id: targetId } });
     if (!current) return res.status(404).json({ error: 'Staff member not found.' });
 
@@ -779,15 +726,6 @@ const updateStaffRole = async (req, res) => {
       data: { role: role.toUpperCase() },
       select: { id: true, name: true, email: true, role: true, isActive: true, isDemo: true, createdAt: true },
     });
-
-    // Sync role to Supabase Auth metadata if admin client is available
-    if (supabaseAdmin) {
-      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const authUser = authUsers?.users?.find(u => u.email === current.email);
-      if (authUser) {
-        await syncToSupabaseAuth('updateRole', { supabaseId: authUser.id, role: role.toUpperCase() });
-      }
-    }
 
     await logAudit({
       userId: req.user?.id,
@@ -839,15 +777,6 @@ const toggleStaffStatus = async (req, res) => {
       data: { isActive: Boolean(isActive) },
       select: { id: true, name: true, email: true, role: true, isActive: true, isDemo: true },
     });
-
-    // Sync ban status to Supabase Auth
-    if (supabaseAdmin && target) {
-      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const authUser = authUsers?.users?.find(u => u.email === target.email);
-      if (authUser) {
-        await syncToSupabaseAuth('ban', { supabaseId: authUser.id, banned: !isActive });
-      }
-    }
 
     await logAudit({
       userId: req.user?.id,
@@ -922,14 +851,6 @@ const deleteStaffAccount = async (req, res) => {
         data: { isActive: false }
       });
 
-      if (supabaseAdmin) {
-        const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-        const authUser = authUsers?.users?.find(u => u.email === target.email);
-        if (authUser) {
-          await syncToSupabaseAuth('ban', { supabaseId: authUser.id, banned: true });
-        }
-      }
-
       clearUserCache(targetId);
       emitToAccount(targetId, 'staff:account-updated', {
         userId: targetId,
@@ -955,14 +876,6 @@ const deleteStaffAccount = async (req, res) => {
 
     // No historical dependencies: perform clean hard delete
     await prisma.user.delete({ where: { id: targetId } });
-
-    if (supabaseAdmin) {
-      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const authUser = authUsers?.users?.find(u => u.email === target.email);
-      if (authUser) {
-        await supabaseAdmin.auth.admin.deleteUser(authUser.id);
-      }
-    }
 
     clearUserCache(targetId);
     emitToAccount(targetId, 'staff:account-updated', {
@@ -1425,15 +1338,6 @@ const resetStaffPassword = async (req, res) => {
       select: { id: true, name: true, email: true, role: true },
     });
 
-    // Sync new password to Supabase Auth
-    if (supabaseAdmin) {
-      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const authUser = authUsers?.users?.find(u => u.email === updated.email);
-      if (authUser) {
-        await syncToSupabaseAuth('updatePassword', { supabaseId: authUser.id, password });
-      }
-    }
-
     await logAudit({
       userId: req.user?.id,
       action: 'STAFF_PASSWORD_RESET',
@@ -1712,14 +1616,6 @@ const blockCustomerAccount = async (req, res) => {
 
     clearUserCache(targetId);
 
-    if (supabaseAdmin) {
-      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const authUser = authUsers?.users?.find(u => u.email === target.email);
-      if (authUser) {
-        await syncToSupabaseAuth('ban', { supabaseId: authUser.id, banned: true });
-      }
-    }
-
     const rollNumber = extractStudentRollNumber(target.email);
 
     await logAudit({
@@ -1822,14 +1718,6 @@ const unblockCustomerAccount = async (req, res) => {
     });
 
     clearUserCache(targetId);
-
-    if (supabaseAdmin) {
-      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const authUser = authUsers?.users?.find(u => u.email === target.email);
-      if (authUser) {
-        await syncToSupabaseAuth('ban', { supabaseId: authUser.id, banned: false });
-      }
-    }
 
     const rollNumber = extractStudentRollNumber(target.email);
 
