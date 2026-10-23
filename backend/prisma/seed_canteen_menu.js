@@ -1,6 +1,6 @@
 /**
  * Canteen Menu Seed — ZovikPOS AI-Powered POS
- * Seeds all 36 real canteen menu items into Supabase.
+ * Seeds all 36 real canteen menu items into the configured database.
  * Safe to re-run: clears existing items before seeding.
  */
 const { PrismaClient } = require('@prisma/client');

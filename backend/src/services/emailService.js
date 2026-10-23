@@ -1,5 +1,4 @@
 const nodemailer = require('nodemailer');
-const axios = require('axios');
 const exceptionLogger = require('../utils/exceptionLogger');
 const { formatTableLabel } = require('../utils/tableLabel');
 const {
@@ -20,45 +19,56 @@ const {
   totalsTable,
 } = require('./emailTemplateHelpers');
 
-const createTransporter = () => {
-  const host = process.env.SMTP_HOST;
-  const port = process.env.SMTP_PORT || 465;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+const SMTP_DEFAULT_HOST = 'smtp.hostinger.com';
+const SMTP_DEFAULT_PORT = 465;
+const SMTP_DEFAULT_FROM = 'Zovik POS <support@zovikpos.store>';
+const SMTP_REPLY_TO = 'support@zovikpos.store';
+const SMTP_TIMEOUT_MS = 10000;
 
-  if (host && user && pass) {
+const getSmtpConfig = () => {
+  const port = Number(process.env.SMTP_PORT) || SMTP_DEFAULT_PORT;
+  return {
+    host: process.env.SMTP_HOST || SMTP_DEFAULT_HOST,
+    port,
+    secure: process.env.SMTP_SECURE
+      ? process.env.SMTP_SECURE === 'true'
+      : port === 465,
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+    from: process.env.EMAIL_FROM || SMTP_DEFAULT_FROM,
+  };
+};
+
+const createTransporter = () => {
+  const { host, port, secure, user, pass } = getSmtpConfig();
+
+  if (user && pass) {
     return nodemailer.createTransport({
       host,
-      port: parseInt(port, 10),
-      secure: parseInt(port, 10) === 465,
+      port,
+      secure,
       auth: { user, pass },
+      connectionTimeout: SMTP_TIMEOUT_MS,
+      greetingTimeout: SMTP_TIMEOUT_MS,
+      socketTimeout: SMTP_TIMEOUT_MS,
     });
   }
   return null;
 };
 
-const sendViaResend = async (to, subject, text, html) => {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey || apiKey.trim() === '') return false;
-
-  try {
-    const from = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
-    const response = await axios.post(
-      'https://api.resend.com/emails',
-      { from, to: [to], subject, text, html },
-      { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } }
+const logEmailConfiguration = () => {
+  const { host, port, user, pass } = getSmtpConfig();
+  if (!user || !pass) {
+    exceptionLogger.log(
+      process.env.NODE_ENV === 'production' ? 'error' : 'warn',
+      'email.smtp.configuration',
+      'SMTP_USER and SMTP_PASS are missing; email-dependent flows cannot deliver email.',
+      { context: { provider: 'smtp', host, port, credentialsConfigured: false } }
     );
-    exceptionLogger.log('info', 'email.resend.send', 'Email sent', {
-      context: { recipientEmail: to, provider: 'resend' },
-    });
-    return true;
-  } catch (err) {
-    exceptionLogger.exception('email.resend.send', err, {
-      level: 'warn', context: { recipientEmail: to, provider: 'resend', code: err.code },
-    });
-    return false;
   }
 };
+
+logEmailConfiguration();
 
 const logEmailLocally = (to, subject, textContent, htmlContent) => {
   void subject;
@@ -70,31 +80,32 @@ const logEmailLocally = (to, subject, textContent, htmlContent) => {
 };
 
 const sendMailGeneric = async (to, subject, textContent, htmlContent, attachments = []) => {
-  const sentViaResend = await sendViaResend(to, subject, textContent, htmlContent);
-  if (sentViaResend) return;
-
   const transporter = createTransporter();
-  if (transporter) {
-    try {
-      await transporter.sendMail({
-        from: `"ZovikPOS Canteen" <${process.env.SMTP_USER || 'no-reply@zovikpos.com'}>`,
-        to,
-        subject,
-        text: textContent,
-        html: htmlContent,
-        attachments,
-      });
-      exceptionLogger.log('info', 'email.smtp.send', 'Email sent', {
-        context: { recipientEmail: to, provider: 'smtp' },
-      });
-    } catch (err) {
-      exceptionLogger.exception('email.smtp.send', err, {
-        level: 'error', context: { recipientEmail: to, provider: 'smtp', code: err.code },
-      });
-      logEmailLocally(to, subject, textContent, htmlContent);
-    }
-  } else {
+  if (!transporter) {
     logEmailLocally(to, subject, textContent, htmlContent);
+    throw new Error('SMTP email delivery is not configured.');
+  }
+
+  const { from } = getSmtpConfig();
+  try {
+    await transporter.sendMail({
+      from,
+      replyTo: SMTP_REPLY_TO,
+      to,
+      subject,
+      text: textContent,
+      html: htmlContent,
+      attachments,
+    });
+    exceptionLogger.log('info', 'email.smtp.send', 'Email sent', {
+      context: { recipientEmail: to, provider: 'smtp' },
+    });
+  } catch (err) {
+    exceptionLogger.exception('email.smtp.send', err, {
+      level: 'error', context: { recipientEmail: to, provider: 'smtp', code: err.code },
+    });
+    logEmailLocally(to, subject, textContent, htmlContent);
+    throw err;
   }
 };
 

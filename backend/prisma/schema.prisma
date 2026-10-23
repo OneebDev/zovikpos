@@ -100,6 +100,7 @@ model CartItem {
   updatedAt  DateTime @updatedAt
 
   @@index([cartId])
+  @@unique([cartId, menuItemId])
 }
 
 model Category {

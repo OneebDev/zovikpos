@@ -2,7 +2,7 @@
 
 ## 1. Database Layer: Heroku Postgres
 
-The primary application database is hosted on **Heroku Postgres**. Supabase DB is deprecated and replaced; Supabase is retained **only** for Object Storage (menu item images and learned aliases). Do not delete the old Supabase database for at least **1 week** following production cutover.
+The primary application database is hosted on **Heroku Postgres**. Supabase is retained **only** for Object Storage of menu item images. Learned aliases are currently stored on local disk and are planned to move to Postgres. Optionally keep the old Supabase database for at least **1 week** as a rollback reference.
 
 ### Provisioning (Deploy Day)
 Provision Heroku Postgres for the backend application:
@@ -44,52 +44,17 @@ web: node src/server.js
 
 ---
 
-## 3. Data Migration & Cutover (Supabase to Heroku Postgres)
+## 3. Fresh Database Setup
 
-Run these steps when performing the one-time data cutover:
+1. Provision Heroku Postgres for the backend application.
+2. Set the Heroku-provided `DATABASE_URL` and required backend configuration.
+3. Run `npx prisma migrate deploy` during the Heroku release phase.
+4. Run the project seed against the fresh database.
+5. Verify the seeded menu and required application tables before opening traffic.
 
-### Step 1: Pre-Cutover Backup from Supabase
-Export a full dump from Supabase using the direct port 5432 connection string (do NOT use port 6543 pooler):
-```powershell
-pg_dump -Fc --no-owner --no-privileges -d "<SUPABASE_DIRECT_URL>" -f zovikpos_full_backup.dump
-pg_dump --schema-only --no-owner --no-privileges -d "<SUPABASE_DIRECT_URL>" -f schema.sql
-```
-Verify the backup file is non-empty:
-```powershell
-dir zovikpos_full_backup.dump
-```
+No Supabase database data dump or restore is part of this fresh-database plan. Optionally keep the old Supabase database active for at least **1 week** as a rollback reference.
 
-### Step 2: Verify `_prisma_migrations` Table
-Inspect the dump archive table of contents to ensure `_prisma_migrations` is present so future releases recognize past migration state:
-```powershell
-pg_restore -l zovikpos_full_backup.dump | Select-String "_prisma_migrations"
-```
-
-### Step 3: Restore to Heroku Postgres
-1. Enable maintenance mode:
-   ```powershell
-   heroku maintenance:on -a <backend-app>
-   ```
-2. Retrieve the Heroku database connection string:
-   ```powershell
-   $DB = heroku config:get DATABASE_URL -a <backend-app>
-   ```
-3. Restore the dump into Heroku Postgres:
-   ```powershell
-   pg_restore --verbose --no-acl --no-owner -d $DB zovikpos_full_backup.dump
-   ```
-4. Disable maintenance mode:
-   ```powershell
-   heroku maintenance:off -a <backend-app>
-   ```
-5. Verify restoration success:
-   ```powershell
-   heroku pg:psql -a <backend-app> -c 'SELECT count(*) FROM "Order";'
-   ```
-
-### Step 4: Retention Period
-- **Keep Supabase Database Active**: Keep the old Supabase database running untouched for at least **1 week** as a safety rollback target.
-- Supabase Storage (buckets for menu item images and learned aliases) remains active permanently.
+Supabase Storage remains active permanently for menu item images only. Learned aliases currently remain on local disk and are planned to move to Postgres.
 
 ---
 

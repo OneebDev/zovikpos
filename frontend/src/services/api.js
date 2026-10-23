@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-const PRODUCTION_BACKEND_URL = 'https://sparkling-miracle-production-d21c.up.railway.app';
 let warnedAboutLoopbackBackend = false;
 
 const getPageHostInfo = () => {
@@ -13,15 +12,17 @@ const getPageHostInfo = () => {
 const warnForUnreachableLoopback = (url, pageHost) => {
   if (!warnedAboutLoopbackBackend && pageHost && !['localhost', '127.0.0.1', '::1'].includes(pageHost) && /localhost|127\.0\.0\.1/i.test(url)) {
     warnedAboutLoopbackBackend = true;
-    console.warn('[ZOVIKPOS] Backend URL points to localhost while this page is open on another host. Set VITE_API_BASE_URL and VITE_SOCKET_URL to a backend URL reachable from this device.');
+    console.warn('[ZOVIKPOS] Backend URL points to localhost while this page is open on another host. Set VITE_API_URL and VITE_SOCKET_URL to a backend URL reachable from this device.');
   }
 };
 
 /**
  * Resolves the root backend server URL (without /api suffix).
- * e.g. "https://sparkling-miracle-production-d21c.up.railway.app" or "http://localhost:5001"
+ * In production: strictly derived from VITE_API_URL (or VITE_API_BASE_URL). Throws if unset.
+ * In development: falls back to current page host / localhost:5001.
  */
 export const resolveBackendUrl = () => {
+  const isProd = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.PROD);
   const envVal =
     (typeof import.meta !== 'undefined' &&
       (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL)) ||
@@ -29,8 +30,6 @@ export const resolveBackendUrl = () => {
 
   const { host: pageHost, isLoopback: pageIsLoopback, isLan: pageIsLanHost } = getPageHostInfo();
 
-  // Honor an explicit backend URL, except a loopback URL when the page is open
-  // from a LAN hostname. On a phone, "localhost" refers to the phone itself.
   if (envVal && typeof envVal === 'string' && envVal.trim() !== '') {
     const trimmed = envVal.trim().replace(/\/+$/, '').replace(/\/api$/, '');
     let envPointsToLoopback = false;
@@ -40,7 +39,7 @@ export const resolveBackendUrl = () => {
       envUrlIsValid = ['http:', 'https:'].includes(parsedEnvUrl.protocol);
       envPointsToLoopback = ['localhost', '127.0.0.1', '::1'].includes(parsedEnvUrl.hostname);
     } catch {
-      // An invalid explicit URL is ignored and the host-based fallback below is used.
+      // invalid URL
     }
     if (envPointsToLoopback) warnForUnreachableLoopback(trimmed, pageHost);
     if (envUrlIsValid && (!envPointsToLoopback || pageIsLoopback)) return trimmed;
@@ -49,22 +48,20 @@ export const resolveBackendUrl = () => {
     }
   }
 
-  // When using a local LAN IP (e.g. 192.168.x.x) or localhost, matching the
-  // page hostname lets phones reach the backend running on the same computer.
+  if (isProd) {
+    const errorMsg = '[ZOVIKPOS FATAL] VITE_API_URL is not set in this production build. Please set VITE_API_URL in your hosting platform (e.g. Vercel).';
+    console.error(errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  // Development localhost / LAN fallback
   if (pageHost) {
     if (pageIsLoopback || pageIsLanHost) {
       return `${window.location.protocol}//${pageHost}:5001`;
     }
   }
 
-  // If in production or running on a remote host (such as Vercel), do NOT fall back to localhost
-  const isProd = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.PROD);
-
-  if (!pageIsLoopback && (isProd || (pageHost && !pageIsLanHost))) {
-    return PRODUCTION_BACKEND_URL;
-  }
-
-  return PRODUCTION_BACKEND_URL;
+  return 'http://localhost:5001';
 };
 
 export const resolveSocketUrl = () => {

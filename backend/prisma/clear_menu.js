@@ -2,8 +2,9 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 async function clearMenu() {
-  console.log('Cleaning all menu items from Supabase database...');
+  console.log('Cleaning all menu items from the configured database...');
   try {
+    // Destructive operation: never run on production.
     // Must delete in this order to avoid foreign key constraint errors
     console.log('Step 1: Deleting cart items...');
     await prisma.cartItem.deleteMany({});

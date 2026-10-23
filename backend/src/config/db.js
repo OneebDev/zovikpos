@@ -1,11 +1,36 @@
 const { PrismaClient } = require('@prisma/client');
 const exceptionLogger = require('../utils/exceptionLogger');
 
-// Heroku Postgres Essential-0 connection pool configuration:
-// Plan connection limit: 20 max connections.
-// Formula: Math.floor((20 total - 3 reserved) / WEB_CONCURRENCY) => 10 connections per dyno.
-// Acquire timeout: 15s via pool_timeout query parameter to absorb bursts without P2024 errors.
+// Heroku / Production Postgres connection pool configuration:
+// Formula: Math.floor((plan connection limit - reserve) / dynos)
+const rawDbUrl = process.env.DATABASE_URL || '';
+let effectiveUrl = rawDbUrl;
+
+const poolMax = parseInt(process.env.DB_POOL_MAX, 10);
+const poolTimeoutSec = parseInt(process.env.DB_POOL_TIMEOUT_SECONDS, 10);
+
+if (rawDbUrl && (Number.isFinite(poolMax) || Number.isFinite(poolTimeoutSec))) {
+  try {
+    const parsed = new URL(rawDbUrl);
+    if (Number.isFinite(poolMax) && poolMax > 0 && !parsed.searchParams.has('connection_limit')) {
+      parsed.searchParams.set('connection_limit', String(poolMax));
+    }
+    if (Number.isFinite(poolTimeoutSec) && poolTimeoutSec > 0 && !parsed.searchParams.has('pool_timeout')) {
+      parsed.searchParams.set('pool_timeout', String(poolTimeoutSec));
+    }
+    effectiveUrl = parsed.toString();
+  } catch {
+    // Leave URL intact if parsing fails
+  }
+}
+
+// Log effective pool configuration safely without printing credentials
+const poolLimitDisplay = rawDbUrl.match(/connection_limit=(\d+)/)?.[1] || (Number.isFinite(poolMax) ? poolMax : 'default');
+const poolTimeoutDisplay = rawDbUrl.match(/pool_timeout=(\d+)/)?.[1] || (Number.isFinite(poolTimeoutSec) ? poolTimeoutSec : 'default');
+console.log(`[Database] Connection pool initialized (connection_limit: ${poolLimitDisplay}, pool_timeout: ${poolTimeoutDisplay}s)`);
+
 const prisma = new PrismaClient({
+  datasources: effectiveUrl ? { db: { url: effectiveUrl } } : undefined,
   log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
 });
 

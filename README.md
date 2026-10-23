@@ -73,7 +73,7 @@
                ▼                            ▼                            ▼
 ┌──────────────────────────┐   ┌──────────────────────────┐   ┌──────────────────────────┐
 │ PostgreSQL Database      │   │ Python FastAPI ML Engine │   │ Groq Vision & LLM APIs   │
-│ (Hosted on Supabase)     │   │ (scikit-learn Demand)    │   │ (Multi-Key Rotation)     │
+│ (Hosted on Heroku)       │   │ (scikit-learn Demand)    │   │ (Multi-Key Rotation)     │
 └──────────────────────────┘   └──────────────────────────┘   └──────────────────────────┘
 ```
 
@@ -81,7 +81,7 @@
 |---|---|---|
 | **Frontend UI** | Web Application | React 19, Vite, Vanilla CSS / TailwindCSS, Lucide Icons, Recharts |
 | **Backend API** | Application Server | Node.js, Express, Prisma ORM, Socket.io, JWT Authentication |
-| **Database** | Database Engine | PostgreSQL (Hosted on Supabase Cloud with Connection Pooling) |
+| **Database** | Database Engine | PostgreSQL (Hosted on Heroku Postgres with Connection Pooling) |
 | **AI ML Engine**| Forecasting Service| Python 3.10+, FastAPI, Uvicorn, scikit-learn, NumPy |
 | **AI LLM API**  | Vision & NLP | Groq Cloud Multimodal API (`qwen/qwen3.8-27b`, `openai/gpt-oss-120b`, `allam-2-7b`) |
 | **OCR Fallback**| Client OCR Engine| Tesseract.js |
@@ -123,17 +123,16 @@ Add the following environment variables:
 
 ```env
 PORT=5001
-DATABASE_URL="postgresql://postgres.[PROJECT_REF]:[DATABASE_PASSWORD]@[POOLER_HOST]:5432/postgres?connection_limit=5&pool_timeout=15"
+DATABASE_URL="postgresql://<user>:<password>@<host>:5432/<database>?connection_limit=10&pool_timeout=15&sslmode=no-verify"
 JWT_SECRET="[GENERATE_A_UNIQUE_SECRET]"
 JWT_REFRESH_SECRET="[GENERATE_A_DIFFERENT_UNIQUE_SECRET]"
 FRONTEND_URL="http://localhost:5173"
 AI_SERVICE_URL="http://localhost:8000"
 QR_SECRET="[GENERATE_A_UNIQUE_SECRET]"
 
-# Supabase Cloud Database Config
-SUPABASE_URL="https://ufcphvkxlzjcksmahvwh.supabase.co"
+# Supabase Storage Config
+SUPABASE_URL="https://your-project.supabase.co"
 SUPABASE_ANON_KEY="[YOUR_SUPABASE_ANON_KEY]"
-SUPABASE_SERVICE_KEY="[YOUR_SUPABASE_SERVICE_ROLE_KEY]"
 
 # SMTP Email OTP Settings
 SMTP_HOST="smtp.gmail.com"
@@ -454,7 +453,7 @@ Key database models in `backend/prisma/schema.prisma`:
    - `getDashboardStats` caches response payloads for **15 seconds**, serving subsequent dashboard loads in **< 1ms**.
    - `getAllItems` caches menu catalog queries for **10 seconds**, invalidating automatically on menu mutations.
 2. **PostgreSQL Connection Pooling**:
-   - `DATABASE_URL` query parameters (`?connection_limit=5&pool_timeout=15`) keep active client connections within Supabase caps.
+   - `DATABASE_URL` query parameters (`?connection_limit=10&pool_timeout=15`) keep active client connections within the Heroku Postgres plan limit.
 3. **Frontend Asset Optimization**:
    - Production bundle compiled via Vite, minimizing CSS/JS chunk sizes.
 
