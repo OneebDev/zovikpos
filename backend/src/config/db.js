@@ -6,17 +6,22 @@ const exceptionLogger = require('../utils/exceptionLogger');
 const rawDbUrl = process.env.DATABASE_URL || '';
 let effectiveUrl = rawDbUrl;
 
-const poolMax = parseInt(process.env.DB_POOL_MAX, 10);
+// DB_POOL_MAX defaults to 5 if unset
+const poolMax = parseInt(process.env.DB_POOL_MAX, 10) || 5;
 const poolTimeoutSec = parseInt(process.env.DB_POOL_TIMEOUT_SECONDS, 10);
 
-if (rawDbUrl && (Number.isFinite(poolMax) || Number.isFinite(poolTimeoutSec))) {
+if (rawDbUrl) {
   try {
     const parsed = new URL(rawDbUrl);
-    if (Number.isFinite(poolMax) && poolMax > 0 && !parsed.searchParams.has('connection_limit')) {
+    if (!parsed.searchParams.has('connection_limit')) {
       parsed.searchParams.set('connection_limit', String(poolMax));
     }
     if (Number.isFinite(poolTimeoutSec) && poolTimeoutSec > 0 && !parsed.searchParams.has('pool_timeout')) {
       parsed.searchParams.set('pool_timeout', String(poolTimeoutSec));
+    }
+    // Heroku Postgres self-signed cert handling: ensure sslmode=no-verify if connecting to remote postgres
+    if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1' && !parsed.searchParams.has('sslmode')) {
+      parsed.searchParams.set('sslmode', 'no-verify');
     }
     effectiveUrl = parsed.toString();
   } catch {
