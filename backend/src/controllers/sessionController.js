@@ -3,6 +3,7 @@ const { prisma } = require('../config/db');
 const { verifyTableToken } = require('../services/qrSecurityService');
 const { formatTableLabel, isPhysicalTable } = require('../utils/tableLabel');
 const { isSessionIdleExpired, touchSessionActivity } = require('../utils/sessionActivity');
+const { generateSessionSecret, hashSessionSecret } = require('../utils/sessionSecurity');
 
 /**
  * Start a new dining session from a validated table QR
@@ -61,6 +62,8 @@ const startSession = async (req, res) => {
 
     // Create a new distinct session UUID for this customer visit
     const sessionId = crypto.randomUUID();
+    const sessionSecret = generateSessionSecret();
+    const secretHash = hashSessionSecret(sessionSecret);
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes inactivity window
 
@@ -71,6 +74,7 @@ const startSession = async (req, res) => {
         tableLabel: formatTableLabel({ table }),
         customerId,
         status: 'ACTIVE',
+        secretHash,
         startedAt: now,
         lastActivityAt: now,
         expiresAt,
@@ -103,6 +107,7 @@ const startSession = async (req, res) => {
         customerId: session.customerId,
         expiresAt: session.expiresAt,
         cart: session.cart,
+        secret: sessionSecret,
       },
     });
   } catch (error) {
@@ -160,15 +165,10 @@ const getSession = async (req, res) => {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
 
-    // Rule B: A session is only expired by idleness when ALL of the following are true:
-    // - idle time > SESSION_IDLE_MINUTES (env, default 10)
-    // - server cart is empty
-    // - no orders on the session
-    // If the session has cart items OR any order, it must never be expired by idleness.
+    // Revised Rule B: Evaluate idle expiry based on B1, B2, B3 rules
     if (session.status === 'ACTIVE') {
       const cartItemCount = session.cart?.items?.length || 0;
-      const orderCount = session.orders?.length || 0;
-      const idleExpired = isSessionIdleExpired(session, cartItemCount, orderCount);
+      const idleExpired = isSessionIdleExpired(session, cartItemCount, session.orders);
 
       if (idleExpired) {
         const updated = await prisma.session.update({
@@ -176,6 +176,10 @@ const getSession = async (req, res) => {
           data: { status: 'EXPIRED' },
         });
         session.status = updated.status;
+        if (cartItemCount > 0) {
+          await prisma.cartItem.deleteMany({ where: { cart: { sessionId } } }).catch(() => {});
+          if (session.cart?.items) session.cart.items = [];
+        }
       } else {
         // Throttled activity touch (fire-and-forget, no await)
         touchSessionActivity(sessionId, session.lastActivityAt).catch(() => {});

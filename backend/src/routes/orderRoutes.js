@@ -34,6 +34,6 @@ router.delete('/bulk', roleMiddleware(['ADMIN', 'VENDOR']), bulkDeleteOrders);
 router.delete('/:id', roleMiddleware(['ADMIN', 'VENDOR']), validateParams(idParamSchema), deleteOrder);
 router.get('/:id', validateParams(idParamSchema), getOrderById);
 router.put('/:id/status', roleMiddleware(['ADMIN', 'VENDOR', 'KITCHEN', 'CUSTOMER']), validateParams(idParamSchema), updateOrderStatus);
-router.put('/:id/transfer-table', roleMiddleware(['ADMIN', 'VENDOR', 'CUSTOMER']), validateParams(idParamSchema), transferSingleOrderTable);
+router.put('/:id/transfer-table', roleMiddleware(['ADMIN', 'VENDOR']), validateParams(idParamSchema), transferSingleOrderTable);
 
 module.exports = router;

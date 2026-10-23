@@ -20,11 +20,11 @@ const getPhysicalCustomerSession = async (sessionId) => prisma.session.findUniqu
     tableId: true,
     table: { select: { id: true, isActive: true, tableNumber: true, branchId: true, qrToken: true } },
     cart: { select: { items: { select: { id: true } } } },
-    orders: { select: { id: true } },
+    orders: { select: { id: true, status: true } },
   },
 });
 
-// Rule B: check idle expiry only when cart empty AND no orders.
+// Rule B: check idle expiry only when allowed by Rule B1/B2/B3.
 const requireActivePhysicalSession = async (sessionId, res) => {
   const session = await getPhysicalCustomerSession(sessionId);
   if (!session || session.status !== 'ACTIVE') {
@@ -36,10 +36,13 @@ const requireActivePhysicalSession = async (sessionId, res) => {
     return null;
   }
   const cartItemCount = session.cart?.items?.length || 0;
-  const orderCount = session.orders?.length || 0;
-  if (isSessionIdleExpired(session, cartItemCount, orderCount)) {
-    // Mark expired only if Rule B permits it (idle + empty cart + no orders)
+  if (isSessionIdleExpired(session, cartItemCount, session.orders)) {
+    // Mark expired only if Rule B permits it
     await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } }).catch(() => {});
+    // B2: If cart had items, delete server cart items
+    if (cartItemCount > 0) {
+      await prisma.cartItem.deleteMany({ where: { cart: { sessionId } } }).catch(() => {});
+    }
     res.status(403).json({ error: 'Your dining session has expired due to inactivity. Please scan the QR code again to start a new session.', code: 'TABLE_SESSION_REQUIRED' });
     return null;
   }

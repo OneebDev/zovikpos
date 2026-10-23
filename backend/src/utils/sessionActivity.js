@@ -1,45 +1,87 @@
 // src/utils/sessionActivity.js
 // Centralized server-side session activity and idle expiry helper.
-// Rules:
-// 1. SESSION_IDLE_MINUTES (default 10) from env.
-// 2. A session is marked EXPIRED by inactivity ONLY IF:
-//    - idle time > SESSION_IDLE_MINUTES (comparing now against lastActivityAt ?? startedAt)
-//    - AND server-side cart is empty (items.length === 0 or no cart)
-//    - AND session has 0 orders.
-// 3. If cart has items OR any order exists, idleness never expires the session.
-// 4. lastActivityAt updates are throttled to at most once per 30 seconds.
+// Revised Rule B:
+// B1. Cart empty AND no order AND idle > SESSION_IDLE_MINUTES (default 10): session ends -> TABLE_SESSION_REQUIRED
+// B2. Cart has items AND no order AND idle > CART_ABANDON_MINUTES (default 30): session ends, server cart cleared -> TABLE_SESSION_REQUIRED
+// B3. Session has ANY order that is not finished (PENDING, PREPARING, READY, etc): idleness must NEVER end it.
+//     After all its orders are COMPLETED/CANCELLED/REJECTED/EXPIRED and idle > SESSION_IDLE_MINUTES, it may end.
+// B4. Idle = now - (lastActivityAt ?? startedAt). Update lastActivityAt throttled to 30s.
 
 'use strict';
 
 const { prisma } = require('../config/db');
 
-const getSessionIdleMinutes = () => Number(process.env.SESSION_IDLE_MINUTES) || 10;
+const parsePositiveInt = (val, fallback) => {
+  const n = parseInt(val, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
+const getSessionIdleMinutes = () => parsePositiveInt(process.env.SESSION_IDLE_MINUTES, 10);
+const getCartAbandonMinutes = () => parsePositiveInt(process.env.CART_ABANDON_MINUTES, 30);
 const THROTTLE_SECONDS = 30;
 
+// Terminal statuses: when all orders are in this set, orders are considered finished.
+const FINISHED_ORDER_STATUSES = new Set(['COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'PAYMENT_FAILED', 'REFUNDED']);
+
 /**
- * Checks if an active session has expired due to idleness according to Rule B.
+ * Checks if an active session has expired due to idleness according to Revised Rule B.
  * Server time only.
- * @param {Object} session - Session object containing startedAt, lastActivityAt, cart (with items) or orders count
+ * @param {Object} session - Session object containing startedAt, lastActivityAt
  * @param {number} cartItemCount - Number of distinct cart items
- * @param {number} orderCount - Total orders placed in this session
+ * @param {Array|number} orders - Array of orders (or array of status strings), or order count
+ * @param {number} [nowMs] - Optional override for testing clock shift
  * @returns {boolean} true if expired due to idleness
  */
-const isSessionIdleExpired = (session, cartItemCount = 0, orderCount = 0) => {
+const isSessionIdleExpired = (session, cartItemCount = 0, orders = [], nowMs = null) => {
   if (!session) return true;
   if (session.status !== 'ACTIVE') return true;
 
-  // Rule B: If cart has items OR any order exists, idle check MUST NOT expire the session
-  if (cartItemCount > 0 || orderCount > 0) {
+  // Normalize orders argument
+  let orderList = [];
+  if (Array.isArray(orders)) {
+    orderList = orders;
+  } else if (typeof orders === 'number' && orders > 0) {
+    // Legacy numeric order count fallback: assume unfinished for safety
+    return false;
+  }
+
+  // B3: Any unfinished order means idleness must NEVER end the session.
+  const hasUnfinishedOrders = orderList.some((o) => {
+    const status = typeof o === 'string' ? o : o?.status;
+    return status && !FINISHED_ORDER_STATUSES.has(status);
+  });
+
+  if (hasUnfinishedOrders) {
     return false;
   }
 
   const idleMinutes = getSessionIdleMinutes();
-  const lastActive = session.lastActivityAt ? new Date(session.lastActivityAt) : new Date(session.startedAt);
-  const now = Date.now();
-  const diffMs = now - lastActive.getTime();
-  const maxIdleMs = idleMinutes * 60 * 1000;
+  const cartAbandonMinutes = getCartAbandonMinutes();
 
-  return diffMs > maxIdleMs;
+  const lastActive = session.lastActivityAt
+    ? new Date(session.lastActivityAt)
+    : (session.startedAt ? new Date(session.startedAt) : null);
+  // If we have no valid timestamp, we cannot determine idle state — treat as NOT expired (safe default)
+  const lastActiveMs = lastActive && !Number.isNaN(lastActive.getTime()) ? lastActive.getTime() : null;
+  if (lastActiveMs === null) return false;
+  const now = nowMs ? new Date(nowMs).getTime() : Date.now();
+  const diffMs = now - lastActiveMs;
+
+  const hasOrders = orderList.length > 0;
+
+  if (hasOrders) {
+    // B3: All orders finished; expires when idle > SESSION_IDLE_MINUTES
+    return diffMs > idleMinutes * 60 * 1000;
+  }
+
+  // No orders placed in this session:
+  if (cartItemCount > 0) {
+    // B2: Cart has items AND no order AND idle > CART_ABANDON_MINUTES (default 30)
+    return diffMs > cartAbandonMinutes * 60 * 1000;
+  }
+
+  // B1: Cart empty AND no order AND idle > SESSION_IDLE_MINUTES (default 10)
+  return diffMs > idleMinutes * 60 * 1000;
 };
 
 /**
@@ -85,7 +127,11 @@ const touchSessionActivity = async (sessionId, currentLastActivityAt = null) => 
 };
 
 module.exports = {
+  parsePositiveInt,
   getSessionIdleMinutes,
+  getCartAbandonMinutes,
+  FINISHED_ORDER_STATUSES,
   isSessionIdleExpired,
   touchSessionActivity,
 };
+

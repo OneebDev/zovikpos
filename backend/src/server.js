@@ -162,6 +162,7 @@ const { initSocket } = require('./sockets/socket');
 const { generalLimiter } = require('./middleware/rateLimitMiddleware');
 const corsOrigin = require('./middleware/corsPolicy');
 const { startApiIdempotencyCleanup } = require('./services/apiIdempotencyCleanup');
+const { startSweepJob, stopSweepJob } = require('./services/sweepJob');
 const { requestTimeout } = require('./middleware/requestTimeout');
 
 // Route imports
@@ -389,6 +390,9 @@ server.listen(PORT, '0.0.0.0', () => {
     `🚀 ZovikPOS Backend API running on port ${PORT}`
   );
   startApiIdempotencyCleanup();
+  if (process.env.SWEEP_ENABLED === 'true') {
+    startSweepJob();
+  }
 });
 
 // Handle server startup/runtime errors
@@ -399,6 +403,7 @@ server.on('error', (err) => {
 
 // Graceful shutdown
 function shutdown(signal) {
+  stopSweepJob();
   exceptionLogger.log('warn', 'process.signal', `${signal} received`, { context: { code: signal } });
 
   server.close((err) => {

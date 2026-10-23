@@ -1,4 +1,5 @@
 const { prisma } = require('../config/db');
+const { Prisma } = require('@prisma/client');
 const crypto = require('crypto');
 const { emitToVendor, emitToKitchen, emitToUser, emitToAdmin } = require('../sockets/socket');
 const { convertUnit } = require('../utils/unitConverter');
@@ -19,7 +20,8 @@ const { validateStudentEmail } = require('./authController');
 const { COUNTER_TABLE_LABEL, formatTableLabel, withTableLabel, isPhysicalTable } = require('../utils/tableLabel');
 const { isValid, OrderStatus } = require('../utils/statusValues');
 const { roundMoney } = require('../utils/money');
-const { touchSessionActivity } = require('../utils/sessionActivity');
+const { isSessionIdleExpired, touchSessionActivity } = require('../utils/sessionActivity');
+const { withDeadlockRetry, TX_OPTIONS } = require('../utils/dbRetry');
 
 // Statuses that count as an 'open' order for the per-session cap.
 // Exclude terminal statuses: COMPLETED, CANCELLED, PAYMENT_FAILED, REFUNDED.
@@ -147,6 +149,7 @@ const createOrder = async (req, res) => {
       include: {
         table: { include: { branch: true } },
         cart: { select: { items: { select: { id: true } } } },
+        orders: { select: { id: true, status: true } },
       },
     });
 
@@ -157,10 +160,22 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ error: 'Your dining session has expired. Please scan your table QR again.' });
     }
 
-    // Rule B: expiresAt is only a hard deadline for sessions with nothing to protect.
-    // Placing an order is itself activity, so we always permit it on an ACTIVE session
-    // (the session activity helper will extend expiresAt). The idle-expiry path in
-    // getSession / requireActivePhysicalSession handles non-mutation checks.
+    // Rule F4: If session ended while sitting on cart page, return TABLE_SESSION_REQUIRED
+    const cartItemCount = existingSession.cart?.items?.length || 0;
+    if (isSessionIdleExpired(existingSession, cartItemCount, existingSession.orders)) {
+      await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } })
+        .catch((e) => console.error('[Session] Best-effort expire/cleanup error:', e.message));
+      if (cartItemCount > 0) {
+        await prisma.cartItem.deleteMany({ where: { cart: { sessionId } } })
+          .catch((e) => console.error('[Session] Best-effort expire/cleanup error:', e.message));
+      }
+      return res.status(403).json({
+        error: 'Your table session has expired due to inactivity. Scan your table QR code again.',
+        message: 'Your table session has expired due to inactivity. Scan your table QR code again.',
+        code: 'TABLE_SESSION_REQUIRED',
+      });
+    }
+
     if (req.user.role === 'CUSTOMER' && existingSession.customerId && existingSession.customerId !== userId) {
       return res.status(403).json({ error: 'This dining session belongs to another customer.' });
     }
@@ -198,7 +213,10 @@ const createOrder = async (req, res) => {
 
     if (existingSession.tableId && (!existingSession.table || !existingSession.table.isActive)) {
       console.warn('[OrderTable] Rejected order whose session references an unavailable table.', { sessionId });
-      return res.status(400).json({ error: 'The table linked to this session is unavailable. Please scan its QR again.' });
+      return res.status(403).json({
+        error: 'The table linked to this session is unavailable. Please scan its QR again.',
+        code: 'TABLE_SESSION_REQUIRED',
+      });
     }
 
     // Keep legacy staff counter orders readable/usable while customer orders are
@@ -207,7 +225,10 @@ const createOrder = async (req, res) => {
       .test(String(existingSession.tableLabel || '').trim());
     if (!existingSession.tableId && !hasExplicitCounterSession) {
       console.warn('[OrderTable] Rejected order whose session has no valid table or counter label.', { sessionId });
-      return res.status(400).json({ error: 'Your dining session has no valid table. Please restart your session.' });
+      return res.status(403).json({
+        error: 'Your dining session has no valid table. Please restart your session.',
+        code: 'TABLE_SESSION_REQUIRED',
+      });
     }
 
     const resolvedSessionId = existingSession.id;
@@ -224,66 +245,108 @@ const createOrder = async (req, res) => {
       console.warn('AI ETA calculation warning:', etaErr.message);
     }
 
-    // Run DB transaction for atomic order creation
-    const order = await prisma.$transaction(async (tx) => {
-      let subtotal = 0.0;
-      const orderItemsData = [];
+    // Merge duplicate incoming items
+    const mergedItemsMap = new Map();
+    for (const it of items) {
+      const mId = parseInt(it.menuItemId, 10);
+      const q = parseInt(it.quantity, 10) || 1;
+      mergedItemsMap.set(mId, (mergedItemsMap.get(mId) || 0) + q);
+    }
+    const distinctItemIds = Array.from(mergedItemsMap.keys());
 
-      for (const item of items) {
-        const menuItem = await tx.menuItem.findUnique({
-          where: { id: parseInt(item.menuItemId, 10) },
-          include: {
-            recipeItems: {
-              include: { inventoryItem: true }
-            }
-          }
-        });
+    // Batch-fetch all menu items + recipes in ONE query before locking (eliminate N+1 & deadlocks)
+    const fetchedMenuItems = await prisma.menuItem.findMany({
+      where: { id: { in: distinctItemIds } },
+      include: {
+        recipeItems: {
+          include: { inventoryItem: true },
+        },
+      },
+    });
+    const menuMap = new Map((fetchedMenuItems || []).map((m) => [m.id, m]));
 
-        if (!menuItem || !menuItem.isActive) {
-          throw new Error(`Menu item with ID ${item.menuItemId} is not available.`);
+    // Collect all referenced inventory item IDs and sort ascending to lock in strict order
+    const invItemIdsToLock = new Set();
+    for (const [mId] of mergedItemsMap) {
+      const m = menuMap.get(mId);
+      if (m?.recipeItems) {
+        for (const r of m.recipeItems) {
+          if (r.inventoryItemId) invItemIdsToLock.add(r.inventoryItemId);
         }
-
-        const qty = parseInt(item.quantity, 10) || 1;
-
-        // Stock check: If recipe exists, verify ingredient stock levels
-        if (menuItem.recipeItems && menuItem.recipeItems.length > 0) {
-          for (const recipe of menuItem.recipeItems) {
-            const invItem = recipe.inventoryItem;
-            if (!invItem) continue;
-            const rawNeeded = recipe.quantity * qty;
-            let neededInInvUnit;
-            try {
-              neededInInvUnit = convertUnit(rawNeeded, recipe.unit, invItem.unit);
-            } catch {
-              neededInInvUnit = rawNeeded;
-            }
-            if (invItem.stockLevel < neededInInvUnit) {
-              throw new Error(`Insufficient inventory for "${invItem.name}". Needed: ${neededInInvUnit} ${invItem.unit}, Available: ${invItem.stockLevel} ${invItem.unit}.`);
-            }
-          }
-        } else if (menuItem.stock > 0 && menuItem.stock < qty) {
-          throw new Error(`Insufficient stock for "${menuItem.name}". Only ${menuItem.stock} available.`);
-        }
-
-        const itemSubtotal = roundMoney(menuItem.price * qty);
-        subtotal += itemSubtotal;
-
-        orderItemsData.push({
-          menuItemId: menuItem.id,
-          nameSnapshot: menuItem.name,
-          priceSnapshot: menuItem.price,
-          quantity: qty,
-          subtotal: itemSubtotal,
-        });
       }
+    }
+    const sortedInvIds = Array.from(invItemIdsToLock).sort((a, b) => a - b);
 
-      subtotal = roundMoney(subtotal);
-      const tax = roundMoney(0.0);
-      const discount = roundMoney(0.0);
-      const total = roundMoney(subtotal + tax - discount);
+    // Run DB transaction for atomic order creation with deadlock retry
+    const order = await withDeadlockRetry(async () => {
+      return await prisma.$transaction(async (tx) => {
+        // Lock inventory rows in ascending order if supported/necessary
+        if (sortedInvIds.length > 0) {
+          await tx.$queryRaw`
+            SELECT id FROM "InventoryItem"
+            WHERE id IN (${Prisma.join(sortedInvIds)})
+            ORDER BY id ASC
+            FOR UPDATE;
+          `;
+        }
 
-      const orderNumber = generateOrderNumber();
-      const initialStatus = requestedMethod === 'COD' ? 'PENDING' : (paymentStatus === 'PENDING_VERIFICATION' ? 'PAYMENT_PENDING' : 'PENDING');
+        let subtotal = 0.0;
+        const orderItemsData = [];
+
+        for (const [mId, qty] of mergedItemsMap) {
+          let menuItem = menuMap.get(mId);
+          if (!menuItem && tx.menuItem?.findUnique) {
+            menuItem = await tx.menuItem.findUnique({
+              where: { id: mId },
+              include: { recipeItems: { include: { inventoryItem: true } } },
+            });
+          }
+          if (!menuItem || !menuItem.isActive) {
+            const err = new Error(`Menu item with ID ${mId} is not available.`);
+            err.code = 'ITEM_UNAVAILABLE';
+            err.itemName = menuItem?.name || `Item #${mId}`;
+            throw err;
+          }
+
+          // Stock check: If recipe exists, verify ingredient stock levels
+          if (menuItem.recipeItems && menuItem.recipeItems.length > 0) {
+            for (const recipe of menuItem.recipeItems) {
+              const invItem = recipe.inventoryItem;
+              if (!invItem) continue;
+              const rawNeeded = recipe.quantity * qty;
+              let neededInInvUnit;
+              try {
+                neededInInvUnit = convertUnit(rawNeeded, recipe.unit, invItem.unit);
+              } catch {
+                neededInInvUnit = rawNeeded;
+              }
+              if (invItem.stockLevel < neededInInvUnit) {
+                throw new Error(`Insufficient inventory for "${invItem.name}". Needed: ${neededInInvUnit} ${invItem.unit}, Available: ${invItem.stockLevel} ${invItem.unit}.`);
+              }
+            }
+          } else if (menuItem.stock > 0 && menuItem.stock < qty) {
+            throw new Error(`Insufficient stock for "${menuItem.name}". Only ${menuItem.stock} available.`);
+          }
+
+          const itemSubtotal = roundMoney(menuItem.price * qty);
+          subtotal += itemSubtotal;
+
+          orderItemsData.push({
+            menuItemId: menuItem.id,
+            nameSnapshot: menuItem.name,
+            priceSnapshot: menuItem.price,
+            quantity: qty,
+            subtotal: itemSubtotal,
+          });
+        }
+
+        subtotal = roundMoney(subtotal);
+        const tax = roundMoney(0.0);
+        const discount = roundMoney(0.0);
+        const total = roundMoney(subtotal + tax - discount);
+
+        const orderNumber = generateOrderNumber();
+        const initialStatus = requestedMethod === 'COD' ? 'PENDING' : (paymentStatus === 'PENDING_VERIFICATION' ? 'PAYMENT_PENDING' : 'PENDING');
 
       const newOrder = await tx.order.create({
         data: {
@@ -363,7 +426,8 @@ const createOrder = async (req, res) => {
         ...updatedWithTracking,
         etaPrediction: etaSaved,
       });
-    }, { maxWait: 15000, timeout: 30000 });
+    }, TX_OPTIONS);
+  });
 
     // Realtime Socket.IO broadcasts
     emitToUser(userId, 'order:update', order);
@@ -385,7 +449,10 @@ const createOrder = async (req, res) => {
     });
   } catch (error) {
     console.error('Create order error:', error.message);
-    return res.status(400).json({ error: error.message || 'Failed to place order.' });
+    const responsePayload = { error: error.message || 'Failed to place order.' };
+    if (error.code) responsePayload.code = error.code;
+    if (error.itemName) responsePayload.itemName = error.itemName;
+    return res.status(400).json(responsePayload);
   }
 };
 
@@ -461,31 +528,53 @@ const updateOrderStatus = async (req, res) => {
     if (status === 'COMPLETED') updatePayload.completedAt = new Date();
     if (status === 'PAID') updatePayload.paymentStatus = 'PAID';
 
-    const updatedOrder = await prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
-        where: { id: order.id },
-        data: updatePayload,
-        include: {
-          table: { select: { id: true, tableNumber: true } },
-          orderItems: { include: { menuItem: true } },
-          user: { select: { id: true, name: true, email: true } },
-          payment: true,
-          etaPrediction: true,
-        },
-      });
+    let updatedOrder;
+    try {
+      updatedOrder = await withDeadlockRetry(async () => {
+        return await prisma.$transaction(async (tx) => {
+          const updateResult = await tx.order.updateMany({
+            where: { id: order.id, status: previousStatus },
+            data: updatePayload,
+          });
 
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: order.id,
-          previousStatus,
-          newStatus: status,
-          changedByUserId: userId,
-          note: note || `Status updated by ${userRole}`,
-        },
-      });
+          if (updateResult.count === 0) {
+            // Concurrent status transition won
+            const err = new Error('Order status has already been updated by another user or process.');
+            err.status = 409;
+            err.isConflict = true;
+            throw err;
+          }
 
-      return withTableLabel(updated);
-    });
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: order.id,
+              previousStatus,
+              newStatus: status,
+              changedByUserId: userId,
+              note: note || `Status updated by ${userRole}`,
+            },
+          });
+
+          const fresh = await tx.order.findUnique({
+            where: { id: order.id },
+            include: {
+              table: { select: { id: true, tableNumber: true } },
+              orderItems: { include: { menuItem: true } },
+              user: { select: { id: true, name: true, email: true } },
+              payment: true,
+              etaPrediction: true,
+            },
+          });
+
+          return withTableLabel(fresh);
+        }, TX_OPTIONS);
+      });
+    } catch (txErr) {
+      if (txErr.isConflict || txErr.status === 409) {
+        return res.status(409).json({ error: 'Order status has already been updated by another user or process.' });
+      }
+      throw txErr;
+    }
 
     // STEP 2: Background — inventory, ETA, emails, audit (non-blocking)
     setImmediate(async () => {
@@ -809,8 +898,8 @@ const transferSingleOrderTable = async (req, res) => {
       return res.status(404).json({ error: 'Order not found.' });
     }
 
-    if (userRole === 'CUSTOMER' && order.userId !== userId) {
-      return res.status(403).json({ error: 'Unauthorized to transfer this order.' });
+    if (userRole === 'CUSTOMER') {
+      return res.status(403).json({ error: 'Customers cannot transfer order delivery tables.' });
     }
 
     if (['COMPLETED', 'CANCELLED'].includes(order.status)) {
@@ -886,6 +975,16 @@ const transferSingleOrderTable = async (req, res) => {
         changedByUserId: userId,
         note: noteText,
       },
+    });
+
+    await logAudit({
+      userId,
+      action: 'ORDER_TABLE_TRANSFERRED',
+      entity: 'Order',
+      entityId: String(order.id),
+      oldValue: { tableId: order.tableId, tableLabel: oldTableDisplay },
+      newValue: { tableId: targetTable.id, tableLabel: newTableDisplay },
+      req,
     });
 
     // Realtime notifications

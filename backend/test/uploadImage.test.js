@@ -142,7 +142,11 @@ describe('uploadImage Controller Hardening Tests', () => {
       assert.equal(res.status, 400);
       assert.match(res.body.error, /size limit|allowed limit/i);
     } finally {
-      process.env.MAX_IMAGE_UPLOAD_BYTES = oldMax;
+      if (oldMax === undefined) {
+        delete process.env.MAX_IMAGE_UPLOAD_BYTES;
+      } else {
+        process.env.MAX_IMAGE_UPLOAD_BYTES = oldMax;
+      }
     }
   });
 

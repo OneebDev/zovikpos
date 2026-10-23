@@ -68,6 +68,7 @@ model Session {
   startedAt      DateTime   @default(now())
   expiresAt      DateTime
   lastActivityAt DateTime?
+  secretHash     String?
   completedAt    DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt

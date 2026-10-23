@@ -224,15 +224,18 @@ describe('Route Validation Hardening (Dummy Handler Tests)', () => {
   describe('400 body shape and raw input privacy', () => {
     test('400 body shape is { error, code: "VALIDATION_ERROR" } and does not echo raw input value', async () => {
       const secretRawValue = 'SUPER_SECRET_BAD_VALUE_999';
+      const secretEmailValue = 'super_secret_payload@leak-test.invalid';
       const res = await request('POST', '/test/verify-otp', {
-        email: 'invalid-email',
+        email: secretEmailValue,
         otp: secretRawValue,
       });
       assert.equal(res.status, 400);
       assert.equal(res.body.code, 'VALIDATION_ERROR');
       assert.ok(typeof res.body.error === 'string');
-      // Verify raw user input value is not leaked in the error message
-      assert.equal(res.body.error.includes(secretRawValue), false, 'Error message should not echo raw secret value');
+      // Verify raw user input values are not leaked anywhere in the JSON response
+      const rawStringified = JSON.stringify(res.body);
+      assert.equal(rawStringified.includes(secretRawValue), false, 'Response must not contain raw secret OTP value');
+      assert.equal(rawStringified.includes(secretEmailValue), false, 'Response must not contain raw secret email value');
     });
   });
 });
