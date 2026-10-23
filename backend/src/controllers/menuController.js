@@ -332,16 +332,17 @@ const uploadImage = async (req, res) => {
 
     const declaredMimeType = matches[1].toLowerCase();
     const base64Data = matches[2];
-    const maxBase64Chars = Math.ceil((5 * 1024 * 1024) / 3) * 4;
+    const maxUploadBytes = Number(process.env.MAX_IMAGE_UPLOAD_BYTES) || 5 * 1024 * 1024;
+    const maxBase64Chars = Math.ceil(maxUploadBytes / 3) * 4;
     if (base64Data.length > maxBase64Chars || base64Data.length % 4 !== 0) {
-      return res.status(400).json({ error: 'Image data is invalid or exceeds the 5MB size limit.' });
+      return res.status(400).json({ error: `Image data is invalid or exceeds the ${Math.round(maxUploadBytes / (1024 * 1024))}MB size limit.` });
     }
 
     const buffer = Buffer.from(base64Data, 'base64');
 
-    if (buffer.length > 5 * 1024 * 1024) {
+    if (buffer.length > maxUploadBytes) {
       return res.status(400).json({
-        error: 'File size exceeds maximum allowed limit of 5MB.',
+        error: `File size exceeds maximum allowed limit of ${Math.round(maxUploadBytes / (1024 * 1024))}MB.`,
       });
     }
 
