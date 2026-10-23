@@ -350,9 +350,180 @@ const verifyTransaction = async (req, res) => {
   }
 };
 
+/**
+ * Initiate PayFast Sandbox payment: returns target URL and signed form parameters
+ */
+const initiatePayfastPayment = async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) {
+      return res.status(400).json({ error: 'Order ID is required to initiate payment.' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: parseInt(orderId, 10) },
+      include: {
+        table: true,
+        user: true,
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    if (order.status === 'PAID') {
+      return res.status(400).json({ error: 'Order is already paid.' });
+    }
+
+    const { getPayfastConfig, generateSignature } = require('../services/payfastService');
+    const config = getPayfastConfig();
+
+    const frontendBase = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+    const backendBase = (process.env.API_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+
+    // PayFast payment parameters
+    const paymentData = {
+      merchant_id: config.merchantId,
+      merchant_key: config.merchantKey,
+      return_url: `${frontendBase}/customer/order-tracking/${order.orderNumber}?payment=success`,
+      cancel_url: `${frontendBase}/customer/cart?payment=cancelled`,
+      notify_url: `${backendBase}/api/payments/payfast/notify`,
+      name_first: order.user?.name || 'Customer',
+      email_address: order.user?.email || 'customer@zovikpos.store',
+      m_payment_id: String(order.id),
+      amount: Number(order.totalAmount).toFixed(2),
+      item_name: `Zovik POS Order #${order.orderNumber}`,
+    };
+
+    // Calculate cryptographic signature
+    const signature = generateSignature(paymentData, config.passphrase);
+    paymentData.signature = signature;
+
+    return res.json({
+      processUrl: config.processUrl,
+      paymentData,
+    });
+  } catch (error) {
+    console.error('Initiate PayFast error:', error);
+    return res.status(500).json({ error: 'Failed to initiate PayFast payment.' });
+  }
+};
+
+/**
+ * Handle PayFast ITN Webhook Notification:
+ * Verifies signature, updates order to PAID atomically, deducts inventory, and broadcasts to kitchen
+ */
+const handlePayfastITN = async (req, res) => {
+  try {
+    const pfData = req.body || {};
+    const { getPayfastConfig, validateSignature } = require('../services/payfastService');
+    const config = getPayfastConfig();
+
+    const receivedSignature = pfData.signature;
+    const isValid = validateSignature(pfData, receivedSignature, config.passphrase);
+
+    if (!isValid) {
+      console.warn('[PayFast ITN] Invalid signature received:', receivedSignature);
+      return res.status(400).send('Invalid signature');
+    }
+
+    const orderId = parseInt(pfData.m_payment_id, 10);
+    const paymentStatus = pfData.payment_status; // 'COMPLETE'
+    const pfPaymentId = pfData.pf_payment_id;
+
+    if (!orderId) {
+      return res.status(400).send('Missing order reference');
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        table: { select: { id: true, tableNumber: true } },
+        orderItems: { include: { menuItem: true } },
+        user: { select: { id: true, name: true, email: true } },
+        etaPrediction: true,
+      },
+    });
+
+    if (!order) {
+      return res.status(404).send('Order not found');
+    }
+
+    // Idempotency: if already paid, acknowledge safely
+    if (order.status === 'PAID') {
+      return res.status(200).send('OK');
+    }
+
+    if (paymentStatus === 'COMPLETE') {
+      const updatedOrder = await withDeadlockRetry(async () => {
+        return await prisma.$transaction(async (tx) => {
+          const updateResult = await tx.order.updateMany({
+            where: { id: order.id, status: { not: 'PAID' } },
+            data: {
+              status: 'PAID',
+              paymentStatus: 'VERIFIED',
+              paymentTxId: pfPaymentId || `PF-${Date.now()}`,
+            },
+          });
+
+          if (updateResult.count === 0) {
+            return order;
+          }
+
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: order.id,
+              previousStatus: order.status,
+              newStatus: 'PAID',
+              note: `PayFast Instant Sandbox Payment verified (${pfPaymentId || 'N/A'})`,
+            },
+          });
+
+          // In-transaction atomic stock deduction
+          await deductInventoryForConfirmedOrder(order.id, null, tx);
+
+          return await tx.order.findUnique({
+            where: { id: order.id },
+            include: {
+              table: { select: { id: true, tableNumber: true } },
+              orderItems: { include: { menuItem: true } },
+              user: { select: { id: true, name: true, email: true } },
+              etaPrediction: true,
+            },
+          });
+        }, TX_OPTIONS);
+      });
+
+      const orderWithTableLabel = withTableLabel(updatedOrder);
+
+      // Realtime notification to kitchen & customer
+      emitToUser(orderWithTableLabel.userId, 'order:update', orderWithTableLabel);
+      emitToVendor('order:update', orderWithTableLabel);
+      emitToAdmin('order:update', orderWithTableLabel);
+      emitToKitchen('order:new', orderWithTableLabel);
+
+      setImmediate(async () => {
+        sendPaymentConfirmedEmail(orderWithTableLabel).catch(err =>
+          console.error('[Email] PayFast payment confirmed email error:', err.message)
+        );
+      });
+
+      clearDashboardStatsCache();
+    }
+
+    return res.status(200).send('OK');
+  } catch (error) {
+    console.error('PayFast ITN Error:', error);
+    return res.status(500).send('Server error');
+  }
+};
+
 module.exports = {
   getPaymentSettings,
   updatePaymentSettings,
   submitTransactionId,
   verifyTransaction,
+  initiatePayfastPayment,
+  handlePayfastITN,
 };

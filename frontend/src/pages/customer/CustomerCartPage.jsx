@@ -486,7 +486,7 @@ const CustomerCartPage = ({ user }) => {
   };
 
   // ─── Place order ─────────────────────────────────────────────────────────
-  const executeOrderPlacement = async (overrideMethod, overrideTxId) => {
+  const executeOrderPlacement = async (overrideMethod, overrideTxId, autoCheckoutDone = true) => {
     setError('');
     const items = Object.values(cart).map(item => ({
       menuItemId: item.id,
@@ -494,17 +494,18 @@ const CustomerCartPage = ({ user }) => {
     }));
     if (items.length === 0) {
       setError('Your cart is empty.');
-      return;
+      return null;
     }
     setPlacingOrder(true);
+    const isOnlineGateway = !overrideTxId && (overrideMethod === 'Easypaisa' || overrideMethod === 'JazzCash');
     const orderPayload = {
       items,
       tableId,
       sessionId,
       paymentMethod: overrideMethod || paymentMethod,
-      paymentStatus: Boolean(overrideTxId) ? 'PENDING_VERIFICATION' : 'UNPAID',
+      paymentStatus: isOnlineGateway ? 'PENDING_VERIFICATION' : (Boolean(overrideTxId) ? 'PENDING_VERIFICATION' : 'UNPAID'),
       paymentTxId: overrideTxId || null,
-      status: overrideTxId ? 'PAYMENT_PENDING' : 'PENDING',
+      status: isOnlineGateway ? 'PAYMENT_PENDING' : (overrideTxId ? 'PAYMENT_PENDING' : 'PENDING'),
       customerEmail: guestEmail || user?.email,
       emailVerified: true,
     };
@@ -526,14 +527,20 @@ const CustomerCartPage = ({ user }) => {
       setActiveOrder(placedOrder);
       clearCart();
       clearIdempotencyKey('customer_order_attempt', idempotencyKey);
-      setShowOnlinePaymentModal(false);
-      setCheckoutDone(true);
+      if (autoCheckoutDone) {
+        setShowOnlinePaymentModal(false);
+        setCheckoutDone(true);
+      }
+      return placedOrder;
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || 'Failed to place order. Please check stock levels.');
+      return null;
     } finally {
       setPlacingOrder(false);
-      setAuthorizingPayment(false);
+      if (autoCheckoutDone) {
+        setAuthorizingPayment(false);
+      }
     }
   };
 
@@ -573,10 +580,41 @@ const CustomerCartPage = ({ user }) => {
 
   const handleWalletPaymentConfirm = async () => {
     setAuthorizingPayment(true);
-    setTimeout(async () => {
-      const mockTxId = `TXN-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await executeOrderPlacement(walletProvider, mockTxId);
-    }, 1500);
+    setError('');
+    try {
+      // 1. Create order in PAYMENT_PENDING state
+      const placedOrder = await executeOrderPlacement(walletProvider, null, false);
+      if (!placedOrder?.id) {
+        throw new Error('Failed to create order before initiating payment.');
+      }
+
+      // 2. Request PayFast Sandbox signed parameters
+      const initiateRes = await api.post('/payments/payfast/initiate', {
+        orderId: placedOrder.id,
+      });
+
+      const { processUrl, paymentData } = initiateRes.data;
+
+      // 3. Create a hidden HTML form and auto-submit to PayFast Hosted Checkout
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = processUrl;
+
+      for (const [key, val] of Object.entries(paymentData)) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = val;
+        form.appendChild(input);
+      }
+
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err) {
+      console.error('PayFast Checkout Error:', err);
+      setError(err.response?.data?.error || err.message || 'Failed to redirect to payment gateway.');
+      setAuthorizingPayment(false);
+    }
   };
 
   if (!tableSessionReady) {
