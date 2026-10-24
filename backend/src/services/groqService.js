@@ -148,9 +148,9 @@ const callGroqAPI = async (payload, retries = null) => {
   let lastError = null;
 
   for (const modelCandidate of fallbackModels) {
-    // Keep image extraction large enough for long invoices (100 compact item rows fit comfortably).
-    // This is a per-response ceiling; account OTPM limits are handled by normal 429 key rotation.
-    const tokenLimit = isVisionRequest ? Math.min(payload.max_tokens || 880, 880) : (payload.max_tokens || 8192);
+    // Allow large invoices (50+ items in multi-column layouts) to output full JSON.
+    // Up to 4096 tokens for vision requests, 8192 for text requests.
+    const tokenLimit = isVisionRequest ? (payload.max_tokens || 4096) : (payload.max_tokens || 8192);
     const currentPayload = {
       ...payload,
       model: modelCandidate,
