@@ -200,6 +200,7 @@ const addInventoryItem = async (req, res) => {
       costPrice,
       expiryDate,
       supplierId,
+      supplierName,
       branchId,
       packageConversions
     } = req.body;
@@ -265,6 +266,7 @@ const addInventoryItem = async (req, res) => {
         expiryDate: expiryDate ? new Date(expiryDate) : null,
         packageConversions: packageConversions && typeof packageConversions === 'object' ? packageConversions : null,
         supplierId: supplierId ? parseInt(supplierId, 10) : null,
+        supplierName: supplierName ? String(supplierName).trim() : null,
         branchId: resolvedBranchId
       },
       include: { supplier: true, branch: true }
@@ -1656,7 +1658,7 @@ const getReceivingById = async (req, res) => {
  * Create new stock receiving transaction (DRAFT or CONFIRMED RECEIVED)
  */
 const createReceiving = async (req, res) => {
-  const { supplierId, invoiceNumber, receivingRef, branchId, receivingDate, notes, items, status, draftNewItems } = req.body;
+  const { supplierId, supplierName, invoiceNumber, receivingRef, branchId, receivingDate, notes, items, status, draftNewItems } = req.body;
   if (status != null && !isValid('InventoryReceivingStatus', String(status).toUpperCase())) {
     return res.status(400).json({ error: 'Invalid inventory receiving status value.' });
   }
@@ -1874,6 +1876,7 @@ __DRAFT_ITEMS__:${draftJson}`
         data: {
           receivingNumber,
           supplierId: resolvedSupplierId,
+          supplierName: supplierName ? String(supplierName).trim() : null,
           invoiceNumber: invoiceNumber ? String(invoiceNumber).trim() : null,
           branchId: resolvedBranchId,
           receivingDate: resolvedDate,
@@ -1901,6 +1904,7 @@ __DRAFT_ITEMS__:${draftJson}`
           data: {
             receivingNumber,
             supplierId: resolvedSupplierId,
+            supplierName: supplierName ? String(supplierName).trim() : null,
             invoiceNumber: invoiceNumber ? String(invoiceNumber).trim() : null,
             branchId: resolvedBranchId,
             receivingDate: resolvedDate,
@@ -3605,6 +3609,7 @@ const bulkAddInventoryItems = async (req, res) => {
             costPrice: costPrice ? parseFloat(costPrice) : 0.0,
             expiryDate: expiryDate ? new Date(expiryDate) : null,
             supplierId: supplierId ? parseInt(supplierId, 10) : null,
+            supplierName: itemData.supplierName ? String(itemData.supplierName).trim() : null,
             branchId: resolvedBranchId
           },
           include: { supplier: true, branch: true }

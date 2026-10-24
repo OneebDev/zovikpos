@@ -127,7 +127,7 @@ const ThemedSelect = ({
               aria-selected={option.value === selectedValue}
               disabled={option.disabled}
               onClick={() => chooseOption(option)}
-              className={`block min-h-9 w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${option.value === selectedValue ? 'bg-orange-500/15 text-orange-400' : 'text-[var(--text-main)] hover:bg-[var(--bg-color)]'}`}
+              className={`block min-h-9 w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${option.value === selectedValue ? 'bg-orange-500/15 text-orange-400' : 'text-[var(--text-main)] hover:bg-[var(--bg-color)]'}`}
             >
               {option.label}
             </button>

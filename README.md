@@ -114,65 +114,52 @@ git checkout feat/phase4-traffic
 ---
 
 ### Step 2: Environment Configuration (`.env`)
-Create a `.env` file inside the `backend/` directory:
+Create a `.env` file inside the `backend/` directory by copying `backend/.env.example`:
 
 ```bash
-# Path: backend/.env
+# Windows PowerShell
+copy backend/.env.example backend/.env
+
+# Mac / Linux
+cp backend/.env.example backend/.env
 ```
 
-Add the following environment variables (refer to `backend/.env.example` for the full template):
+#### Choose Your Database (Local vs Production):
 
-```env
-PORT=5001
-NODE_ENV=development
-DATABASE_URL="postgresql://<user>:<password>@<host>:5432/<database>?connection_limit=5&pool_timeout=15&sslmode=no-verify"
-DB_POOL_MAX=5
+> [!NOTE]
+> **Production vs Local Isolation:** 
+> - **Production Database:** Runs on cloud (Heroku Postgres).
+> - **Local Development Database:** Runs completely separately on your own machine's PostgreSQL instance. Changes, test data, and orders made locally will **NOT** affect production!
 
-# Authentication & Session Security
-JWT_SECRET="[GENERATE_A_UNIQUE_64_CHAR_SECRET]"
-JWT_REFRESH_SECRET="[GENERATE_A_DIFFERENT_UNIQUE_64_CHAR_SECRET]"
-SESSION_IDLE_MINUTES=30
-SWEEP_ENABLED=true
-
-# URLs & CORS
-FRONTEND_URL="http://localhost:5173"
-CORS_ORIGINS="http://localhost:5173,http://localhost:3000"
-AI_SERVICE_URL="http://localhost:8000"
-QR_SECRET="[GENERATE_A_UNIQUE_SECRET]"
-
-# Supabase Storage Config (Images & Invoices)
-SUPABASE_URL="https://your-project.supabase.co"
-SUPABASE_ANON_KEY="[YOUR_SUPABASE_ANON_KEY]"
-
-# SMTP Email OTP Settings (Hostinger / Custom SMTP)
-SMTP_HOST="smtp.hostinger.com"
-SMTP_PORT=465
-SMTP_SECURE=true
-SMTP_USER="support@zovikpos.store"
-SMTP_PASS="[YOUR_SMTP_PASSWORD]"
-EMAIL_FROM="ZovikPOS <support@zovikpos.store>"
-
-# PayFast Sandbox Payment Gateway (Easypaisa / JazzCash)
-PAYFAST_MERCHANT_ID="100001"
-PAYFAST_SECURED_KEY="[YOUR_PAYFAST_SECURED_KEY]"
-PAYFAST_SANDBOX=true
-
-# Groq Multimodal AI Keys (Multi-Key Failover Engine)
-GROQ_API_KEY_1="gsk_..."
-GROQ_API_KEY_2="gsk_..."
-GROQ_API_KEY_3="gsk_..."
-GROQ_API_KEY_4="gsk_..."
-GROQ_MODEL="qwen/qwen3.8-27b"
-```
+- **For Local PostgreSQL:**
+  ```env
+  DATABASE_URL="postgresql://postgres:YourPassword@localhost:5432/zovikpos_dev"
+  NODE_ENV=development
+  ```
+- **For Production Cloud PostgreSQL (Heroku):**
+  ```env
+  DATABASE_URL="postgresql://<user>:<password>@<host>:5432/<database>?connection_limit=5&pool_timeout=15&sslmode=no-verify"
+  NODE_ENV=production
+  ```
 
 ---
 
-### Step 3: Backend Node.js Service
+### Step 3: Backend Node.js Service & Database Sync
 Open Terminal #1:
 ```bash
 cd backend
 npm install
+
+# 1. Sync database schema to your local PostgreSQL
+npx prisma db push
+
+# 2. (Optional) Seed initial users and demo menu data
+npx prisma db seed
+
+# 3. Generate Prisma client
 npx prisma generate
+
+# 4. Start backend server
 npm run dev
 ```
 > ✅ **Backend Server runs on:** `http://localhost:5001`

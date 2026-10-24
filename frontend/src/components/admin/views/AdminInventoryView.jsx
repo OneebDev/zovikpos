@@ -1387,6 +1387,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
         maxThreshold: parseFloat(i.maxThreshold) || 100,
         sku: newItem.sku || null,
         supplierId: i.supplierId ? parseInt(i.supplierId, 10) : (newItem.supplierId ? parseInt(newItem.supplierId, 10) : null),
+        supplierName: i.supplierName || newItem.supplierName || suppliersList.find(s => String(s.id) === String(i.supplierId || newItem.supplierId))?.name || null,
         expiryDate: i.expiryDate ? i.expiryDate : null
       });
     });
@@ -1403,6 +1404,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
           maxThreshold: 100,
           sku: card.receivingRef || null,
           supplierId: card.supplierId ? parseInt(card.supplierId, 10) : null,
+          supplierName: i.supplierName || card.supplierName || suppliersList.find(s => String(s.id) === String(card.supplierId))?.name || null,
           expiryDate: i.expiryDate ? i.expiryDate : null
         });
       });
@@ -1501,6 +1503,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
           draftAttempts++;
           await api.post('/inventory/receivings', {
             supplierId: newItem.supplierId ? parseInt(newItem.supplierId, 10) : null,
+            supplierName: (newItem.supplierName || '').trim() || suppliersList.find(s => String(s.id) === String(newItem.supplierId))?.name || null,
             receivingRef: newItem.sku?.trim() || '',
             invoiceNumber: newItem.supplierInvoiceNumber?.trim() || null,
             batchNumber: newItem.batchNumber?.trim() || null,
@@ -1550,6 +1553,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
           draftAttempts++;
           await api.post('/inventory/receivings', {
             supplierId: card.supplierId ? parseInt(card.supplierId, 10) : null,
+            supplierName: (card.supplierName || '').trim() || suppliersList.find(s => String(s.id) === String(card.supplierId))?.name || null,
             receivingRef: card.receivingRef?.trim() || '',
             invoiceNumber: card.supplierInvoiceNumber?.trim() || null,
             batchNumber: card.batchNumber?.trim() || null,
@@ -3322,36 +3326,57 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                     </div>
 
                     {/* Card #1 Supplier & Delivery Details Bar */}
-                    <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-3 sm:p-3.5 rounded-2xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs shadow-sm">
-                      <div>
-                        <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider flex items-center justify-between">
+                    <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 p-3 sm:p-3.5 rounded-2xl bg-[var(--card-bg)] border border-[var(--border-color)] text-xs shadow-sm items-start">
+                      <div className="flex flex-col">
+                        <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                           <span className="flex items-center gap-1.5">
                             <Building2 className="w-3.5 h-3.5 text-orange-400" />
-                            <span>Supplier for Card #1</span>
+                            <span>Supplier (Company)</span>
                           </span>
-                          <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(applies to items)</span>
+                          <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(registered)</span>
                         </label>
                         <ThemedSelect
                           value={newItem.supplierId || ''}
                           onChange={(e) => {
                             const val = e.target.value;
-                            setNewItem(prev => ({ ...prev, supplierId: val }));
-                            setIngredientCards(prev => prev.map(c => ({ ...c, supplierId: val })));
+                            const matched = suppliersList.find(s => String(s.id) === String(val));
+                            setNewItem(prev => ({ ...prev, supplierId: val, supplierName: (matched && matched.contactPerson) ? matched.contactPerson : prev.supplierName }));
+                            setIngredientCards(prev => prev.map(c => ({ ...c, supplierId: val, supplierName: (matched && matched.contactPerson) ? matched.contactPerson : c.supplierName })));
                           }}
-                          className="w-full px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                          menuMinWidth={280}
+                          className="h-11 w-full px-3 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                         >
-                          <option value="">Select Supplier (e.g. Metro, Local Market)...</option>
+                          <option value="">-- Choose Company (e.g. Dawn Bread) --</option>
                           {suppliersList.map(s => (
                             <option key={s.id} value={s.id}>{s.name}</option>
                           ))}
                         </ThemedSelect>
                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
-                          Internal Reference
+                      {/* Delivered By / Contact Person (Text Input) */}
+                      <div className="flex flex-col">
+                        <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                          <span>Delivered By (Person)</span>
                         </label>
-                        <div className="field-action-control">
+                        <input
+                          type="text"
+                          value={newItem.supplierName || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setNewItem(prev => ({ ...prev, supplierName: val }));
+                            setIngredientCards(prev => prev.map(c => ({ ...c, supplierName: val })));
+                          }}
+                          placeholder="e.g. Oneeb"
+                          className="h-11 w-full px-3 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 placeholder:text-[var(--text-muted)]"
+                        />
+                      </div>
+
+                      <div className="flex flex-col">
+                        <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                          <span>Internal Reference</span>
+                          <span className="text-[9px] text-orange-400 font-normal lowercase">Auto</span>
+                        </label>
+                        <div className="relative flex items-center h-11">
                           <input
                             type="text"
                             value={newItem.sku || ''}
@@ -3361,24 +3386,25 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                               setIngredientCards(prev => prev.map(c => ({ ...c, sku: val })));
                             }}
                             placeholder="Click 📦 to generate..."
-                            className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                            className="w-full h-11 pl-3 pr-9 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
                           />
                           <button
                             type="button"
                             onClick={generateAutoSKU}
                             title="Generate Reference"
-                            className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer icon-btn icon-btn--32"
+                            className="absolute right-1.5 h-8 w-8 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
-                          Shipment Batch
+                      <div className="flex flex-col">
+                        <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                          <span>Shipment Batch</span>
+                          <span className="text-[9px] text-orange-400 font-normal lowercase">Auto</span>
                         </label>
-                        <div className="field-action-control">
+                        <div className="relative flex items-center h-11">
                           <input
                             type="text"
                             value={newItem.batchNumber || ''}
@@ -3388,24 +3414,25 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                               setIngredientCards(prev => prev.map(c => ({ ...c, batchNumber: val })));
                             }}
                             placeholder="Click 📦 to generate..."
-                            className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                            className="w-full h-11 pl-3 pr-9 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
                           />
                           <button
                             type="button"
                             onClick={generateAutoBatch}
                             title="Generate Batch #"
-                            className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer icon-btn icon-btn--32"
+                            className="absolute right-1.5 h-8 w-8 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
-                          Supplier Invoice # (Optional)
+                      <div className="flex flex-col">
+                        <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                          <span>Supplier Invoice #</span>
+                          <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(optional)</span>
                         </label>
-                        <div className="field-action-control">
+                        <div className="relative flex items-center h-11">
                           <input
                             type="text"
                             value={newItem.supplierInvoiceNumber || ''}
@@ -3415,13 +3442,13 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                               setIngredientCards(prev => prev.map(c => ({ ...c, supplierInvoiceNumber: val })));
                             }}
                             placeholder="Click 📦 to generate..."
-                            className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-orange-500"
+                            className="w-full h-11 pl-3 pr-9 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-orange-500"
                           />
                           <button
                             type="button"
                             onClick={generateAutoInvoiceNum}
                             title="Generate Supplier Invoice #"
-                            className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 cursor-pointer icon-btn icon-btn--32"
+                            className="absolute right-1.5 h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
@@ -3840,15 +3867,15 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                           </div>
                         </div>
 
-                        {/* 4-Column Delivery Details Bar (Identical to Card #1) */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-3.5 rounded-2xl bg-[var(--card-bg)] border border-orange-500/20 text-xs shadow-sm">
-                          <div>
-                            <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider flex items-center justify-between">
+                        {/* 5-Column Delivery Details Bar (Identical to Card #1) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 p-3.5 rounded-2xl bg-[var(--card-bg)] border border-orange-500/20 text-xs shadow-sm items-start">
+                          <div className="flex flex-col">
+                            <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                               <span className="flex items-center gap-1.5">
                                 <Building2 className="w-3.5 h-3.5 text-orange-400" />
-                                <span>Supplier for Card #{cardIdx + 2}</span>
+                                <span>Supplier (Company)</span>
                               </span>
-                              <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(applies to items)</span>
+                              <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(registered)</span>
                             </label>
                             <ThemedSelect
                               value={card.supplierId || ''}
@@ -3858,24 +3885,47 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                 setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? {
                                   ...c,
                                   supplierId: val,
-                                  supplierName: sObj?.name || 'Selected Supplier',
-                                  items: (c.items || []).map(i => ({ ...i, supplierId: val, supplierName: sObj?.name }))
+                                  supplierName: (sObj && sObj.contactPerson) ? sObj.contactPerson : c.supplierName,
+                                  items: (c.items || []).map(i => ({ ...i, supplierId: val, supplierName: (sObj && sObj.contactPerson) ? sObj.contactPerson : i.supplierName }))
                                 } : c));
                               }}
-                              className="w-full px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                              menuMinWidth={280}
+                              className="h-11 w-full px-3 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                             >
-                              <option value="">Select Supplier (e.g. Metro, Local Market)...</option>
+                              <option value="">-- Choose Company (e.g. Dawn Bread) --</option>
                               {suppliersList.map(s => (
                                 <option key={s.id} value={s.id}>{s.name}</option>
                               ))}
                             </ThemedSelect>
                           </div>
 
-                          <div>
-                            <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
-                              Internal Reference
+                          {/* Delivered By / Contact Person Text Input */}
+                          <div className="flex flex-col">
+                            <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                              <span>Delivered By (Person)</span>
                             </label>
-                            <div className="field-action-control">
+                            <input
+                              type="text"
+                              value={card.supplierName || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? {
+                                  ...c,
+                                  supplierName: val,
+                                  items: (c.items || []).map(i => ({ ...i, supplierName: val }))
+                                } : c));
+                              }}
+                              placeholder="e.g. Oneeb"
+                              className="h-11 w-full px-3 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 placeholder:text-[var(--text-muted)]"
+                            />
+                          </div>
+
+                          <div className="flex flex-col">
+                            <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                              <span>Internal Reference</span>
+                              <span className="text-[9px] text-orange-400 font-normal lowercase">Auto</span>
+                            </label>
+                            <div className="relative flex items-center h-11">
                               <input
                                 type="text"
                                 value={card.receivingRef || ''}
@@ -3884,24 +3934,25 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                   setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, receivingRef: val } : c));
                                 }}
                                 placeholder="Click 📦 to generate..."
-                                className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                                className="w-full h-11 pl-3 pr-9 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
                               />
                               <button
                                 type="button"
                                 onClick={() => generateAutoRefForCard(card.id)}
                                 title="Generate Reference"
-                                className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer icon-btn icon-btn--32"
+                                className="absolute right-1.5 h-8 w-8 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
 
-                          <div>
-                            <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
-                              Shipment Batch
+                          <div className="flex flex-col">
+                            <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                              <span>Shipment Batch</span>
+                              <span className="text-[9px] text-orange-400 font-normal lowercase">Auto</span>
                             </label>
-                            <div className="field-action-control">
+                            <div className="relative flex items-center h-11">
                               <input
                                 type="text"
                                 value={card.batchNumber || ''}
@@ -3910,24 +3961,25 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                   setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, batchNumber: val } : c));
                                 }}
                                 placeholder="Click 📦 to generate..."
-                                className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
+                                className="w-full h-11 pl-3 pr-9 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none focus:border-orange-500"
                               />
                               <button
                                 type="button"
                                 onClick={() => generateAutoBatchForCard(card.id)}
                                 title="Generate Batch #"
-                                className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 cursor-pointer icon-btn icon-btn--32"
+                                className="absolute right-1.5 h-8 w-8 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
 
-                          <div>
-                            <label className="block text-[10px] font-black text-[var(--text-main)] uppercase mb-1.5 tracking-wider">
-                              Supplier Invoice # (Optional)
+                          <div className="flex flex-col">
+                            <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                              <span>Supplier Invoice #</span>
+                              <span className="text-[9px] text-[var(--text-muted)] font-normal lowercase">(optional)</span>
                             </label>
-                            <div className="field-action-control">
+                            <div className="relative flex items-center h-11">
                               <input
                                 type="text"
                                 value={card.supplierInvoiceNumber || ''}
@@ -3936,13 +3988,13 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                   setAdditionalDeliveryCards(prev => prev.map(c => c.id === card.id ? { ...c, supplierInvoiceNumber: val } : c));
                                 }}
                                 placeholder="e.g. INV-45892"
-                                className="field-action-control__input w-full pl-3 pr-8 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-orange-500"
+                                className="w-full h-11 pl-3 pr-9 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-orange-500"
                               />
                               <button
                                 type="button"
                                 onClick={() => generateAutoInvoiceForCard(card.id)}
                                 title="Generate Invoice #"
-                                className="field-action-control__button absolute right-1.5 p-1 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 cursor-pointer icon-btn icon-btn--32"
+                                className="absolute right-1.5 h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />
                               </button>
@@ -4338,23 +4390,23 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
 
       {/* Upload Choice Modal (Same Supplier Merge vs Different Supplier Separate Card) */}
       {showMergeChoiceModal && (pendingUploadData || pendingUploadRows) && createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl p-6 shadow-2xl max-w-lg w-full mx-4 space-y-5 animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 animate-in fade-in duration-200">
+          <div className="bg-[var(--card-bg)] border border-white/10 rounded-[28px] p-4 sm:p-6 lg:p-7 shadow-2xl shadow-black/40 max-w-2xl w-full mx-0 space-y-5 animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
 
             {/* Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
+            <div className="flex items-start justify-between gap-4 pb-4 border-b border-[var(--border-color)]">
               <div className="flex items-center gap-3">
                 {pendingUploadData?.isSameSupplier ? (
-                  <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-inner">
                     <Sparkles className="w-5 h-5" />
                   </div>
                 ) : (
-                  <div className="p-2.5 rounded-2xl bg-orange-500/15 text-orange-400 border border-orange-500/30">
+                  <div className="p-3 rounded-2xl bg-orange-500/15 text-orange-400 border border-orange-500/30 shadow-inner">
                     <Building2 className="w-5 h-5" />
                   </div>
                 )}
                 <div>
-                  <h3 className="text-base font-black text-[var(--text-main)] font-display">
+                  <h3 className="text-base sm:text-lg font-black leading-tight text-[var(--text-main)] font-display">
                     {pendingUploadData?.isSameSupplier
                       ? 'Same Supplier Detected'
                       : 'Different Supplier Invoice Detected!'}
@@ -4369,7 +4421,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
               <button
                 type="button"
                 onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
+                className="p-2 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -4377,9 +4429,9 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
 
             {/* Comparison Details if Different Supplier */}
             {!pendingUploadData?.isSameSupplier && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-[var(--bg-color)]/80 border border-[var(--border-color)] text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 rounded-2xl bg-[var(--bg-color)]/70 border border-[var(--border-color)] text-xs overflow-hidden">
                 {/* Existing Delivery Box */}
-                <div className="space-y-1.5 border-b sm:border-b-0 sm:border-r border-[var(--border-color)]/60 pb-2 sm:pb-0 sm:pr-3">
+                <div className="space-y-2 p-4 border-b sm:border-b-0 sm:border-r border-[var(--border-color)]/60">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Card #1 (Current)</span>
                     <span className="text-[10px] text-[var(--text-muted)]">{importedItems.length} items</span>
@@ -4395,7 +4447,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                 </div>
 
                 {/* Newly Scanned Delivery Box */}
-                <div className="space-y-1.5 sm:pl-1">
+                <div className="space-y-2 p-4">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Detected Delivery — Card #{additionalDeliveryCards.length + 2}</span>
                     <span className="text-[10px] text-orange-400 font-bold">{pendingUploadData?.newRows?.length || pendingUploadRows?.length || 0} items</span>
@@ -4413,7 +4465,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
             )}
 
             {/* Description */}
-            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+            <p className="rounded-2xl border border-[var(--border-color)]/70 bg-[var(--bg-color)]/40 px-4 py-3 text-xs text-[var(--text-muted)] leading-relaxed">
               {pendingUploadData?.isSameSupplier ? (
                 <>
                   Card #1 already contains <strong className="text-[var(--text-main)] font-black">{importedItems.length} items</strong> from <strong className="text-emerald-400 font-black">{pendingUploadData.supplierName}</strong>. You can merge the <strong className="text-emerald-400 font-black">{pendingUploadRows?.length || pendingUploadData.newRows?.length} newly imported items</strong> (duplicate items will combine quantities automatically).
@@ -4433,7 +4485,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                   <button
                     type="button"
                     onClick={handleCreateSeparateCard}
-                    className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 hover:from-orange-500 hover:to-amber-400 text-white font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-600/25 active:scale-[0.98]"
+                    className="min-h-[60px] w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 hover:from-orange-500 hover:to-amber-400 text-white font-black text-xs leading-snug transition-all cursor-pointer flex items-center justify-center gap-3 shadow-lg shadow-orange-600/25 active:scale-[0.98]"
                   >
                     <Layers className="w-4 h-4" />
                     <span>Create Separate Card for {pendingUploadData?.supplierName || 'Supplier'} (Independent Ref#, Batch#, Inv#)</span>
@@ -4443,7 +4495,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                   <button
                     type="button"
                     onClick={handleMergeAppend}
-                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/40 text-[var(--text-main)] font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-[var(--border-color)]"
+                    className="min-h-[48px] w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/40 text-[var(--text-main)] font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-3 border border-[var(--border-color)]"
                   >
                     <Plus className="w-4 h-4 text-emerald-400" />
                     <span>Merge into Card #1 Anyway</span>
@@ -4453,7 +4505,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                   <button
                     type="button"
                     onClick={handleMergeReplace}
-                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-400 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-orange-500/20"
+                    className="min-h-[48px] w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-400 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-3 border border-orange-500/20"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     <span>Replace Card #1 with New Scanned Delivery</span>
@@ -4497,7 +4549,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
               <button
                 type="button"
                 onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
-                className="w-full py-2.5 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-muted)] font-bold text-xs transition-all cursor-pointer border border-[var(--border-color)]"
+                className="min-h-[46px] w-full py-2.5 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-muted)] font-bold text-xs transition-all cursor-pointer border border-[var(--border-color)]"
               >
                 Cancel Import
               </button>

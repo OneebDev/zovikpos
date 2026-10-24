@@ -219,6 +219,13 @@ body:has(.staff-login-root),
   overflow: hidden;
 }
 
+.staff-login-form > * {
+  width: 100%;
+  max-width: 580px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .staff-login-form.space-y-6 > :not([hidden]) ~ :not([hidden]) {
   margin-top: clamp(10px, 1.2vh, 16px);
 }
@@ -258,13 +265,13 @@ body:has(.staff-login-root),
 .staff-login-card input,
 .staff-login-card select,
 .staff-login-card textarea {
-  min-height: 46px;
+  min-height: 48px;
   font-size: 14px;
   background: rgba(255, 255, 255, 0.85) !important;
   border: 1px solid rgba(15, 23, 42, 0.15) !important;
   color: #0f172a !important;
-  border-radius: 14px !important;
-  transition: all 0.2s ease !important;
+  border-radius: 13px !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease !important;
   color-scheme: light;
 }
 
@@ -296,11 +303,12 @@ body:has(.staff-login-root),
 
 /* Submit button */
 .staff-login-card button[type="submit"] {
+  min-height: 50px;
   color: #ffffff !important;
   background: linear-gradient(135deg, #f97316 0%, #ea580c 100%) !important;
   border: 1px solid rgba(255, 160, 100, 0.30) !important;
   box-shadow: 0 8px 24px rgba(249, 115, 22, 0.35) !important;
-  border-radius: 14px !important;
+  border-radius: 13px !important;
   font-weight: 800 !important;
   cursor: pointer;
   transition: transform 0.15s ease, filter 0.15s ease !important;

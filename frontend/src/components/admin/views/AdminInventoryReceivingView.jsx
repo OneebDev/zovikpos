@@ -452,6 +452,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   // Internal Reference starts BLANK -- user must click icon to generate
   const [receivingRef, setReceivingRef] = useState(initialDraft?.receivingRef || ''); // RCV-YYYYMMDD-XXX
   const [supplierId, setSupplierId] = useState(initialDraft?.supplierId || '');
+  const [supplierName, setSupplierName] = useState(initialDraft?.supplierName || '');
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState(initialDraft?.supplierInvoiceNumber || ''); // External Supplier Invoice # (e.g. INV-45892)
   const [batchNumber, setBatchNumber] = useState(initialDraft?.batchNumber || ''); // Shipment level Batch Number (same for all receiving items)
   const [branchId, setBranchId] = useState(initialDraft?.branchId || '');
@@ -702,6 +703,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     } catch { /* Optional storage or parsing failure. */ }
     setReceivingRef(draft.receivingNumber || '');
     setSupplierId(draft.supplierId ? String(draft.supplierId) : '');
+    setSupplierName(draft.supplierName || draft.supplier?.name || '');
     setSupplierInvoiceNumber(draft.invoiceNumber || '');
     const savedDiscountPercent = parseInvoiceDiscountPercent(draft.discountPercent);
     setDiscountAmount(savedDiscountPercent !== null ? savedDiscountPercent : parseInvoiceDiscount(draft.discount));
@@ -1486,8 +1488,10 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 });
                 if (matchedDetectedSup && !supplierId) {
                   setSupplierId(String(matchedDetectedSup.id));
+                  setSupplierName(matchedDetectedSup.name);
                   setAiDetectedSupplier(matchedDetectedSup.name);
-                } else if (!matchedDetectedSup && cleanDetectedSup && !aiDetectedSupplier) {
+                } else if (!matchedDetectedSup && cleanDetectedSup) {
+                  setSupplierName(detectedSupplier);
                   setAiDetectedSupplier(detectedSupplier);
                 }
               }
@@ -1684,6 +1688,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             applyExtractedInvoiceDiscount(extractedInvoiceDiscount);
             if (extractedSupplier) {
               setAiDetectedSupplier(extractedSupplier);
+              setSupplierName(matchedSup ? matchedSup.name : extractedSupplier);
               if (matchedSup) {
                 setSupplierId(String(matchedSup.id));
               }
@@ -1839,8 +1844,11 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             }))
         : [];
 
+      const resolvedSupplierName = (supplierName || '').trim() || (suppliers.find(s => String(s.id) === String(supplierId))?.name || null);
+
       const payload = {
         supplierId: supplierId ? parseInt(supplierId, 10) : null,
+        supplierName: resolvedSupplierName,
         branchId: branchId ? parseInt(branchId, 10) : null,
         receivingRef: receivingRef.trim(),
         invoiceNumber: supplierInvoiceNumber.trim() || null,
@@ -1904,7 +1912,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
         const record = {
           receivingRef: savedRec?.receivingNumber || receivingRef,
-          supplierName: suppliers.find(s => String(s.id) === String(supplierId))?.name || 'Local Market / Not Provided',
+          supplierName: (supplierName || '').trim() || suppliers.find(s => String(s.id) === String(supplierId))?.name || 'Not Provided',
           invoiceNumber: supplierInvoiceNumber || 'Not Provided',
           itemCount: rowsToSubmit.length + draftNewItems.length,
           subtotal: calculatedGrandTotal,
@@ -1986,6 +1994,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     setCompletedReceiving(null);
     setReceivingRef('');
     setSupplierId('');
+    setSupplierName('');
     setSupplierInvoiceNumber('');
     setBatchNumber(''); // Completely clean Shipment Batch Number
     setReceivingDate(getTodayDateString());
@@ -2017,6 +2026,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     setSupplierInvoiceNumber(`INV-${dateStr}-${suffix}`);
     setBatchNumber(nextBatch);
     setSupplierId('');
+    setSupplierName('');
     setBranchId(branchesList[0]?.id ? String(branchesList[0].id) : '');
     setReceivingDate(getTodayDateString());
     setNotes('');
@@ -2320,6 +2330,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       batchNumber: newBatch,
       supplierInvoiceNumber: newInv,
       supplierId: '',
+      supplierName: '',
       aiDetectedSupplier: '',
       aiDetectedInvoiceNumber: newInv,
       discountAmount: 0,
@@ -2648,6 +2659,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         label: delivery.label,
         ...(isPrimary && editingDraftId ? { existingReceivingId: editingDraftId } : {}),
         supplierId: (isPrimary ? supplierId : card.supplierId) ? parseInt(isPrimary ? supplierId : card.supplierId, 10) : null,
+        supplierName: (isPrimary ? (supplierName || '').trim() : (card.supplierName || '').trim()) || (suppliers.find(s => String(s.id) === String(isPrimary ? supplierId : card.supplierId))?.name || null),
         branchId: (isPrimary ? branchId : card.branchId) ? parseInt(isPrimary ? branchId : card.branchId, 10) : null,
         receivingRef: String(isPrimary ? receivingRef : card.receivingRef || '').trim(),
         invoiceNumber: String(isPrimary ? supplierInvoiceNumber : card.supplierInvoiceNumber || '').trim() || null,
@@ -3177,7 +3189,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   </span>
                   <div className="min-w-0">
                     <h3 className="break-words text-[13px] font-black leading-snug text-[var(--text-main)] sm:text-sm">
-                      Supplier: {suppliers.find((supplier) => String(supplier.id) === String(supplierId))?.name || aiDetectedSupplier || 'Local Market / Other'}
+                      Supplier: {(supplierName || '').trim() || suppliers.find((supplier) => String(supplier.id) === String(supplierId))?.name || aiDetectedSupplier || 'Not Specified'}
                     </h3>
                     <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-muted)]">
                       Supplier &amp; receiving details. Reference, Batch &amp; Invoice are tracked per delivery card.
@@ -3186,7 +3198,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 </div>
 
                 {/* AI Detected Supplier Suggestion Banner */}
-                {aiDetectedSupplier && !supplierId && (
+                {aiDetectedSupplier && !supplierId && !supplierName && (
                   <div className="p-3 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
                     <div className="flex items-center space-x-2">
                       <Sparkles className="w-4 h-4 text-orange-400 shrink-0" />
@@ -3194,32 +3206,31 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         AI detected supplier on invoice: <strong className="text-orange-400">{aiDetectedSupplier}</strong>
                       </span>
                     </div>
-                    <span className="text-[10px] text-[var(--text-muted)]">Select matching supplier below or leave as Local Market.</span>
+                    <span className="text-[10px] text-[var(--text-muted)]">Select matching supplier below or enter custom supplier name.</span>
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3 items-start">
 
                   {/* Internal Receiving Reference (Dynamic DB Sequence) */}
-                  <div>
-                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
-                      <span>Internal Reference *</span>
-                      <span className="text-[10px] text-orange-400 font-normal lowercase">Auto-generated</span>
+                  <div className="flex flex-col">
+                    <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                      <span>Internal Ref *</span>
+                      <span className="text-[9px] text-orange-400 font-normal lowercase">Auto</span>
                     </label>
-                  <div className="field-action-control">
+                    <div className="relative flex items-center h-11">
                       <input
                         type="text"
                         readOnly
                         value={receivingRef}
-                        /* onChange={(e) => setReceivingRef(e.target.value)} -- Manual typing disabled per user request, only auto-generate */
                         placeholder={`RCV-${getTodayCompactDate()}-XXXX`}
-                        className="field-action-control__input w-full pl-3.5 pr-9 py-2.5 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
+                        className="w-full h-11 pl-3 pr-9 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
                       />
                       <button
                         type="button"
                         onClick={() => generateAutoRef()}
-                        title={`Click to generate unique Internal Reference (RCV-${getTodayCompactDate()}-XXXX)`}
-                        className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10 icon-btn icon-btn--32"
+                        title={`Click to generate unique Internal Reference`}
+                        className="absolute right-1.5 h-8 w-8 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
                       </button>
@@ -3227,23 +3238,18 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   </div>
 
                   {/* Shipment Batch Number (Applies to all receiving items) */}
-                  <div>
-                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
-                      <span>Shipment Batch Number</span>
-                      <span className="text-[10px] text-orange-400 font-normal lowercase">(BATCH-{getTodayCompactDate()}-XXXX)</span>
+                  <div className="flex flex-col">
+                    <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                      <span>Batch Number</span>
+                      <span className="text-[9px] text-orange-400 font-normal lowercase">Auto</span>
                     </label>
-                    <div className="field-action-control">
+                    <div className="relative flex items-center h-11">
                       <input
                         type="text"
                         readOnly
                         value={batchNumber}
-                        /* onChange={(e) => {
-                          const newBatch = e.target.value;
-                          setBatchNumber(newBatch);
-                          setReceivingRows((prev) => prev.map((r) => ({ ...r, batchNumber: newBatch })));
-                        }} -- Manual typing disabled per user request, only auto-generate */
                         placeholder={`BATCH-${getTodayCompactDate()}-XXXX`}
-                        className="field-action-control__input w-full pl-3.5 pr-9 py-2.5 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
+                        className="w-full h-11 pl-3 pr-9 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-orange-400 focus:outline-none cursor-default select-all"
                       />
                       <button
                         type="button"
@@ -3255,26 +3261,34 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           setReceivingRows((prev) => prev.map((r) => ({ ...r, batchNumber: newBatch })));
                           if (showToast) showToast(`Shipment Batch # Generated: ${newBatch}`, 'info');
                         }}
-                        title={`Generate auto batch number for all receiving items (BATCH-${getTodayCompactDate()}-XXXX)`}
-                        className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10 icon-btn icon-btn--32"
+                        title={`Generate auto batch number for all receiving items`}
+                        className="absolute right-1.5 h-8 w-8 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
 
-                  {/* Supplier Dropdown */}
-                  <div>
-                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
-                      <span>Supplier</span>
-                      {aiDetectedSupplier && <span className="text-[10px] text-orange-400 font-normal flex items-center gap-1"><Sparkles className="w-3 h-3 inline" /> AI Detected</span>}
+                  {/* Supplier Dropdown (Company / Vendor) */}
+                  <div className="flex flex-col">
+                    <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                      <span>Supplier (Company)</span>
+                      {aiDetectedSupplier && <span className="text-[9px] text-orange-400 font-normal flex items-center gap-1"><Sparkles className="w-3 h-3 inline" /> Match</span>}
                     </label>
                     <ThemedSelect
                       value={supplierId}
-                      onChange={(e) => setSupplierId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSupplierId(val);
+                        const matched = suppliers.find(s => String(s.id) === String(val));
+                        if (matched && matched.contactPerson && !supplierName) {
+                          setSupplierName(matched.contactPerson);
+                        }
+                      }}
+                      menuMinWidth={280}
+                      className="h-11 w-full px-3 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                     >
-                      <option value="">-- Local Market / Sabzi Mandi (Not Provided) --</option>
+                      <option value="">-- Choose Company --</option>
                       {suppliers.map((sup) => (
                         <option key={sup.id} value={sup.id}>
                           {sup.name}
@@ -3283,30 +3297,41 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     </ThemedSelect>
                   </div>
 
+                  {/* Delivered By / Contact Person (Text Input) */}
+                  <div className="flex flex-col">
+                    <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                      <span>Delivered By</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={supplierName}
+                      onChange={(e) => setSupplierName(e.target.value)}
+                      placeholder="e.g. Oneeb"
+                      className="h-11 w-full px-3 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 placeholder:text-[var(--text-muted)]"
+                    />
+                  </div>
+
                   {/* Supplier Invoice # */}
-                  <div>
-                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
+                  <div className="flex flex-col">
+                    <label className="h-5 flex items-center justify-between font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                       <span>Supplier Invoice #</span>
-                      {aiDetectedInvoiceNumber ? (
-                        <span className="text-[10px] text-orange-400 font-normal flex items-center gap-1"><Sparkles className="w-3 h-3 inline" /> AI Detected</span>
-                      ) : (
-                        <span className="text-[10px] text-emerald-400 font-normal lowercase">(INV-{getTodayCompactDate()}-XXXXXX)</span>
+                      {aiDetectedInvoiceNumber && (
+                        <span className="text-[9px] text-orange-400 font-normal flex items-center gap-1"><Sparkles className="w-3 h-3 inline" /> Detected</span>
                       )}
                     </label>
-                    <div className="field-action-control">
+                    <div className="relative flex items-center h-11">
                       <input
                         type="text"
                         readOnly
                         value={supplierInvoiceNumber}
-                        /* onChange={(e) => setSupplierInvoiceNumber(e.target.value)} -- Manual typing disabled per user request, only auto-generate */
                         placeholder={`INV-${getTodayCompactDate()}-XXXXXX`}
-                        className="field-action-control__input w-full pl-3.5 pr-9 py-2.5 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none cursor-default select-all"
+                        className="w-full h-11 pl-3 pr-9 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none cursor-default select-all"
                       />
                       <button
                         type="button"
                         onClick={generateAutoInvoiceNum}
-                        title={`Auto-generate unique Supplier Invoice # (e.g. INV-${getTodayCompactDate()}-XXXXXX)`}
-                        className="field-action-control__button absolute right-2 p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center icon-btn icon-btn--32"
+                        title={`Auto-generate unique Supplier Invoice #`}
+                        className="absolute right-1.5 h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold transition-all cursor-pointer flex items-center justify-center z-10"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                       </button>
@@ -3314,14 +3339,14 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   </div>
 
                   {/* Branch */}
-                  <div>
-                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                  <div className="flex flex-col">
+                    <label className="h-5 flex items-center font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                       Branch
                     </label>
                     <ThemedSelect
                       value={branchId}
                       onChange={(e) => setBranchId(e.target.value)}
-                      className="h-11 w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                      className="h-11 w-full px-3 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                     >
                       {branchesList.length > 0 ? (
                         branchesList.map((b) => (
@@ -3336,15 +3361,15 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   </div>
 
                   {/* Receiving Date */}
-                  <div>
-                    <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                  <div className="flex flex-col">
+                    <label className="h-5 flex items-center font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
                       Receiving Date
                     </label>
                     <input
                       type="date"
                       value={receivingDate}
                       onChange={(e) => setReceivingDate(e.target.value)}
-                      className="h-11 w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                      className="h-11 w-full px-3 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                     />
                   </div>
                 </div>
@@ -3612,7 +3637,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           {/* Badges & Actions: AI Detected / 4 Distinct Statuses / Save in Catalog */}
                           <div className={`flex ${!row.inventoryItemId && !row.suggestedItem ? 'flex-nowrap min-w-0 gap-1.5' : 'flex-wrap gap-2'} items-center self-end sm:self-auto`}>
                             {row.isAiDetected && (
-                              <span className="px-2 py-0.5 rounded-lg bg-orange-500/20 text-orange-400 text-[9px] font-black uppercase tracking-wider border border-orange-500/30 flex items-center gap-1">
+                              <span className="h-8 min-w-[112px] px-3 rounded-lg bg-orange-500/20 text-orange-400 text-[9px] font-black uppercase tracking-wider border border-orange-500/30 flex items-center justify-center gap-1 whitespace-nowrap">
                                 <Sparkles className="w-3 h-3" /> AI Detected
                               </span>
                             )}
@@ -3667,15 +3692,15 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
                             {/* Status 1: Confident Catalog Match */}
                             {row.inventoryItemId && row.justSavedToCatalog ? (
-                              <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30 flex items-center gap-1">
+                              <span className="h-8 min-w-[112px] px-3 rounded-xl bg-emerald-500/15 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30 flex items-center justify-center gap-1 whitespace-nowrap">
                                 <CheckCircle2 className="w-3 h-3" /> Added to Catalog
                               </span>
                             ) : row.inventoryItemId && selectedInvItem ? (
-                              <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/20 flex items-center gap-1">
+                              <span className="h-8 min-w-[112px] px-3 rounded-xl bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/20 flex items-center justify-center gap-1 whitespace-nowrap">
                                 <Check className="w-3 h-3" /> Matched ({selectedInvItem.category || 'General'})
                               </span>
                             ) : row.inventoryItemId ? (
-                              <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/20 flex items-center gap-1">
+                              <span className="h-8 min-w-[112px] px-3 rounded-xl bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/20 flex items-center justify-center gap-1 whitespace-nowrap">
                                 <Check className="w-3 h-3" /> Matched
                               </span>
                             ) : null}
@@ -3895,7 +3920,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     </div>
 
                     {/* Metadata Grid for Additional Card */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 bg-[var(--bg-color)]/60 p-4 rounded-2xl border border-[var(--border-color)]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 bg-[var(--bg-color)]/60 p-4 rounded-2xl border border-[var(--border-color)]">
                       {/* Internal Reference */}
                       <div>
                         <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px] flex justify-between items-center">
@@ -3946,23 +3971,45 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         </div>
                       </div>
 
-                      {/* Supplier Selector */}
+                      {/* Supplier Selector (Company) */}
                       <div>
                         <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
-                          Supplier
+                          Supplier (Company)
                         </label>
                         <ThemedSelect
                           value={card.supplierId}
-                          onChange={(e) => handleUpdateCardField(card.id, 'supplierId', e.target.value)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            handleUpdateCardField(card.id, 'supplierId', val);
+                            const matched = suppliers.find(s => String(s.id) === String(val));
+                            if (matched && matched.contactPerson && !card.supplierName) {
+                              handleUpdateCardField(card.id, 'supplierName', matched.contactPerson);
+                            }
+                          }}
+                          menuMinWidth={280}
                           className="h-11 w-full px-3.5 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                         >
-                          <option value="">-- Local Market / Not Provided --</option>
+                          <option value="">-- Choose Company (e.g. Dawn Bread) --</option>
                           {suppliers.map((sup) => (
                             <option key={sup.id} value={sup.id}>
                               {sup.name}
                             </option>
                           ))}
                         </ThemedSelect>
+                      </div>
+
+                      {/* Delivered By (Person) Text Input */}
+                      <div>
+                        <label className="form-label-row block font-extrabold text-[var(--text-main)] uppercase mb-1.5 tracking-wider text-[10px]">
+                          Delivered By (Person)
+                        </label>
+                        <input
+                          type="text"
+                          value={card.supplierName || ''}
+                          onChange={(e) => handleUpdateCardField(card.id, 'supplierName', e.target.value)}
+                          placeholder="e.g. Oneeb"
+                          className="h-11 w-full px-3.5 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 placeholder:text-[var(--text-muted)]"
+                        />
                       </div>
 
                       {/* Supplier Invoice # */}
@@ -4973,23 +5020,23 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
       {/* Upload Choice Modal (Same Supplier Merge vs Different Supplier Separate Card) */}
       {showMergeChoiceModal && (pendingUploadData || pendingUploadRows) && createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center overflow-x-hidden bg-black/80 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-200">
-          <div className="box-border w-full min-w-0 max-w-lg mx-0 overflow-x-hidden rounded-3xl border border-[var(--border-color)] bg-[var(--card-bg)] p-4 shadow-2xl sm:p-6 space-y-4 sm:space-y-5 animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center overflow-x-hidden bg-black/80 backdrop-blur-md p-3 sm:p-5 animate-in fade-in duration-200">
+          <div className="box-border w-full min-w-0 max-w-2xl mx-0 overflow-x-hidden rounded-[28px] border border-white/10 bg-[var(--card-bg)] p-4 shadow-2xl shadow-black/40 sm:p-6 lg:p-7 space-y-5 animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
 
             {/* Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
+            <div className="flex items-start justify-between gap-4 pb-4 border-b border-[var(--border-color)]">
               <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 {pendingUploadData?.isSameSupplier ? (
-                  <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-inner">
                     <Sparkles className="w-5 h-5" />
                   </div>
                 ) : (
-                  <div className="p-2.5 rounded-2xl bg-orange-500/15 text-orange-400 border border-orange-500/30">
+                  <div className="p-3 rounded-2xl bg-orange-500/15 text-orange-400 border border-orange-500/30 shadow-inner">
                     <Building2 className="w-5 h-5" />
                   </div>
                 )}
                 <div className="min-w-0">
-                  <h3 className="text-base font-black text-[var(--text-main)] font-display">
+                  <h3 className="text-base sm:text-lg font-black leading-tight text-[var(--text-main)] font-display">
                     {pendingUploadData?.isSameSupplier
                       ? 'Same Supplier Detected'
                       : 'Different Supplier Invoice Detected!'}
@@ -5004,7 +5051,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <button
                 type="button"
                 onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
-                className="p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn"
+                className="p-2 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -5012,9 +5059,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
             {/* Comparison Details if Different Supplier */}
             {!pendingUploadData?.isSameSupplier && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-[var(--bg-color)]/80 border border-[var(--border-color)] text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 rounded-2xl bg-[var(--bg-color)]/70 border border-[var(--border-color)] text-xs overflow-hidden">
                 {/* Existing Delivery Box */}
-                <div className="space-y-1.5 border-b sm:border-b-0 sm:border-r border-[var(--border-color)]/60 pb-2 sm:pb-0 sm:pr-3">
+                <div className="space-y-2 p-4 border-b sm:border-b-0 sm:border-r border-[var(--border-color)]/60">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Card #1 (Current)</span>
                     <span className="text-[10px] text-[var(--text-muted)]">{receivingRows.filter(r => r.searchTerm || r.inventoryItemId).length} items</span>
@@ -5030,7 +5077,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 </div>
 
                 {/* Newly Scanned Delivery Box */}
-                <div className="space-y-1.5 sm:pl-1">
+                <div className="space-y-2 p-4">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Scanned Delivery</span>
                     <span className="text-[10px] text-orange-400 font-bold">{pendingUploadData?.newRows?.length || pendingUploadRows?.length} items</span>
@@ -5048,7 +5095,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
             )}
 
             {/* Description */}
-            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+            <p className="rounded-2xl border border-[var(--border-color)]/70 bg-[var(--bg-color)]/40 px-4 py-3 text-xs text-[var(--text-muted)] leading-relaxed">
               {pendingUploadData?.isSameSupplier ? (
                 <>
                   Card #1 already contains <strong className="text-[var(--text-main)] font-black">{receivingRows.filter(r => r.searchTerm || r.inventoryItemId).length} items</strong> from <strong className="text-emerald-400 font-black">{pendingUploadData.supplierName}</strong>. You can merge the <strong className="text-emerald-400 font-black">{pendingUploadRows?.length || pendingUploadData.newRows?.length} newly imported items</strong> (duplicate items will combine quantities automatically).
@@ -5068,7 +5115,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   <button
                     type="button"
                     onClick={handleCreateSeparateCard}
-                    className="grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 px-3 py-3 sm:px-4 sm:py-3.5 text-xs font-black leading-snug text-white shadow-lg shadow-orange-600/25 transition-all hover:from-orange-500 hover:to-amber-400 active:scale-[0.98] cursor-pointer"
+                    className="grid min-h-[60px] w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-3 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 px-4 py-3 text-xs font-black leading-snug text-white shadow-lg shadow-orange-600/25 transition-all hover:from-orange-500 hover:to-amber-400 active:scale-[0.98] cursor-pointer"
                   >
                     <Layers className="h-4 w-4" />
                     <span className="block w-full min-w-0 text-center" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal' }}>
@@ -5081,7 +5128,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   <button
                     type="button"
                     onClick={handleMergeAppend}
-                    className="grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)] px-3 py-2.5 text-xs font-bold leading-snug text-[var(--text-main)] transition-all hover:bg-[var(--border-color)]/40 cursor-pointer"
+                    className="grid min-h-[48px] w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)] px-4 py-2.5 text-xs font-bold leading-snug text-[var(--text-main)] transition-all hover:bg-[var(--border-color)]/40 cursor-pointer"
                   >
                     <Plus className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400 sm:mt-0" />
                     <span className="block w-full min-w-0 text-center" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal' }}>Merge into Card #1 Anyway (Combine Items)</span>
@@ -5091,7 +5138,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                   <button
                     type="button"
                     onClick={handleMergeReplace}
-                    className="grid w-full min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-2xl border border-orange-500/20 bg-[var(--bg-color)] px-3 py-2.5 text-xs font-bold leading-snug text-orange-400 transition-all hover:bg-orange-500/10 cursor-pointer"
+                    className="grid min-h-[48px] w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-orange-500/20 bg-[var(--bg-color)] px-4 py-2.5 text-xs font-bold leading-snug text-orange-400 transition-all hover:bg-orange-500/10 cursor-pointer"
                   >
                     <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0 sm:mt-0" />
                     <span className="block w-full min-w-0 text-center" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'normal' }}>Replace Card #1 with New Scanned Delivery</span>
@@ -5134,7 +5181,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
               <button
                 type="button"
                 onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
-                className="w-full min-w-0 whitespace-normal break-words px-3 py-2.5 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-muted)] font-bold text-xs leading-snug transition-all cursor-pointer border border-[var(--border-color)]"
+                className="min-h-[46px] w-full min-w-0 whitespace-normal break-words px-4 py-2.5 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-muted)] font-bold text-xs leading-snug transition-all cursor-pointer border border-[var(--border-color)]"
               >
                 Cancel Import
               </button>

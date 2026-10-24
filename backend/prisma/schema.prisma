@@ -265,6 +265,7 @@ model InventoryItem {
   expiryDate     DateTime?
   packageConversions Json?
   supplierId     Int?
+  supplierName   String?
   supplier       Supplier?                @relation(fields: [supplierId], references: [id])
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
@@ -310,6 +311,7 @@ model InventoryReceiving {
   id              Int                      @id @default(autoincrement())
   receivingNumber String                   @unique // e.g. REC-2026-0001
   supplierId      Int?
+  supplierName    String?
   supplier        Supplier?                @relation(fields: [supplierId], references: [id])
   invoiceNumber   String?
   branchId        Int?

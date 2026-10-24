@@ -260,17 +260,80 @@ const preferCompleteNumberedInvoiceItems = (visionItems, ocrItems) => {
  * ─── INVOICE OCR + AI VISION PARSER ──────────────────────────────────────────
  * Parse a purchase receipt or invoice image (printed, handwritten, or mixed).
  */
+/**
+ * Helper: parse raw vision content string into an array of normalized item objects.
+ */
+const _parseVisionContent = (content) => {
+  const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  let parsed = null;
+  try {
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    try {
+      let repaired = cleaned;
+      const objStart = repaired.indexOf('{');
+      if (objStart >= 0) {
+        repaired = repaired.substring(objStart);
+        const lastClose = repaired.lastIndexOf('}');
+        if (lastClose > 0) {
+          repaired = repaired.substring(0, lastClose + 1);
+          const ob = (repaired.match(/\{/g) || []).length;
+          const cb = (repaired.match(/\}/g) || []).length;
+          const obrk = (repaired.match(/\[/g) || []).length;
+          const cbrk = (repaired.match(/\]/g) || []).length;
+          for (let i = 0; i < obrk - cbrk; i++) repaired += ']';
+          for (let i = 0; i < ob - cb; i++) repaired += '}';
+          parsed = JSON.parse(repaired);
+        }
+      }
+    } catch { /* repair failed */ }
+  }
+  if (!parsed || !Array.isArray(parsed.items)) return { meta: parsed, items: [] };
+  const items = parsed.items.map(it => {
+    const rawName = it.rawName || it.name || it.n || it.item || '';
+    const parsedQty = Number.parseFloat(it.quantity ?? it.qty ?? it.q);
+    const qty = Number.isFinite(parsedQty) && parsedQty >= 0 ? parsedQty : 0;
+    const cost = parseFloat(it.unitCost || it.price || it.rate || it.cost || it.p) || 0;
+    const tot = parseFloat(it.totalCost || it.total) || (qty * cost);
+    return {
+      sourceRowNumber: Number.parseInt(it.sourceRowNumber ?? it.rowNumber ?? it.row ?? it.r, 10) || null,
+      rawName: String(rawName).trim(),
+      quantity: qty,
+      unit: (it.unit || it.u || 'KG').toUpperCase(),
+      unitCost: cost,
+      totalCost: tot,
+      batchNumber: it.batchNumber || null,
+      expiryDate: it.expiryDate || null,
+      needsReview: Boolean(it.needsReview) || !(qty > 0) || (cost <= 0),
+      reviewReason: it.reviewReason || (!(qty > 0) ? 'Quantity missing or invalid; verify before receiving' : cost <= 0 ? 'Zero or missing unit price' : null)
+    };
+  }).filter(it => it.rawName && it.rawName.length > 0 && it.rawName.toLowerCase() !== 'item name');
+  return { meta: parsed, items };
+};
+
 const analyzeInvoiceImageWithGroq = async (imageBase64Data) => {
   // Ultra-compact JSON format to ensure 50+ items easily fit within token limits
-  const invoicePrompt = `You are a high-accuracy receipt & invoice vision parser.
-Notice: The invoice may have TWO COLUMNS of items (e.g., items 1 to 17 on the left, and items 18 to 33 on the right).
-You MUST extract EVERY SINGLE item from BOTH columns from top to bottom.
-Never stop early, never skip, never summarize. If there are 33 items, output all 33 items. If there are 50, output all 50.
-Do NOT invent placeholder items or duplicate any item. Treat the printed Sr. No. as the source row identity: return each numbered row exactly once, and never create an item from subtotal, discount, notes, or a repeated OCR reading.
-If the invoice prints a discount percentage, return its numeric value in discPct (without %). If it prints a fixed currency discount, return that exact amount in disc. If both appear, return both. Do not mistake a percentage for a currency amount. Ignore subtotal and final total values for application.
+  const invoicePrompt = `You are a professional restaurant & canteen invoice vision extractor.
+Scan the entire document with extreme precision.
+
+IMPORTANT INVOICE LAYOUT RULES:
+1. Two-Column Tables: Look carefully across the entire page. Invoices or purchase sheets often have TWO separate columns side-by-side (for example: Sr. No 1 to 17 on the left, and Sr. No 18 to 33 on the right). You MUST extract EVERY row from the left table AND EVERY row from the right table!
+2. Complete Sequential Extraction: Do NOT skip any row. If items are numbered from 1 to 33, extract all 33 items without stopping early.
+3. Metadata Extraction:
+   - "s": Supplier or vendor name (e.g., look for "Purchased From: XYZ" or company header). If explicitly printed, return it. If absent, return null. NEVER guess.
+   - "inv": Invoice / Bill # or null
+   - "d": Date formatted as YYYY-MM-DD or as printed
+   - "sub": Sub Total amount if printed (numeric)
+   - "disc": Discount currency amount if printed (numeric)
+   - "discPct": Discount percentage if printed (numeric without %)
+   - "tot": Total / Net Amount if printed (numeric)
+4. Items Array Format:
+   For each item row: {"r": serialNumber, "n": "exact item name", "u": "unit like KG/Can/Pack/Pos/Bottle/Dozen", "q": quantity, "p": unit rate/price}
+5. Do NOT include Sub Total, Discount, or Total Amount lines inside the items array.
 
 Output strictly valid JSON with no markdown tags or explanatory text:
-{"s":null,"inv":null,"d":null,"sub":null,"disc":null,"discPct":null,"tot":null,"items":[{"r":1,"n":"Item Name","q":1,"u":"KG","p":0}]}`;
+{"s":null,"inv":null,"d":null,"sub":null,"disc":null,"discPct":null,"tot":null,"items":[{"r":1,"n":"Item Name","u":"KG","q":1,"p":100}]}`;
 
   let visionItems = [];
   let detectedSupplierName = null;
@@ -300,7 +363,7 @@ Output strictly valid JSON with no markdown tags or explanatory text:
         ]
       }],
       temperature: 0.05,
-      max_tokens: 880
+      max_tokens: 4096
     });
 
     if (resData) {
@@ -376,10 +439,9 @@ Output strictly valid JSON with no markdown tags or explanatory text:
     console.warn('[GroqService] Vision API failed, continuing to OCR:', redactGroqSecrets(visionErr.message));
   }
 
-  // Fast Return: If Vision API already extracted the items, return immediately!
-  // Running local Tesseract OCR on high-res image takes 30-40s and causes timeouts.
+  // Fast Return: If Vision API already extracted the items without cutting off early
   if (visionItems.length > 0) {
-    console.log(`[GroqService] ✓ Vision successfully extracted ${visionItems.length} items. Returning immediately without slow OCR.`);
+    console.log(`[GroqService] ✓ Vision successfully extracted ${visionItems.length} items.`);
     return {
       supplierName: detectedSupplierName,
       invoiceNumber: extractedInvoiceNumber,
@@ -543,10 +605,11 @@ CRITICAL RULES:
 3. Ignore noise, stamps, headers. Only extract actual product rows.
 4. Output strictly valid JSON without markdown. Preserve the printed serial number as "r" if present.
 5. If a discount percentage is printed, return its numeric value in discPct without the % sign. If a fixed currency discount is printed, return its exact amount in disc. If both appear, return both. Never confuse a percentage with a currency amount. Subtotal and final total must not be used to calculate or replace item-based totals.
-6. Do NOT fabricate or hallucinate items, prices, or quantities.
+6. Do NOT fabricate or hallucinate items, prices, quantities, or supplier names.
+7. Supplier name "s": Extract ONLY if explicitly printed on the invoice. If not found or ambiguous, leave as null. NEVER invent or assume any supplier name.
 
 FORMAT:
-{"s":"Supplier","inv":"Inv#","d":"YYYY-MM-DD","sub":null,"disc":null,"discPct":null,"tot":null,"items":[{"r":1,"n":"Item Name","q":1,"u":"KG","p":100,"t":100,"b":null,"exp":null}]}
+{"s":null,"inv":"Inv#","d":"YYYY-MM-DD","sub":null,"disc":null,"discPct":null,"tot":null,"items":[{"r":1,"n":"Item Name","q":1,"u":"KG","p":100,"t":100,"b":null,"exp":null}]}
 
 INVOICE TEXT SEGMENT:
 """

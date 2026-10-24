@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import AppBackground from './common/AppBackground';
-import { Lock, Mail, Flame, CreditCard, ShieldCheck, User, AlertCircle, ArrowRight, Eye, EyeOff, Zap } from 'lucide-react';
+import { Lock, Mail, Flame, CreditCard, ShieldCheck, User, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 const ROLE_CONFIGS = {
   KITCHEN: {
@@ -197,7 +197,6 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
             className="w-full py-3.5 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-500 hover:to-orange-600 disabled:opacity-50 text-white font-extrabold text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-orange-600/20 cursor-pointer flex items-center justify-center space-x-2 active:scale-[0.99]"
           >
             <span>{loading ? 'Authenticating...' : `Sign In to ${config.title.replace(' Login', '')}`}</span>
-            <ArrowRight className="w-4 h-4" />
           </button>
 
           {config.demoEmail && (
@@ -209,7 +208,6 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
               }}
               className="w-full min-w-0 py-2.5 px-3 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-600 dark:text-orange-400 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Zap className="w-3.5 h-3.5 shrink-0" />
               <span className="min-w-0 text-center leading-tight">
                 <span className="block">Fill Demo Credentials</span>
                 <span className="mt-0.5 block break-all text-[10px] font-medium opacity-75">{config.demoEmail}</span>
