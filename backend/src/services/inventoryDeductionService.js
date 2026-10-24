@@ -50,6 +50,7 @@ async function _fifoBatchDeduct(db, invItem, neededQty, logMeta) {
         changeQty: -takeFromBatch,
         cost: (batch.unitCost || 0) * takeFromBatch,
         unitCost: batch.unitCost || 0,
+        type: 'USAGE',
         batchRemaining: newBatchRemaining,
         batchNumber: batch.batchNumber || null,
         expiryDate: batch.expiryDate || null,
