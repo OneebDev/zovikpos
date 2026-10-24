@@ -1,4 +1,4 @@
-name: CI/CD Pipeline - Deploy Backend & AI Service to Heroku
+﻿name: CI/CD Pipeline - Deploy Backend & AI Service to Heroku
 
 on:
   push:
@@ -15,13 +15,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Heroku CLI
+        run: curl https://cli-assets.heroku.com/install.sh | sh
+
       - name: Deploy Backend to Heroku
-        uses: akhileshns/heroku-deploy@v3.13.15
-        with:
-          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: "zovik-pos-backend"
-          heroku_email: ${{ secrets.HEROKU_EMAIL }}
-          appdir: "backend"
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git remote add heroku-backend https://heroku:${HEROKU_API_KEY}@git.heroku.com/zovik-pos-backend.git
+          git subtree push --prefix=backend heroku-backend main
 
   deploy-ai-service:
     name: Deploy AI Service to Heroku
@@ -32,10 +36,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Heroku CLI
+        run: curl https://cli-assets.heroku.com/install.sh | sh
+
       - name: Deploy AI Service to Heroku
-        uses: akhileshns/heroku-deploy@v3.13.15
-        with:
-          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: "zovik-pos-ai"
-          heroku_email: ${{ secrets.HEROKU_EMAIL }}
-          appdir: "ai-service"
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git remote add heroku-ai https://heroku:${HEROKU_API_KEY}@git.heroku.com/zovik-pos-ai.git
+          git subtree push --prefix=ai-service heroku-ai main
