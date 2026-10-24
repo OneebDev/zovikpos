@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import AppBackground from './common/AppBackground';
-import { Lock, Mail, Flame, CreditCard, ShieldCheck, User, AlertCircle, ArrowRight, Eye, EyeOff, Zap, Sun, Moon } from 'lucide-react';
+import { Lock, Mail, Flame, CreditCard, ShieldCheck, User, AlertCircle, ArrowRight, Eye, EyeOff, Zap } from 'lucide-react';
 
 const ROLE_CONFIGS = {
   KITCHEN: {
@@ -62,17 +62,6 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [isDark, setIsDark] = useState(() => {
-    return document.documentElement.classList.contains('dark') || localStorage.getItem('theme') !== 'light';
-  });
-
-  const toggleTheme = () => {
-    const nextDark = !isDark;
-    setIsDark(nextDark);
-    document.documentElement.classList.toggle('dark', nextDark);
-    localStorage.setItem('theme', nextDark ? 'dark' : 'light');
-  };
-
   React.useEffect(() => {
     setEmail('');
     setPassword('');
@@ -118,50 +107,46 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
   };
 
   return (
-    <div className="responsive-shell staff-theme-root staff-login-root min-h-screen text-[var(--text-main)] flex items-center justify-center p-4 sm:p-6 relative overflow-hidden transition-colors duration-300">
+    <div className="responsive-shell staff-theme-root staff-login-root min-h-screen text-[var(--text-main)] flex items-center justify-center p-3 sm:p-4 relative overflow-hidden transition-colors duration-300">
       <AppBackground />
 
-      <div className="staff-login-card w-full max-w-md p-6 sm:p-8 rounded-3xl space-y-6 relative z-10 animate-fade-in">
-
-        {/* Top Branding & Navigation */}
-        <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
-          <span className="text-[10px] font-extrabold uppercase tracking-widest text-orange-500 bg-orange-500/10 border border-orange-500/20 px-2.5 py-1 rounded-full">
-            {roleType === 'ADMIN' ? 'Admin' : roleType === 'KITCHEN' ? 'Kitchen' : 'Cashier'}
-          </span>
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="staff-login-theme-toggle w-8 h-8 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer flex items-center justify-center shrink-0"
-            title="Toggle Theme"
-            aria-label="Toggle Theme"
-          >
-            {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-400" />}
-          </button>
-        </div>
-
-        {/* Header */}
-        <div className="text-center space-y-2 pt-2">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-orange-600/10 border border-orange-500/20 text-orange-500 mb-2 shadow-inner">
-            <RoleIcon className="w-7 h-7" />
+      <div className="staff-login-card w-full relative z-10 animate-fade-in">
+        <div className="staff-login-layout">
+          <div className="staff-login-visual" aria-hidden="true">
+            <div className="staff-login-visual__content">
+              <span className="staff-login-visual__eyebrow">ZovikPOS Workspace</span>
+              <div className="staff-login-visual__icon">
+                <RoleIcon className="w-8 h-8" />
+              </div>
+              <h2>{config.title.replace(' Login', '')} workspace</h2>
+              <p>Securely continue to your role-specific POS tools.</p>
+            </div>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black font-display text-[var(--text-main)] tracking-tight">
-            {config.title}
-          </h1>
-          <p className="text-xs sm:text-sm text-[var(--text-muted)] max-w-xs mx-auto leading-relaxed">
-            {config.subtitle}
-          </p>
-        </div>
 
-        {/* Error Message Alert */}
-        {error && (
-          <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 dark:text-red-400 rounded-2xl text-xs font-semibold flex items-start space-x-3 animate-glow-pulse">
-            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-            <span className="leading-snug">{error}</span>
-          </div>
-        )}
+          <div className="staff-login-form space-y-6">
+            {/* Header */}
+            <div className="text-center space-y-2 pt-2">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-orange-600/10 border border-orange-500/20 text-orange-500 mb-2 shadow-inner">
+                <RoleIcon className="w-7 h-7" />
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black font-display text-[var(--text-main)] tracking-tight">
+                {config.title}
+              </h1>
+              <p className="text-xs sm:text-sm text-[var(--text-muted)] max-w-xs mx-auto leading-relaxed">
+                {config.subtitle}
+              </p>
+            </div>
 
-        {/* Login Form */}
-        <form onSubmit={handleLogin} className="space-y-4">
+            {/* Error Message Alert */}
+            {error && (
+              <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 dark:text-red-400 rounded-2xl text-xs font-semibold flex items-start space-x-3 animate-glow-pulse">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <span className="leading-snug">{error}</span>
+              </div>
+            )}
+
+            {/* Login Form */}
+            <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-[var(--text-main)] uppercase tracking-wider block">
               Email Address
@@ -231,19 +216,21 @@ const RoleLogin = ({ roleType = 'CASHIER', onLoginSuccess }) => {
               </span>
             </button>
           )}
-        </form>
+          </form>
 
-        {/* Mode Guidance & Testing Quick Fill Shortcut */}
-        <div className="border-t border-[var(--border-color)] pt-4 space-y-3">
-          <div className="staff-login-note p-2.5 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[10px] text-[var(--text-muted)] space-y-1">
-            <span className="font-bold text-emerald-600 dark:text-emerald-400 block">🟢 Real Account (Full Access)</span>
-            <span>Real accounts have full write access.</span>
+          {/* Mode Guidance & Testing Quick Fill Shortcut */}
+          <div className="border-t border-[var(--border-color)] pt-4 space-y-3">
+            <div className="staff-login-note p-2.5 rounded-xl bg-[var(--bg-color)] border border-[var(--border-color)] text-[10px] text-[var(--text-muted)] space-y-1">
+              <span className="font-bold text-emerald-600 dark:text-emerald-400 block">🟢 Real Account (Full Access)</span>
+              <span>Real accounts have full write access.</span>
 
-            <span className="font-bold text-orange-600 dark:text-orange-400 block mt-2">🔒 Demo Account (Read-Only)</span>
-            <span>Demo accounts are strictly restricted to read-only access. Actions & updates are disabled.</span>
+              <span className="font-bold text-orange-600 dark:text-orange-400 block mt-2">🔒 Demo Account (Read-Only)</span>
+              <span>Demo accounts are strictly restricted to read-only access. Actions & updates are disabled.</span>
+            </div>
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 };

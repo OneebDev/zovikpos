@@ -54,6 +54,24 @@
 /* =====================================================================
    STAFF THEME BACKGROUND (Shared across Login, Cashier, Kitchen)
    ===================================================================== */
+html:has(.staff-login-root),
+body:has(.staff-login-root),
+#root:has(.staff-login-root) {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #0b0910 !important;
+}
+
+body:has(.staff-login-root),
+#root:has(.staff-login-root) {
+  position: fixed;
+  inset: 0;
+}
+
 .staff-theme-root {
   --bg-image: url('/assets/login-bg.jpg');
 }
@@ -87,17 +105,145 @@
 }
 
 .staff-login-root {
-  padding: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+  position: fixed;
+  inset: 0 !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  height: 100dvh;
+  min-height: 100dvh;
+  width: 100vw;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #0b0910 !important;
+  z-index: 10;
 }
 
 .staff-login-card {
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  border-radius: 0 !important;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.92) !important;
   border: 1px solid rgba(15, 23, 42, 0.12) !important;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
   backdrop-filter: blur(32px) saturate(150%) !important;
   -webkit-backdrop-filter: blur(32px) saturate(150%) !important;
-  border-radius: 28px !important;
   color-scheme: light;
+}
+
+.staff-login-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+.staff-login-visual {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 100%;
+  overflow: hidden;
+  border-radius: 0;
+  background:
+    linear-gradient(160deg, rgba(14, 10, 20, 0.18), rgba(14, 10, 20, 0.86)),
+    url('/assets/login-bg.jpg') center / cover;
+}
+
+.staff-login-visual::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.18), transparent 45%);
+  pointer-events: none;
+}
+
+.staff-login-visual__content {
+  position: relative;
+  z-index: 1;
+  max-width: 260px;
+  padding: 32px;
+  color: #fff;
+}
+
+.staff-login-visual__eyebrow {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: #fdba74;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.staff-login-visual__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 16px;
+  color: #fb923c;
+  background: rgba(249, 115, 22, 0.16);
+  border: 1px solid rgba(253, 186, 116, 0.35);
+  border-radius: 18px;
+}
+
+.staff-login-visual h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.staff-login-visual p {
+  margin: 12px 0 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.staff-login-form {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(18px, 3vh, 36px) clamp(24px, 5vw, 72px);
+  overflow: hidden;
+}
+
+.staff-login-form.space-y-6 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: clamp(10px, 1.2vh, 16px);
+}
+
+.staff-login-card .text-center .w-14.h-14 {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 6px;
+}
+
+.staff-login-card .text-center h1 {
+  font-size: clamp(1.65rem, 2.4vw, 2.35rem);
+}
+
+.staff-login-card input {
+  min-height: 42px;
+}
+
+.staff-login-card form.space-y-4 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 12px;
+}
+
+.staff-login-card button[type="submit"] {
+  padding-top: 11px;
+  padding-bottom: 11px;
 }
 
 /* DARK MODE card */
@@ -397,10 +543,50 @@
 
 /* Responsive tweaks */
 @media (max-width: 767px) {
-  .staff-login-card { padding: 22px 18px; border-radius: 24px !important; }
+  .staff-login-root > .app-bg { display: none !important; }
+  .staff-login-card {
+    width: 100vw;
+    height: 100dvh;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .staff-login-layout { display: block; height: 100%; min-height: 0; }
+  .staff-login-visual { display: none; }
+  .staff-login-form {
+    justify-content: center;
+    height: 100%;
+    padding: max(18px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(18px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+    overflow: hidden;
+  }
+  .staff-login-form.space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 12px; }
+  .staff-login-card .text-center.space-y-2 { gap: 4px; }
+  .staff-login-card .text-center.space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 4px; }
+  .staff-login-card .text-center .w-14.h-14 { width: 46px; height: 46px; margin-bottom: 4px; }
+  .staff-login-card form.space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 10px; }
+  .staff-login-card input { min-height: 42px; }
+  .staff-login-card button[type="submit"] { padding-top: 11px; padding-bottom: 11px; }
+  .staff-login-card .staff-login-note { padding: 8px 10px; }
   .staff-kitchen-root { padding: 12px; gap: 14px; }
   .staff-cashier-root { padding: 12px; }
   .staff-kitchen-toolbar { align-items: flex-start; }
+}
+
+@media (min-width: 768px) and (max-height: 760px) {
+  .staff-login-layout { height: 100%; }
+  .staff-login-form { padding-top: 12px; padding-bottom: 12px; zoom: 0.88; }
+  .staff-login-form.space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 10px; }
+  .staff-login-card .text-center.space-y-2 { gap: 2px; }
+  .staff-login-card .text-center .w-14.h-14 { width: 46px; height: 46px; margin-bottom: 2px; }
+  .staff-login-card form.space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 8px; }
+  .staff-login-card input { min-height: 42px; }
+}
+
+@media (min-width: 768px) and (min-height: 761px) and (max-height: 900px) {
+  .staff-login-form { padding-top: 18px; padding-bottom: 18px; zoom: 0.94; }
 }
 
 @media (max-width: 389px) {

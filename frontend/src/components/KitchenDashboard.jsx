@@ -360,7 +360,7 @@ const KitchenDashboard = ({ user }) => {
         </div>
 
         {/* Hotkey Guide & Action Buttons */}
-        <div className="flex items-center space-x-3 text-xs font-semibold">
+        <div className="flex flex-wrap items-center justify-end gap-3 text-xs font-semibold min-w-0">
           <DemoStatusBadge user={user} />
 
           <div className="hidden lg:flex items-center space-x-2 text-[11px] text-[var(--text-muted)] bg-[var(--bg-color)] px-3 py-1.5 rounded-xl border border-[var(--border-color)]">
@@ -371,7 +371,7 @@ const KitchenDashboard = ({ user }) => {
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
             aria-label={soundEnabled ? 'Mute audio alerts' : 'Enable audio alerts'}
-            className={`p-2 rounded-xl border transition-all cursor-pointer icon-btn ${
+            className={`w-10 h-10 p-0 shrink-0 rounded-xl border transition-all cursor-pointer icon-btn ${
               soundEnabled
                 ? 'bg-orange-500/15 border-orange-500/30 text-orange-300'
                 : 'bg-[var(--card-bg)] border-[var(--border-color)] text-[var(--text-muted)]'
@@ -385,7 +385,7 @@ const KitchenDashboard = ({ user }) => {
             onClick={fetchActiveOrders}
             disabled={loading}
             aria-label={loading ? 'Refreshing kitchen board' : 'Refresh kitchen board'}
-            className="px-3 py-2 bg-[var(--card-bg)] hover:bg-white/[0.12] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 shadow-sm disabled:cursor-wait disabled:opacity-60"
+            className="min-w-[148px] h-10 px-3 py-2 shrink-0 whitespace-nowrap bg-[var(--card-bg)] hover:bg-white/[0.12] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm disabled:cursor-wait disabled:opacity-60"
             title="Refresh Board (Press R)"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-orange-400 ${loading ? 'animate-spin' : ''}`} />

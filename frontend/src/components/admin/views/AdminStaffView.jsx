@@ -401,8 +401,6 @@ const AdminStaffView = ({ showToast }) => {
                       <td className="py-3.5 px-2.5 sm:px-3">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] font-semibold border whitespace-nowrap ${roleConfig.badgeBg}`}>
                           <RoleIcon className={`w-3.5 h-3.5 shrink-0 ${roleConfig.iconColor}`} />
-                          <span className="hidden xl:inline">{roleConfig.label}</span>
-                          <span className="inline xl:hidden">{roleConfig.shortLabel || roleConfig.label}</span>
                         </span>
                       </td>
 
@@ -849,4 +847,3 @@ const AdminStaffView = ({ showToast }) => {
 };
 
 export default AdminStaffView;
-

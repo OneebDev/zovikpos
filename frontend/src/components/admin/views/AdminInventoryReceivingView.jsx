@@ -3650,13 +3650,13 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                             {/* Status 3: New Item (Not in Catalog) */}
                             {!row.inventoryItemId && !row.suggestedItem ? (
                               <>
-                                <span className="shrink-0 px-1.5 sm:px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-400 text-[9px] sm:text-[10px] font-black uppercase tracking-wider border border-amber-500/30 flex items-center gap-1">
+                                <span className="inventory-new-item-badge h-9 shrink-0 px-3 rounded-xl bg-amber-500/20 text-amber-400 text-[9px] sm:text-[10px] font-black uppercase tracking-wider border border-amber-500/30 flex items-center justify-center gap-1">
                                   <AlertTriangle className="w-3 h-3" /> New Item
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleOpenSaveCatalogModal(index)}
-                                  className="min-w-0 shrink px-1.5 sm:px-2.5 py-1 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-[9px] sm:text-[11px] font-black shadow-sm transition-all cursor-pointer flex items-center gap-1 whitespace-nowrap active:scale-95"
+                                  className="inventory-save-catalog-btn h-9 min-w-[148px] shrink-0 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-[9px] sm:text-[11px] font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap active:scale-95"
                                   title="Save this new item into Inventory Catalog"
                                 >
                                   <Plus className="w-3.5 h-3.5" />
@@ -3807,7 +3807,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
               {/* Card #1 Summary & Action stays inside the Card #1 border */}
               {hasPrimaryItems && <div className="bg-[var(--bg-color)]/55 border border-orange-500/25 rounded-2xl p-4 sm:p-5 shadow-sm">
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="flex flex-col items-stretch gap-4">
                   <div>
                     <span className="text-[10px] font-black uppercase text-[var(--text-muted)] tracking-wider block">
                       {additionalCards.length > 0 ? 'Card #1 Summary' : 'Stock Receiving Summary'}
@@ -3832,7 +3832,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     </div>
                   </div>
 
-                  <div className="grid w-full grid-cols-3 items-stretch gap-1.5 sm:w-auto sm:flex sm:flex-wrap sm:justify-end sm:gap-2">
+                  <div className="grid w-full min-w-0 grid-cols-3 items-stretch gap-2">
                     <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="flex min-w-0 items-center justify-center gap-1 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] px-1.5 py-2 text-center text-[10px] font-bold leading-tight text-orange-600 hover:bg-orange-500/10 disabled:opacity-50 sm:px-4 sm:py-2.5 sm:text-xs">
                       {draftSaveScope === 'primary' && savingDraft ? <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin sm:h-4 sm:w-4" /> : <Save className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />}<span className="min-w-0">{draftSaveScope === 'primary' && savingDraft ? 'Saving…' : 'Save Draft'}</span>
                     </button>
@@ -4081,13 +4081,13 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                     </span>
                                   ) : (
                                     <>
-                                      <span className="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-400 text-[9px] font-black uppercase tracking-wider border border-amber-500/30 flex items-center gap-1">
+                                      <span className="inventory-new-item-badge h-9 shrink-0 px-3 rounded-xl bg-amber-500/20 text-amber-400 text-[9px] font-black uppercase tracking-wider border border-amber-500/30 flex items-center justify-center gap-1">
                                         <AlertTriangle className="w-3 h-3" /> New Item
                                       </span>
                                       <button
                                         type="button"
                                         onClick={() => handleOpenSaveCatalogModal(rIdx, card.id)}
-                                        className="px-2 py-1 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black shadow-sm transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                                        className="inventory-save-catalog-btn h-9 min-w-[148px] shrink-0 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95"
                                         title="Save this new item into Inventory Catalog (Stock: 0)"
                                       >
                                         <Plus className="w-3 h-3" />
@@ -4176,7 +4176,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     </div>
 
                     {/* Card Action & Summary Bar */}
-                    {hasCardItems && <div className="bg-[var(--bg-color)]/80 border border-[var(--border-color)] p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3">
+                    {hasCardItems && <div className="bg-[var(--bg-color)]/80 border border-[var(--border-color)] p-4 rounded-2xl flex flex-col items-stretch gap-3">
                       <div>
                         <span className="text-[10px] font-black uppercase text-[var(--text-muted)] block">Card #{cardIdx + 2} Summary</span>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mt-1">
@@ -4192,7 +4192,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         {cardReceiveMessages[card.id] && <div role="alert" className="mt-2 max-w-xl rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300">{cardReceiveMessages[card.id]}</div>}
                       </div>
 
-                      <div className="grid w-full grid-cols-3 items-stretch gap-1.5 sm:w-auto sm:flex sm:flex-wrap sm:justify-end sm:gap-2">
+                      <div className="grid w-full min-w-0 grid-cols-3 items-stretch gap-2">
                         <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="flex min-w-0 items-center justify-center gap-1 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] px-1.5 py-2 text-center text-[10px] font-bold leading-tight text-orange-600 hover:bg-orange-500/10 disabled:opacity-50 sm:w-auto sm:px-4 sm:text-xs">
                           {draftSaveScope === card.id && savingDraft ? <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin sm:h-4 sm:w-4" /> : <Save className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />}<span className="min-w-0">{draftSaveScope === card.id && savingDraft ? 'Saving…' : 'Save Draft'}</span>
                         </button>
@@ -5293,4 +5293,3 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 };
 
 export default AdminInventoryReceivingView;
-

@@ -226,12 +226,11 @@ function App() {
           <BrandLogo compact className="shrink-0" />
 
           <div className="flex flex-nowrap items-center gap-1.5 sm:gap-3 text-xs min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-              <span className="staff-user-name font-semibold text-[var(--text-main)] truncate max-w-[92px] sm:max-w-none">{user.name}</span>
-              <span className="staff-role-badge shrink-0 px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-500 text-[10px] font-bold uppercase border border-orange-500/20">
+            {(user.role === 'VENDOR' || user.role === 'KITCHEN') && (
+              <span className="staff-role-badge shrink-0 min-w-12 h-10 sm:h-12 px-2 sm:px-3 inline-flex items-center justify-center text-center rounded-xl bg-amber-500/10 text-amber-500 text-[8px] sm:text-[9px] font-bold uppercase leading-tight border border-amber-500/20">
                 {user.role}
               </span>
-            </div>
+            )}
 
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
