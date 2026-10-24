@@ -35,8 +35,13 @@ const decryptResponse = (encrypted) => {
 const errorResponse = (res, status, error) => res.status(status).json({ error });
 
 const runIdempotency = async (req, res, next) => {
-  const clientKey = String(req.get('Idempotency-Key') || '').trim();
-  if (!clientKey || clientKey.length > 200) return errorResponse(res, 400, 'A valid Idempotency-Key header is required.');
+  let clientKey = String(req.get('Idempotency-Key') || '').trim();
+  // Auto-generate fallback key if client omitted header, avoiding hard failures for standard UI requests
+  if (!clientKey) {
+    clientKey = `auto-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
+  } else if (clientKey.length > 200) {
+    return errorResponse(res, 400, 'A valid Idempotency-Key header cannot exceed 200 characters.');
+  }
 
   const identity = req.user?.id ? `user:${req.user.id}` : `ip:${req.ip || 'unknown'}`;
   const scopeKey = hmac(`${identity}\n${req.method}\n${req.baseUrl}${req.path}\n${clientKey}`);

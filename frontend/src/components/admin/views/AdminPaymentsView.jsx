@@ -1,4 +1,4 @@
-﻿import  { useState, useMemo } from 'react';
+import  { useState, useMemo } from 'react';
 import {
   Search,
   Download,
@@ -141,7 +141,10 @@ const AdminPaymentsView = ({ orders = [], onRefresh, showToast }) => {
     if (!paymentId) return;
     setActionLoading(true);
     try {
-      await api.put(`/payments/${paymentId}/verify`, { status });
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `verify-${paymentId}-${Date.now()}`;
+      await api.put(`/payments/${paymentId}/verify`, { status }, {
+        headers: { 'Idempotency-Key': idempotencyKey }
+      });
       if (showToast) showToast(`Payment marked as ${status}!`);
       if (onRefresh) onRefresh();
     } catch (err) {

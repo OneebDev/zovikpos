@@ -347,7 +347,10 @@ const VendorDashboard = ({ user }) => {
     }
 
     try {
-      const response = await api.put(`/payments/${orderId}/verify`, { approve: true });
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `verify-${orderId}-${Date.now()}`;
+      const response = await api.put(`/payments/${orderId}/verify`, { approve: true }, {
+        headers: { 'Idempotency-Key': idempotencyKey }
+      });
       const finalOrder = response.data.order;
       acceptServerOrder(finalOrder);
       if (selectedOrder && selectedOrder.id === orderId) {
@@ -391,9 +394,12 @@ const VendorDashboard = ({ user }) => {
     }
 
     try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `reject-${orderId}-${Date.now()}`;
       const response = await api.put(`/payments/${orderId}/verify`, {
         approve: false,
         reason: 'Payment verification rejected by staff.',
+      }, {
+        headers: { 'Idempotency-Key': idempotencyKey }
       });
       const finalOrder = response.data.order;
       acceptServerOrder(finalOrder);
