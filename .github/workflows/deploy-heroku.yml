@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'backend/**'
-      - 'ai-service/**'
-      - '.github/workflows/deploy-heroku.yml'
 
 jobs:
   deploy-backend:
@@ -19,18 +15,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Deploy Backend via Git Subtree
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-        run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
-          
-          # Isolate backend folder into a split branch
-          BACKEND_COMMIT=$(git subtree split --prefix=backend HEAD)
-          
-          # Push to Heroku backend repository
-          git push https://heroku:${{ secrets.HEROKU_API_KEY }}@git.heroku.com/zovik-pos-backend.git "${BACKEND_COMMIT}:refs/heads/main" --force
+      - name: Deploy Backend to Heroku
+        uses: akhileshns/heroku-deploy@v3.13.15
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: "zovik-pos-backend"
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          appdir: "backend"
 
   deploy-ai-service:
     name: Deploy AI Service to Heroku
@@ -41,15 +32,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Deploy AI Microservice via Git Subtree
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-        run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
-          
-          # Isolate ai-service folder into a split branch
-          AI_COMMIT=$(git subtree split --prefix=ai-service HEAD)
-          
-          # Push to Heroku AI service repository
-          git push https://heroku:${{ secrets.HEROKU_API_KEY }}@git.heroku.com/zovik-pos-ai.git "${AI_COMMIT}:refs/heads/main" --force
+      - name: Deploy AI Service to Heroku
+        uses: akhileshns/heroku-deploy@v3.13.15
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: "zovik-pos-ai"
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          appdir: "ai-service"
