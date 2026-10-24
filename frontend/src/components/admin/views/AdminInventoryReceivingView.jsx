@@ -1569,7 +1569,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         fileBase64: dataUrl,
         fileName: fileName,
         supplierName: selectedSup ? selectedSup.name : ''
-      });
+      }, { timeout: 120000 });
 
       if (res.data) {
         const dateStr = getTodayCompactDate();
