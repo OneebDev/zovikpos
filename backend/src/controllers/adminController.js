@@ -933,6 +933,13 @@ const deleteCustomerAccount = async (req, res) => {
         data: { isActive: false }
       });
 
+      emitToAccount(targetId, 'customer:account-blocked', {
+        userId: targetId,
+        email: customer.email,
+        action: 'ACCOUNT_DEACTIVATED',
+        message: 'Your account has been deactivated or disabled by Admin.',
+      });
+
       await logAudit({
         userId: currentUserId,
         action: 'CUSTOMER_DEACTIVATED',
@@ -952,6 +959,13 @@ const deleteCustomerAccount = async (req, res) => {
     await prisma.$transaction(async (tx) => {
       await tx.session.deleteMany({ where: { userId: targetId } });
       await tx.user.delete({ where: { id: targetId } });
+    });
+
+    emitToAccount(targetId, 'customer:account-blocked', {
+      userId: targetId,
+      email: customer.email,
+      action: 'ACCOUNT_DELETED',
+      message: 'Your account has been permanently removed by Admin.',
     });
 
     await logAudit({
@@ -1011,11 +1025,23 @@ const bulkDeleteCustomers = async (req, res) => {
           where: { id: targetId },
           data: { isActive: false },
         });
+        emitToAccount(targetId, 'customer:account-blocked', {
+          userId: targetId,
+          email: customer.email,
+          action: 'ACCOUNT_DEACTIVATED',
+          message: 'Your account has been deactivated or disabled by Admin.',
+        });
         archivedCount++;
       } else {
         await prisma.$transaction(async (tx) => {
           await tx.session.deleteMany({ where: { userId: targetId } });
           await tx.user.delete({ where: { id: targetId } });
+        });
+        emitToAccount(targetId, 'customer:account-blocked', {
+          userId: targetId,
+          email: customer.email,
+          action: 'ACCOUNT_DELETED',
+          message: 'Your account has been permanently removed by Admin.',
         });
         deletedCount++;
       }
