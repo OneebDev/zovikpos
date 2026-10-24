@@ -878,7 +878,7 @@ const AdminActivityLogsView = ({ logs = [], receivings = [], onRefresh, showToas
 
                         {/* Product names summary & Ingredients count */}
                         <div className="text-xs font-bold text-[var(--text-main)] flex flex-wrap items-center gap-2">
-                          <span>ðŸ½ï¸ Products:</span>
+                          <span>🍽️ Products:</span>
                           <span className="text-purple-300 font-semibold">{act.orderedProductsSummary}</span>
                         </div>
 
