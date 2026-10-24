@@ -3832,21 +3832,21 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
-                    <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
-                      {draftSaveScope === 'primary' && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === 'primary' && savingDraft ? 'Saving"¦' : 'Save Draft'}
+                  <div className="grid w-full grid-cols-3 items-stretch gap-1.5 sm:w-auto sm:flex sm:flex-wrap sm:justify-end sm:gap-2">
+                    <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="flex min-w-0 items-center justify-center gap-1 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] px-1.5 py-2 text-center text-[10px] font-bold leading-tight text-orange-600 hover:bg-orange-500/10 disabled:opacity-50 sm:px-4 sm:py-2.5 sm:text-xs">
+                      {draftSaveScope === 'primary' && savingDraft ? <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin sm:h-4 sm:w-4" /> : <Save className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />}<span className="min-w-0">{draftSaveScope === 'primary' && savingDraft ? 'Saving…' : 'Save Draft'}</span>
                     </button>
-                    {newItemsCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
-                      {catalogSaveScope === 'primary' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'primary' ? 'Saving"¦' : `Save New Item Names (${newItemsCount})`}
+                    {newItemsCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: 'primary' })} disabled={loading || savingDraft || bulkSavingCatalog} className="flex min-w-0 items-center justify-center gap-1 rounded-xl border border-amber-500/35 bg-amber-500/10 px-1.5 py-2 text-center text-[10px] font-bold leading-tight text-amber-700 hover:bg-amber-500/15 disabled:opacity-50 sm:px-4 sm:py-2.5 sm:text-xs">
+                      {catalogSaveScope === 'primary' ? <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin sm:h-4 sm:w-4" /> : <Plus className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />}<span className="min-w-0">{catalogSaveScope === 'primary' ? 'Saving…' : `Save New Item Names (${newItemsCount})`}</span>
                     </button>}
                     <button
                       type="button"
                       onClick={() => handleInitiateSubmit('RECEIVED')}
                       disabled={loading || savingDraft || bulkSavingCatalog}
-                      className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black shadow-lg shadow-orange-600/20 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="flex min-w-0 items-center justify-center gap-1 rounded-xl bg-orange-600 px-1.5 py-2 text-center text-[10px] font-black leading-tight text-white shadow-lg shadow-orange-600/20 transition-all hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-60 sm:gap-2 sm:px-5 sm:py-2.5 sm:text-xs"
                     >
-                      {receivingActionScope === 'primary' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      <span>Confirm &amp; Receive {additionalCards.length > 0 ? 'Card 1' : 'Stock'}</span>
+                      {receivingActionScope === 'primary' ? <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin sm:h-4 sm:w-4" /> : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />}
+                      <span className="min-w-0">Confirm &amp; Receive {additionalCards.length > 0 ? 'Card 1' : 'Stock'}</span>
                     </button>
                   </div>
                 </div>
@@ -4192,21 +4192,21 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         {cardReceiveMessages[card.id] && <div role="alert" className="mt-2 max-w-xl rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300">{cardReceiveMessages[card.id]}</div>}
                       </div>
 
-                      <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
-                        <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap rounded-xl border border-orange-500/35 bg-[var(--card-bg)] px-4 py-2 text-center text-xs font-bold text-orange-600 hover:bg-orange-500/10 disabled:opacity-50 sm:w-auto">
-                          {draftSaveScope === card.id && savingDraft ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Save className="mr-1.5 inline h-4 w-4" />}{draftSaveScope === card.id && savingDraft ? 'Saving"¦' : 'Save Draft'}
+                      <div className="grid w-full grid-cols-3 items-stretch gap-1.5 sm:w-auto sm:flex sm:flex-wrap sm:justify-end sm:gap-2">
+                        <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="flex min-w-0 items-center justify-center gap-1 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] px-1.5 py-2 text-center text-[10px] font-bold leading-tight text-orange-600 hover:bg-orange-500/10 disabled:opacity-50 sm:w-auto sm:px-4 sm:text-xs">
+                          {draftSaveScope === card.id && savingDraft ? <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin sm:h-4 sm:w-4" /> : <Save className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />}<span className="min-w-0">{draftSaveScope === card.id && savingDraft ? 'Saving…' : 'Save Draft'}</span>
                         </button>
-                        {cardNewCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-2 text-center text-xs font-bold text-amber-700 hover:bg-amber-500/15 disabled:opacity-50 sm:w-auto">
-                          {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Saving"¦' : `Save New Item Names (${cardNewCount})`}
+                        {cardNewCount > 0 && <button type="button" onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={loading || savingDraft || bulkSavingCatalog} className="flex min-w-0 items-center justify-center gap-1 rounded-xl border border-amber-500/35 bg-amber-500/10 px-1.5 py-2 text-center text-[10px] font-bold leading-tight text-amber-700 hover:bg-amber-500/15 disabled:opacity-50 sm:w-auto sm:px-4 sm:text-xs">
+                          {catalogSaveScope === card.id ? <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin sm:h-4 sm:w-4" /> : <Plus className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />}<span className="min-w-0">{catalogSaveScope === card.id ? 'Saving…' : `Save New Item Names (${cardNewCount})`}</span>
                         </button>}
                         <button
                           type="button"
                           onClick={() => executeSubmitAdditionalCard(card.id, 'RECEIVED')}
                           disabled={loading || savingDraft || bulkSavingCatalog}
-                          className="flex w-full flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-orange-600 px-5 py-2 text-center text-xs font-black text-white shadow-md cursor-pointer hover:bg-orange-500 disabled:opacity-60 disabled:cursor-not-allowed sm:w-auto sm:flex-initial"
+                          className="flex min-w-0 items-center justify-center gap-1 rounded-xl bg-orange-600 px-1.5 py-2 text-center text-[10px] font-black leading-tight text-white shadow-md cursor-pointer hover:bg-orange-500 disabled:opacity-60 disabled:cursor-not-allowed sm:w-auto sm:flex-initial sm:gap-1.5 sm:px-5 sm:text-xs"
                         >
-                          {receivingActionScope === card.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                          <span>{receivingActionScope === card.id ? 'Receiving"¦' : `Confirm & Receive (Card #${cardIdx + 2})`}</span>
+                          {receivingActionScope === card.id ? <RefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin sm:h-4 sm:w-4" /> : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />}
+                          <span className="min-w-0">{receivingActionScope === card.id ? 'Receiving…' : `Confirm & Receive (Card #${cardIdx + 2})`}</span>
                         </button>
                       </div>
                     </div>}
@@ -4241,24 +4241,24 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                       Save each supplier separately as a draft, or add all new item names to the catalog in one action.
                     </p>
                   </div>
-                  <div className="flex w-full sm:w-auto flex-col sm:flex-row flex-wrap gap-2">
+                  <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex sm:flex-wrap">
                     <button
                       type="button"
                       onClick={() => setPendingReceivingSaveAction({ action: 'DRAFT', cardId: null })}
                       disabled={loading || savingDraft || bulkSavingCatalog}
-                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-600 border border-orange-500/35 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      className="flex min-w-0 items-center justify-center gap-1 rounded-xl bg-[var(--bg-color)] px-1.5 py-2.5 text-center text-[10px] font-bold leading-tight text-orange-600 border border-orange-500/35 transition-all hover:bg-orange-500/10 disabled:opacity-50 sm:w-auto sm:gap-1.5 sm:px-4 sm:text-xs"
                     >
                       {draftSaveScope === 'all' && savingDraft ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      <span>{draftSaveScope === 'all' && savingDraft ? 'Saving drafts"¦' : 'Save All Deliveries to Draft'}</span>
+                      <span className="min-w-0">{draftSaveScope === 'all' && savingDraft ? 'Saving drafts…' : 'Save All Deliveries to Draft'}</span>
                     </button>
                     {allDeliveryNewItemsCount > 0 && <button
                       type="button"
                       onClick={() => setPendingReceivingSaveAction({ action: 'CATALOG', cardId: null })}
                       disabled={loading || savingDraft || bulkSavingCatalog}
-                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white border border-orange-500 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      className="flex min-w-0 items-center justify-center gap-1 rounded-xl bg-orange-600 px-1.5 py-2.5 text-center text-[10px] font-bold leading-tight text-white border border-orange-500 transition-all hover:bg-orange-500 disabled:opacity-50 sm:w-auto sm:gap-1.5 sm:px-4 sm:text-xs"
                     >
                       {catalogSaveScope === 'all' ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      <span>{catalogSaveScope === 'all' ? 'Saving items"¦' : `Save All New Item Names (${allDeliveryNewItemsCount})`}</span>
+                      <span className="min-w-0">{catalogSaveScope === 'all' ? 'Saving items…' : `Save All New Item Names (${allDeliveryNewItemsCount})`}</span>
                     </button>}
                   </div>
                 </div>

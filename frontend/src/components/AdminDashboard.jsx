@@ -55,6 +55,7 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [adminOrders, setAdminOrders] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [customersRefreshToken, setCustomersRefreshToken] = useState(0);
   const [forecastingLoading, setForecastingLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [persistentError, setPersistentError] = useState(null);
@@ -252,6 +253,14 @@ const AdminDashboard = ({ user, onLogout }) => {
     refreshActiveTabData({ ...options, forceStats: options.forceStats ?? true })
   ), [refreshActiveTabData]);
 
+  const handleNavbarRefresh = useCallback(() => {
+    if (activeTab === 'customers') {
+      setCustomersRefreshToken((token) => token + 1);
+      return;
+    }
+    fetchDashboardData({ forceStats: true });
+  }, [activeTab, fetchDashboardData]);
+
   useEffect(() => {
     if (user && user.role === 'ADMIN') {
       refreshActiveTabData();
@@ -337,7 +346,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       onSelectTab={handleSelectTab}
       user={user}
       onLogout={onLogout}
-      onRefresh={() => fetchDashboardData({ forceStats: true })}
+      onRefresh={handleNavbarRefresh}
       refreshing={loading}
       branches={branches}
       selectedBranchId={selectedBranchId}
@@ -409,7 +418,7 @@ const AdminDashboard = ({ user, onLogout }) => {
 
       {activeTab === 'staff' && <AdminStaffView showToast={showToast} />}
 
-      {activeTab === 'customers' && <AdminCustomersView showToast={showToast} />}
+      {activeTab === 'customers' && <AdminCustomersView showToast={showToast} refreshToken={customersRefreshToken} />}
 
       {activeTab === 'tables' && <AdminTablesQRView showToast={showToast} />}
 

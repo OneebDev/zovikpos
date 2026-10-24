@@ -155,6 +155,7 @@ const createDraftInTransaction = async (tx, draft, req) => {
   const preparedItems = draft.items.map((item) => ({
     inventoryItemId: item.inventoryItemId,
     quantity: item.quantity,
+    remainingQuantity: item.quantity, // initialise for FIFO deduction tracking
     unit: item.unit,
     unitCost: item.unitCost,
     totalCost: roundMoney(item.quantity * item.unitCost),
@@ -258,6 +259,7 @@ const materializeDeferredItems = async (tx, receiving) => {
         receivingId: receiving.id,
         inventoryItemId: inventoryItem.id,
         quantity,
+        remainingQuantity: quantity, // initialise for FIFO deduction tracking
         unit: String(raw.unit || 'KG'),
         unitCost,
         totalCost: roundMoney(quantity * unitCost),
@@ -325,6 +327,12 @@ const receiveOneInTransaction = async (tx, receivingId) => {
         costPrice: newCostPrice,
         ...(line.expiryDate ? { expiryDate: line.expiryDate } : {}),
       },
+    });
+    // Set remainingQuantity on the batch line to the converted base-unit quantity
+    // so the FIFO deduction service can track consumption correctly.
+    await tx.inventoryReceivingItem.update({
+      where: { id: line.id },
+      data: { remainingQuantity: quantity },
     });
     logs.push({
       inventoryItemId: item.id,

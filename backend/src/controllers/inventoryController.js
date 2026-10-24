@@ -1799,6 +1799,7 @@ const createReceiving = async (req, res) => {
       preparedItems.push({
         inventoryItemId: invId,
         quantity: qty,
+        remainingQuantity: qty,
         unit: item.unit || 'PCS',
         unitCost: cost,
         totalCost: itemTotal,
@@ -2122,6 +2123,7 @@ const confirmReceiving = async (req, res) => {
                   receivingId: existingReceiving.id,
                   inventoryItemId: catalogItem.id,
                   quantity: niQty,
+                  remainingQuantity: niQty,
                   unit: ni.unit || 'KG',
                   unitCost: niCost,
                   totalCost: roundReceivingMoney(niQty * niCost),
@@ -2189,6 +2191,13 @@ const confirmReceiving = async (req, res) => {
           where: { id: existingItem.id },
           data: updateData
         });
+
+        if (item.id) {
+          await tx.inventoryReceivingItem.update({
+            where: { id: item.id },
+            data: { remainingQuantity: convertedReceivedQty }
+          });
+        }
 
         logsToCreate.push({
           inventoryItemId: existingItem.id,

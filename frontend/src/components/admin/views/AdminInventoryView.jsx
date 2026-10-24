@@ -3746,12 +3746,12 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                           <span className="col-span-2 xl:col-span-1 min-w-0 self-center text-sm font-mono font-black text-emerald-500 break-words xl:text-right">Total: Rs. {Math.max(0, roundInventoryMoney(sumInventorySubtotals(ingredientCards) - calculateCardDiscount(sumInventorySubtotals(ingredientCards), card1Discount, card1DiscountMode))).toLocaleString()}</span>
                         </div>
                       </div>
-                      <div className="grid w-full grid-cols-1 sm:grid-cols-2 xl:w-auto gap-2">
-                        <button type="button" onClick={() => setPendingAddSaveAction({ action: 'DRAFT', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
-                          <Save className="mr-1.5 inline h-4 w-4" />Save Draft
+                      <div className="grid w-full grid-cols-2 gap-2 xl:w-auto">
+                        <button type="button" onClick={() => setPendingAddSaveAction({ action: 'DRAFT', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="flex min-w-0 items-center justify-center gap-1.5 whitespace-normal px-2 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-center text-[10px] font-bold leading-tight text-orange-600 hover:bg-orange-500/10 disabled:opacity-50 sm:px-4 sm:text-xs">
+                          <Save className="h-4 w-4 shrink-0" /><span>Save Draft</span>
                         </button>
-                        {ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
-                          {catalogSaveScope === 'card-1' ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === 'card-1' ? 'Saving…' : `Save New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length})`}
+                        {ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: 'card-1' })} disabled={savingDraft || bulkSavingCatalog} className="flex min-w-0 items-center justify-center gap-1.5 whitespace-normal px-2 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-center text-[10px] font-bold leading-tight text-amber-700 hover:bg-amber-500/15 disabled:opacity-50 sm:px-4 sm:text-xs">
+                          {catalogSaveScope === 'card-1' ? <RefreshCw className="h-4 w-4 shrink-0 animate-spin" /> : <Plus className="h-4 w-4 shrink-0" />}<span>{catalogSaveScope === 'card-1' ? 'Saving…' : `Save New Item Names (${ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length})`}</span>
                         </button>}
                       </div>
                     </div>}
@@ -4267,12 +4267,12 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                               <span className="col-span-2 xl:col-span-1 min-w-0 self-center text-sm font-mono font-black text-emerald-500 break-words xl:text-right">Total: Rs. {Math.max(0, roundInventoryMoney(sumInventorySubtotals(items) - calculateCardDiscount(sumInventorySubtotals(items), card.discountAmount, card.discountMode))).toLocaleString()}</span>
                             </div>
                           </div>
-                          <div className="grid w-full grid-cols-1 sm:grid-cols-2 xl:w-auto gap-2">
-                            <button type="button" onClick={() => setPendingAddSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap px-4 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-orange-600 text-xs font-bold hover:bg-orange-500/10 disabled:opacity-50">
-                              <Save className="mr-1.5 inline h-4 w-4" />Save Draft
+                          <div className="grid w-full grid-cols-2 gap-2 xl:w-auto">
+                            <button type="button" onClick={() => setPendingAddSaveAction({ action: 'DRAFT', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="flex min-w-0 items-center justify-center gap-1.5 whitespace-normal px-2 py-2.5 rounded-xl border border-orange-500/35 bg-[var(--card-bg)] text-center text-[10px] font-bold leading-tight text-orange-600 hover:bg-orange-500/10 disabled:opacity-50 sm:px-4 sm:text-xs">
+                              <Save className="h-4 w-4 shrink-0" /><span>Save Draft</span>
                             </button>
-                            {newItemsCount > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="w-full whitespace-nowrap px-4 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-700 text-xs font-bold hover:bg-amber-500/15 disabled:opacity-50">
-                              {catalogSaveScope === card.id ? <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 inline h-4 w-4" />}{catalogSaveScope === card.id ? 'Saving…' : `Save New Item Names (${newItemsCount})`}
+                            {newItemsCount > 0 && <button type="button" onClick={() => setPendingAddSaveAction({ action: 'CATALOG', cardId: card.id })} disabled={savingDraft || bulkSavingCatalog} className="flex min-w-0 items-center justify-center gap-1.5 whitespace-normal px-2 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-center text-[10px] font-bold leading-tight text-amber-700 hover:bg-amber-500/15 disabled:opacity-50 sm:px-4 sm:text-xs">
+                              {catalogSaveScope === card.id ? <RefreshCw className="h-4 w-4 shrink-0 animate-spin" /> : <Plus className="h-4 w-4 shrink-0" />}<span>{catalogSaveScope === card.id ? 'Saving…' : `Save New Item Names (${newItemsCount})`}</span>
                             </button>}
                           </div>
                         </div>}
@@ -4294,7 +4294,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                       </button>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                    <div className="grid w-full grid-cols-2 items-center gap-2 sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
                       <button
                         type="button"
                         onClick={() => setShowAddItemModal(false)}
@@ -4306,19 +4306,19 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                         type="button"
                         onClick={() => setPendingAddSaveAction({ action: 'DRAFT' })}
                         disabled={bulkSavingCatalog || savingDraft}
-                        className="px-4 py-2.5 rounded-xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-600 border border-orange-500/35 text-xs font-bold cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                        className="flex min-w-0 items-center justify-center gap-1 rounded-xl bg-[var(--bg-color)] px-1.5 py-2.5 text-center text-[10px] font-bold leading-tight text-orange-600 border border-orange-500/35 cursor-pointer transition-all hover:bg-orange-500/10 disabled:opacity-50 sm:gap-1.5 sm:px-4 sm:text-xs"
                       >
                         <Save className="w-4 h-4" />
-                        <span>Save All Deliveries to Draft</span>
+                        <span className="min-w-0">Save All Deliveries to Draft</span>
                       </button>}
                       {additionalDeliveryCards.length === 0 && (ingredientCards.some(c => c.isNewItem && !c.saved && c.name?.trim()) || additionalDeliveryCards.some(card => (card.items || []).some(i => i.isNewItem && !i.saved && i.name?.trim()))) && <button
                         type="button"
                         onClick={() => setPendingAddSaveAction({ action: 'CATALOG' })}
                         disabled={bulkSavingCatalog || savingDraft}
-                        className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black shadow-md cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                        className="flex min-w-0 items-center justify-center gap-1 rounded-xl bg-orange-600 px-1.5 py-2.5 text-center text-[10px] font-black leading-tight text-white shadow-md cursor-pointer transition-all hover:bg-orange-500 disabled:opacity-50 sm:gap-1.5 sm:px-5 sm:text-xs"
                       >
                         {catalogSaveScope === 'all' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        <span>Save All New Item Names ({ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length + additionalDeliveryCards.reduce((count, card) => count + (card.items || []).filter(i => i.isNewItem && !i.saved && i.name?.trim()).length, 0)})</span>
+                        <span className="min-w-0">Save All New Item Names ({ingredientCards.filter(c => c.isNewItem && !c.saved && c.name?.trim()).length + additionalDeliveryCards.reduce((count, card) => count + (card.items || []).filter(i => i.isNewItem && !i.saved && i.name?.trim()).length, 0)})</span>
                       </button>
                       }
                     </div>

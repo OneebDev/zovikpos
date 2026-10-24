@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Users,
@@ -19,7 +19,6 @@ import {
   Clock,
   Filter,
   Plus,
-  RefreshCw,
   MessageSquare,
   AlertTriangle,
   GraduationCap,
@@ -31,6 +30,7 @@ import { exportToCSV, printPDFReport } from '../../../utils/exportUtils';
 import api from '../../../services/api';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
 import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
+import ThemedSelect from '../../common/ThemedSelect';
 
 const ALLOWED_BLOCK_REASONS = [
   'Suspected fraudulent activity',
@@ -60,7 +60,7 @@ const DISPUTE_CATEGORIES = [
   'Other',
 ];
 
-const AdminCustomersView = ({ showToast }) => {
+const AdminCustomersView = ({ showToast, refreshToken = 0 }) => {
   // Navigation & Core Data
   const [activeTab, setActiveTab] = useState('customers'); // 'customers' | 'disputes'
   const [customers, setCustomers] = useState([]);
@@ -172,6 +172,14 @@ const AdminCustomersView = ({ showToast }) => {
       setDisputesLoading(false);
     }
   }, [disputeStatusFilter, disputeCategoryFilter, disputeSearch]);
+
+  const lastRefreshToken = useRef(refreshToken);
+  useEffect(() => {
+    if (lastRefreshToken.current === refreshToken) return;
+    lastRefreshToken.current = refreshToken;
+    if (activeTab === 'disputes') fetchDisputes();
+    else fetchCustomers();
+  }, [refreshToken, activeTab, fetchCustomers, fetchDisputes]);
 
   useEffect(() => {
     fetchCustomers();
@@ -495,11 +503,11 @@ const AdminCustomersView = ({ showToast }) => {
       {/* ──────────────────────────────────────────────────────────────────────── Top Header Bar ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 glass-card p-4 sm:p-6">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
             <h2 className="min-w-0 text-lg font-extrabold leading-tight text-[var(--text-main)] font-display sm:text-xl">
               Customer Management &amp; Disputes
             </h2>
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20">
+            <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20">
               Admin Control
             </span>
           </div>
@@ -509,18 +517,7 @@ const AdminCustomersView = ({ showToast }) => {
         </div>
 
         {/* Global Actions */}
-        <div className="flex w-full min-w-0 items-center gap-2 overflow-x-auto pb-1 lg:w-auto lg:shrink-0 lg:justify-end lg:overflow-visible">
-          <button
-            onClick={() => {
-              fetchCustomers();
-              if (activeTab === 'disputes') fetchDisputes();
-            }}
-            className="p-2 rounded-xl bg-[var(--card-bg)] border border-[var(--border-color)] hover:border-orange-500/40 text-[var(--text-muted)] hover:text-orange-400 transition-all cursor-pointer icon-btn"
-            title="Refresh Data"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading || disputesLoading ? 'animate-spin text-orange-400' : ''}`} />
-          </button>
-
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 lg:w-auto lg:shrink-0 lg:justify-end lg:gap-2">
           {activeTab === 'customers' && (
             <>
               <BulkSelectionModeButton
@@ -695,7 +692,7 @@ const AdminCustomersView = ({ showToast }) => {
 
             {/* Account Status Filter */}
             <div>
-              <select
+              <ThemedSelect
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
@@ -705,12 +702,12 @@ const AdminCustomersView = ({ showToast }) => {
                 <option value="BLOCKED">Blocked Accounts Only</option>
                 <option value="STUDENT">UIT Student Verified Only</option>
                 <option value="NON_STUDENT">Non-Student Accounts Only</option>
-              </select>
+              </ThemedSelect>
             </div>
 
             {/* Dispute Filter */}
             <div>
-              <select
+              <ThemedSelect
                 value={disputeFilter}
                 onChange={(e) => setDisputeFilter(e.target.value)}
                 className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
@@ -719,12 +716,12 @@ const AdminCustomersView = ({ showToast }) => {
                 <option value="OPEN_DISPUTES">With Active / Open Disputes</option>
                 <option value="WITH_DISPUTES">With Any Recorded Disputes</option>
                 <option value="NO_DISPUTES">Clean (No Disputes)</option>
-              </select>
+              </ThemedSelect>
             </div>
 
             {/* Last Order Activity Filter */}
             <div>
-              <select
+              <ThemedSelect
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
                 className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
@@ -733,7 +730,7 @@ const AdminCustomersView = ({ showToast }) => {
                 <option value="TODAY">Ordered Today (Last 24h)</option>
                 <option value="WEEK">Ordered Past 7 Days</option>
                 <option value="MONTH">Ordered Past 30 Days</option>
-              </select>
+              </ThemedSelect>
             </div>
           </div>
 
@@ -968,7 +965,7 @@ const AdminCustomersView = ({ showToast }) => {
             </div>
 
             <div>
-              <select
+              <ThemedSelect
                 value={disputeStatusFilter}
                 onChange={(e) => setDisputeStatusFilter(e.target.value)}
                 className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
@@ -978,11 +975,11 @@ const AdminCustomersView = ({ showToast }) => {
                 <option value="UNDER_REVIEW">Under Review Only</option>
                 <option value="RESOLVED">Resolved Only</option>
                 <option value="REJECTED">Rejected Only</option>
-              </select>
+              </ThemedSelect>
             </div>
 
             <div>
-              <select
+              <ThemedSelect
                 value={disputeCategoryFilter}
                 onChange={(e) => setDisputeCategoryFilter(e.target.value)}
                 className="w-full px-3 py-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs text-[var(--text-main)] focus:outline-none focus:border-orange-500"
@@ -991,7 +988,7 @@ const AdminCustomersView = ({ showToast }) => {
                 {DISPUTE_CATEGORIES.map((cat) => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
-              </select>
+              </ThemedSelect>
             </div>
           </div>
 
@@ -1354,16 +1351,15 @@ const AdminCustomersView = ({ showToast }) => {
                 <label className="font-bold text-[var(--text-main)] block mb-1">
                   Required Blocking Reason <span className="text-rose-400">*</span>
                 </label>
-                <select
+                <ThemedSelect
                   value={blockReason}
                   onChange={(e) => setBlockReason(e.target.value)}
                   className="w-full px-3 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-[var(--text-main)] focus:outline-none focus:border-rose-500 font-medium"
-                  required
                 >
                   {ALLOWED_BLOCK_REASONS.map((r) => (
                     <option key={r} value={r}>{r}</option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
 
               {/* Custom Explanation (Required when 'Other' selected) */}
@@ -1466,16 +1462,15 @@ const AdminCustomersView = ({ showToast }) => {
                 <label className="font-bold text-[var(--text-main)] block mb-1">
                   Required Unblock Reason <span className="text-emerald-400">*</span>
                 </label>
-                <select
+                <ThemedSelect
                   value={unblockReason}
                   onChange={(e) => setUnblockReason(e.target.value)}
                   className="w-full px-3 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-[var(--text-main)] focus:outline-none focus:border-emerald-500 font-medium"
-                  required
                 >
                   {ALLOWED_UNBLOCK_REASONS.map((r) => (
                     <option key={r} value={r}>{r}</option>
                   ))}
-                </select>
+                </ThemedSelect>
               </div>
 
               {/* Custom Explanation (Required when 'Other' selected) */}
@@ -1576,7 +1571,7 @@ const AdminCustomersView = ({ showToast }) => {
             <form onSubmit={handleSaveDisputeStatus} className="space-y-4 text-xs">
               <div>
                 <label className="font-bold text-[var(--text-main)] block mb-1">New Dispute Status</label>
-                <select
+                <ThemedSelect
                   value={newDisputeStatus}
                   onChange={(e) => setNewDisputeStatus(e.target.value)}
                   className="w-full px-3 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-[var(--text-main)] focus:outline-none focus:border-orange-500 font-medium"
@@ -1585,7 +1580,7 @@ const AdminCustomersView = ({ showToast }) => {
                   <option value="UNDER_REVIEW">UNDER REVIEW (Investigation in Progress)</option>
                   <option value="RESOLVED">RESOLVED (Customer Issue Resolved)</option>
                   <option value="REJECTED">REJECTED (Invalid / Policy Complaint Rejected)</option>
-                </select>
+                </ThemedSelect>
               </div>
 
               <div>
@@ -1680,7 +1675,7 @@ const AdminCustomersView = ({ showToast }) => {
                 </div>
                 <div>
                   <label className="font-bold text-[var(--text-main)] block mb-1">Dispute Category</label>
-                  <select
+                  <ThemedSelect
                     value={newDisputeData.category}
                     onChange={(e) => setNewDisputeData({ ...newDisputeData, category: e.target.value })}
                     className="w-full px-3 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-[var(--text-main)] focus:outline-none focus:border-orange-500"
@@ -1688,7 +1683,7 @@ const AdminCustomersView = ({ showToast }) => {
                     {DISPUTE_CATEGORIES.map((cat) => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
-                  </select>
+                  </ThemedSelect>
                 </div>
               </div>
 

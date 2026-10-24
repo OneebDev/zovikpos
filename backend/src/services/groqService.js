@@ -150,7 +150,7 @@ const callGroqAPI = async (payload, retries = null) => {
   for (const modelCandidate of fallbackModels) {
     // Keep image extraction large enough for long invoices (100 compact item rows fit comfortably).
     // This is a per-response ceiling; account OTPM limits are handled by normal 429 key rotation.
-    const tokenLimit = isVisionRequest ? Math.min(payload.max_tokens || 4096, 4096) : (payload.max_tokens || 4096);
+    const tokenLimit = isVisionRequest ? Math.min(payload.max_tokens || 8192, 8192) : (payload.max_tokens || 8192);
     const currentPayload = {
       ...payload,
       model: modelCandidate,
@@ -300,7 +300,7 @@ Output strictly valid JSON with no markdown tags or explanatory text:
         ]
       }],
       temperature: 0.05,
-      max_tokens: 4096
+      max_tokens: 8192
     });
 
     if (resData) {
@@ -476,133 +476,180 @@ const parseInvoiceTextWithGroq = async (invoiceText) => {
     return null;
   }
 
-  // Highly token-efficient prompt capable of extracting 100+ items without hitting limits
-  const maxInvoiceTextLength = 35000;
-  const inputWasTruncated = invoiceText.length > maxInvoiceTextLength;
-  const textPrompt = `You are an expert Restaurant POS Invoice & Receipt Parser AI.
-Extract ALL line items and metadata from this invoice text. Never omit or summarize any items. If there are 33, 50, or 100 items, extract EVERY SINGLE item.
+  // To support 100+ items and multi-page invoices without truncation or fabricated data:
+  // We chunk very long text (up to ~96k chars total, 16k chars per chunk, max 6 chunks).
+  const CHUNK_SIZE = 16000;
+  const rawText = invoiceText.trim();
+  const textChunks = [];
+  
+  if (rawText.length <= CHUNK_SIZE) {
+    textChunks.push(rawText);
+  } else {
+    // Split by newlines so lines are not bisected
+    const lines = rawText.split(/\r?\n/);
+    let currentChunk = '';
+    for (const line of lines) {
+      if ((currentChunk.length + line.length + 1) > CHUNK_SIZE && currentChunk.length > 0) {
+        textChunks.push(currentChunk);
+        currentChunk = line;
+        if (textChunks.length >= 6) break; // Maximum 6 chunks (~96KB)
+      } else {
+        currentChunk = currentChunk ? (currentChunk + '\n' + line) : line;
+      }
+    }
+    if (currentChunk && textChunks.length < 6) {
+      textChunks.push(currentChunk);
+    }
+  }
+
+  let mergedSupplier = null;
+  let mergedInvoiceNumber = null;
+  let mergedDate = null;
+  let mergedSubtotal = null;
+  let mergedDiscount = null;
+  let mergedDiscountPercent = null;
+  let mergedInvoiceTotal = null;
+  const mergedItems = [];
+  const extractionWarnings = [];
+  const seenRowKeys = new Set();
+
+  for (let idx = 0; idx < textChunks.length; idx++) {
+    const chunkText = textChunks[idx];
+    const isFirstChunk = idx === 0;
+
+    const chunkPrompt = `You are an expert Restaurant POS Invoice & Receipt Parser AI.
+Extract ALL line items and metadata from this invoice text segment (Part ${idx + 1} of ${textChunks.length}).
+Never omit or summarize any items. If there are dozens or 100+ items, extract EVERY SINGLE item.
 
 CRITICAL RULES:
 1. Extract exact item name, quantity, unit, price/rate, and line total.
 2. DO NOT include "Subtotal", "Total", "Grand Total", "Tax", "Discount", or "Paid" as items.
 3. Ignore noise, stamps, headers. Only extract actual product rows.
-4. Output strictly valid JSON without markdown. Preserve the printed serial number as "r" and do not add an unnumbered item when the source is numbered:
-
+4. Output strictly valid JSON without markdown. Preserve the printed serial number as "r" if present.
 5. If a discount percentage is printed, return its numeric value in discPct without the % sign. If a fixed currency discount is printed, return its exact amount in disc. If both appear, return both. Never confuse a percentage with a currency amount. Subtotal and final total must not be used to calculate or replace item-based totals.
+6. Do NOT fabricate or hallucinate items, prices, or quantities.
 
 FORMAT:
 {"s":"Supplier","inv":"Inv#","d":"YYYY-MM-DD","sub":null,"disc":null,"discPct":null,"tot":null,"items":[{"r":1,"n":"Item Name","q":1,"u":"KG","p":100,"t":100,"b":null,"exp":null}]}
 
-INVOICE TEXT:
+INVOICE TEXT SEGMENT:
 """
-${invoiceText.substring(0, maxInvoiceTextLength)}
+${chunkText}
 """`;
 
-  const resData = await callGroqAPI({
-    model: 'openai/gpt-oss-120b',
-    messages: [
-      { role: 'system', content: 'You are an ultra-precise POS Invoice Parser that outputs compact JSON. Extract ALL items without limit.' },
-      { role: 'user', content: textPrompt }
-    ],
-    temperature: 0.05,
-    max_tokens: 4096
-  });
+    const resData = await callGroqAPI({
+      model: 'openai/gpt-oss-120b',
+      messages: [
+        { role: 'system', content: 'You are an ultra-precise POS Invoice Parser that outputs compact JSON. Extract ALL items without limit.' },
+        { role: 'user', content: chunkPrompt }
+      ],
+      temperature: 0.05,
+      max_tokens: 8192
+    });
 
-  if (!resData) return null;
+    if (!resData) continue;
 
-  const content = resData.choices?.[0]?.message?.content || '';
-  const finishReason = resData.choices?.[0]?.finish_reason;
-  const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
-  let parsed = null;
-  try {
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      parsed = JSON.parse(jsonMatch[0]);
+    const content = resData.choices?.[0]?.message?.content || '';
+    const finishReason = resData.choices?.[0]?.finish_reason;
+    if (finishReason === 'length') {
+      extractionWarnings.push(`Text segment ${idx + 1} reached the token limit; some lines may need manual review.`);
     }
-  } catch {
-    // JSON may be truncated. Attempt repair.
-    console.warn(`[GroqService] Text LLM JSON parse failed (finish_reason=${finishReason}), attempting repair...`);
+
+    const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    let parsed = null;
     try {
-      let repaired = cleaned;
-      const objStart = repaired.indexOf('{');
-      if (objStart >= 0) {
-        repaired = repaired.substring(objStart);
-        const lastCompleteItem = repaired.lastIndexOf('}');
-        if (lastCompleteItem > 0) {
-          repaired = repaired.substring(0, lastCompleteItem + 1);
-          const openBraces = (repaired.match(/\{/g) || []).length;
-          const closeBraces = (repaired.match(/\}/g) || []).length;
-          const openBrackets = (repaired.match(/\[/g) || []).length;
-          const closeBrackets = (repaired.match(/\]/g) || []).length;
-          for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += ']';
-          for (let i = 0; i < openBraces - closeBraces; i++) repaired += '}';
-          parsed = JSON.parse(repaired);
-          console.log(`[GroqService] ✓ Repaired truncated text LLM JSON successfully.`);
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      }
+    } catch {
+      // JSON repair
+      try {
+        let repaired = cleaned;
+        const objStart = repaired.indexOf('{');
+        if (objStart >= 0) {
+          repaired = repaired.substring(objStart);
+          const lastCompleteItem = repaired.lastIndexOf('}');
+          if (lastCompleteItem > 0) {
+            repaired = repaired.substring(0, lastCompleteItem + 1);
+            const openBraces = (repaired.match(/\{/g) || []).length;
+            const closeBraces = (repaired.match(/\}/g) || []).length;
+            const openBrackets = (repaired.match(/\[/g) || []).length;
+            const closeBrackets = (repaired.match(/\]/g) || []).length;
+            for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += ']';
+            for (let i = 0; i < openBraces - closeBraces; i++) repaired += '}';
+            parsed = JSON.parse(repaired);
+          }
         }
+      } catch (repairErr) {
+        console.warn(`[GroqService] Segment ${idx + 1} repair failed:`, repairErr.message);
       }
-    } catch (repairErr) {
-      console.warn('[GroqService] Text LLM JSON repair also failed:', repairErr.message);
+    }
+
+    if (parsed) {
+      if (isFirstChunk || !mergedSupplier) mergedSupplier = parsed.supplierName || parsed.s || mergedSupplier;
+      if (isFirstChunk || !mergedInvoiceNumber) mergedInvoiceNumber = parsed.invoiceNumber || parsed.inv || mergedInvoiceNumber;
+      if (isFirstChunk || !mergedDate) mergedDate = parsed.date || parsed.d || mergedDate;
+      if (parsed.subtotal ?? parsed.sub) mergedSubtotal = parsed.subtotal ?? parsed.sub;
+      if (parsed.discount ?? parsed.disc) mergedDiscount = parsed.discount ?? parsed.disc;
+      if (parsed.discountPercent ?? parsed.discountPercentage ?? parsed.discPct) {
+        mergedDiscountPercent = parsed.discountPercent ?? parsed.discountPercentage ?? parsed.discPct;
+      }
+      if (parsed.invoiceTotal ?? parsed.tot) mergedInvoiceTotal = parsed.invoiceTotal ?? parsed.tot;
+
+      const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+      for (const it of rawItems) {
+        const rawName = String(it.rawName || it.name || it.n || it.item || '').trim();
+        if (!rawName || /^(subtotal|total|grand total|tax|gst|discount)$/i.test(rawName)) continue;
+
+        const parsedQty = Number.parseFloat(it.quantity ?? it.qty ?? it.q);
+        const qty = Number.isFinite(parsedQty) && parsedQty >= 0 ? parsedQty : 0;
+        const cost = parseFloat(it.unitCost || it.price || it.rate || it.cost || it.p) || 0;
+        const tot = parseFloat(it.totalCost || it.total || it.t) || (qty * cost);
+        const rowNum = Number.parseInt(it.sourceRowNumber ?? it.rowNumber ?? it.row ?? it.r, 10) || null;
+
+        // Deduplication key
+        const dedupeKey = rowNum ? `row_${rowNum}` : `name_${rawName.toLowerCase()}_${qty}_${cost}`;
+        if (seenRowKeys.has(dedupeKey)) continue;
+        seenRowKeys.add(dedupeKey);
+
+        mergedItems.push({
+          sourceRowNumber: rowNum || (mergedItems.length + 1),
+          rawName,
+          quantity: qty,
+          unit: (it.unit || it.u || 'KG').toUpperCase(),
+          unitCost: cost,
+          totalCost: tot,
+          batchNumber: it.batchNumber || it.b || null,
+          expiryDate: it.expiryDate || it.exp || null,
+          needsReview: Boolean(it.needsReview) || !(qty > 0) || (cost <= 0),
+          reviewReason: it.reviewReason || (!(qty > 0) ? 'Quantity missing or invalid; verify before receiving' : cost <= 0 ? 'Zero or missing unit price' : null)
+        });
+      }
     }
   }
 
-  if (parsed) {
-    const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
-    const normalizedItems = rawItems.map(it => {
-      const rawName = it.rawName || it.name || it.n || it.item || '';
-      const parsedQty = Number.parseFloat(it.quantity ?? it.qty ?? it.q);
-      const qty = Number.isFinite(parsedQty) && parsedQty >= 0 ? parsedQty : 0;
-      const cost = parseFloat(it.unitCost || it.price || it.rate || it.cost || it.p) || 0;
-      const tot = parseFloat(it.totalCost || it.total || it.t) || (qty * cost);
-      return {
-        sourceRowNumber: Number.parseInt(it.sourceRowNumber ?? it.rowNumber ?? it.row ?? it.r, 10) || null,
-        rawName: String(rawName).trim(),
-        quantity: qty,
-        unit: (it.unit || it.u || 'KG').toUpperCase(),
-        unitCost: cost,
-        totalCost: tot,
-        batchNumber: it.batchNumber || it.b || null,
-        expiryDate: it.expiryDate || it.exp || null,
-        needsReview: Boolean(it.needsReview) || !(qty > 0) || (cost <= 0),
-        reviewReason: it.reviewReason || (!(qty > 0) ? 'Quantity missing or invalid; verify before receiving' : cost <= 0 ? 'Zero or missing unit price' : null)
-      };
-    }).filter(it => it.rawName && it.rawName.length > 0 && !/^(subtotal|total|grand total|tax|gst|discount)$/i.test(it.rawName));
-
-    if (normalizedItems.length > 0) {
-      if (finishReason === 'length') {
-        console.warn(`[GroqService] ⚠ Text LLM response truncated (finish_reason=length). Extracted ${normalizedItems.length} items.`);
-      }
-      console.log(`[GroqService] ✓ Extracted ${normalizedItems.length} items from invoice text.`);
-      return {
-        supplierName: parsed.supplierName || parsed.s || null,
-        invoiceNumber: parsed.invoiceNumber || parsed.inv || null,
-        date: parsed.date || parsed.d || null,
-        invoiceTotal: parsed.invoiceTotal ?? parsed.tot ?? null,
-        subtotal: parsed.subtotal ?? parsed.sub ?? null,
-        discount: parsed.discount ?? parsed.disc ?? null,
-        discountPercent: parsed.discountPercent ?? parsed.discountPercentage ?? parsed.discPct ?? null,
-        items: normalizedItems,
-        warnings: [
-          ...(inputWasTruncated ? ['Invoice text exceeded the parser input limit; later source text was not sent.'] : []),
-          ...(finishReason === 'length' ? ['AI response reached its token limit; review extracted rows against the source invoice.'] : [])
-        ]
-      };
-    }
+  if (mergedItems.length > 0) {
+    console.log(`[GroqService] ✓ Extracted ${mergedItems.length} items across ${textChunks.length} chunk(s).`);
+    return {
+      supplierName: mergedSupplier,
+      invoiceNumber: mergedInvoiceNumber,
+      date: mergedDate,
+      invoiceTotal: mergedInvoiceTotal,
+      subtotal: mergedSubtotal,
+      discount: mergedDiscount,
+      discountPercent: mergedDiscountPercent,
+      items: mergedItems,
+      warnings: extractionWarnings
+    };
   }
 
-  // Last resort: try direct parse
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    console.error('[GroqService] Could not parse text LLM response as JSON.');
-    return null;
-  }
+  return null;
 };
 
 
 /**
- * ─── AI BUSINESS INSIGHTS GENERATOR ──────────────────────────────────────────
- * Generate real AI-powered executive summary & actionable insights for POS
+ * ─── AI BUSINESS INSIGHTS GENERATOR ───
  */
 const generateRealAIInsightsWithGroq = async ({ inventoryStats, salesSummary, kitchenStats }) => {
   try {
