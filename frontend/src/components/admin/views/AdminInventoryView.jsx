@@ -4394,166 +4394,202 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
 
       {/* Upload Choice Modal (Same Supplier Merge vs Different Supplier Separate Card) */}
       {showMergeChoiceModal && (pendingUploadData || pendingUploadRows) && createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 animate-in fade-in duration-200">
-          <div className="bg-[var(--card-bg)] border border-white/10 rounded-[28px] p-4 sm:p-6 lg:p-7 shadow-2xl shadow-black/40 max-w-2xl w-full mx-0 space-y-5 animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center overflow-x-hidden bg-black/80 backdrop-blur-md p-0 sm:p-5 animate-in fade-in duration-200">
+          <div className="box-border w-full min-w-0 max-w-lg mx-0 overflow-x-hidden rounded-t-[28px] sm:rounded-[28px] border border-white/10 bg-[var(--card-bg)] p-5 shadow-2xl shadow-black/50 sm:p-6 space-y-4 animate-in slide-in-from-bottom sm:zoom-in-95 duration-250 max-h-[92vh] overflow-y-auto">
 
             {/* Modal Header */}
-            <div className="flex items-start justify-between gap-4 pb-4 border-b border-[var(--border-color)]">
-              <div className="flex items-center gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 {pendingUploadData?.isSameSupplier ? (
-                  <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-inner">
+                  <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     <Sparkles className="w-5 h-5" />
                   </div>
                 ) : (
-                  <div className="p-3 rounded-2xl bg-orange-500/15 text-orange-400 border border-orange-500/30 shadow-inner">
+                  <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-2xl bg-orange-500/15 text-orange-400 border border-orange-500/30">
                     <Building2 className="w-5 h-5" />
                   </div>
                 )}
-                <div>
-                  <h3 className="text-base sm:text-lg font-black leading-tight text-[var(--text-main)] font-display">
-                    {pendingUploadData?.isSameSupplier
-                      ? 'Same Supplier Detected'
-                      : 'Different Supplier Invoice Detected!'}
+                <div className="min-w-0">
+                  <h3 className="text-base font-black leading-tight text-[var(--text-main)]">
+                    {pendingUploadData?.isSameSupplier ? 'Same Supplier Detected' : 'Different Supplier Detected'}
                   </h3>
-                  <p className="text-[11px] text-[var(--text-muted)]">
+                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
                     {pendingUploadData?.isSameSupplier
-                      ? `Both invoices match "${pendingUploadData.supplierName}"`
-                      : 'Separate delivery record recommended for accurate stock tracking'}
+                      ? `Both invoices from "${pendingUploadData.supplierName}"`
+                      : 'Choose how to handle this new invoice'}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
-                className="p-2 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer icon-btn transition-colors"
+                className="flex-shrink-0 p-1.5 rounded-xl bg-[var(--bg-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
+            <div className="h-px bg-[var(--border-color)]"/>
 
-            {/* Comparison Details if Different Supplier */}
+            {/* Comparison Cards: Different Supplier */}
             {!pendingUploadData?.isSameSupplier && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 rounded-2xl bg-[var(--bg-color)]/70 border border-[var(--border-color)] text-xs overflow-hidden">
-                {/* Existing Delivery Box */}
-                <div className="space-y-2 p-4 border-b sm:border-b-0 sm:border-r border-[var(--border-color)]/60">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Card #1 (Current)</span>
-                    <span className="text-[10px] text-[var(--text-muted)]">{importedItems.length} items</span>
+              <div className="grid grid-cols-2 gap-2">
+                {/* Current Card */}
+                <div className="rounded-2xl bg-[var(--bg-color)]/70 border border-[var(--border-color)] p-3 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Current</span>
+                    <span className="text-[9px] font-bold text-[var(--text-muted)]">{importedItems.length} items</span>
                   </div>
-                  <p className="font-extrabold text-[var(--text-main)] truncate" title={pendingUploadData?.currentSupplierName}>
+                  <p className="text-xs font-black text-[var(--text-main)] leading-tight line-clamp-2" title={pendingUploadData?.currentSupplierName}>
                     {pendingUploadData?.currentSupplierName || 'Current Receiving'}
                   </p>
-                  <div className="text-[10px] text-[var(--text-muted)] font-mono space-y-0.5">
-                    <div>Ref: <span className="text-[var(--text-main)] font-bold">{newItem.sku || 'Auto-assigned'}</span></div>
-                    <div>Batch: <span className="text-[var(--text-main)] font-bold">{newItem.batchNumber || 'Auto-assigned'}</span></div>
-                    <div>Inv: <span className="text-[var(--text-main)] font-bold">{newItem.supplierInvoiceNumber || 'Auto-assigned'}</span></div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[9px]">
+                      <span className="text-[var(--text-muted)]">Ref</span>
+                      <span className="font-bold text-[var(--text-main)] truncate max-w-[80px]" title={newItem.sku || 'None'}>{newItem.sku || '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px]">
+                      <span className="text-[var(--text-muted)]">Batch</span>
+                      <span className="font-bold text-[var(--text-main)] truncate max-w-[80px]" title={newItem.batchNumber || 'None'}>{newItem.batchNumber || '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px]">
+                      <span className="text-[var(--text-muted)]">Invoice</span>
+                      <span className="font-bold text-[var(--text-main)] truncate max-w-[80px]" title={newItem.supplierInvoiceNumber || 'None'}>{newItem.supplierInvoiceNumber || '—'}</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Newly Scanned Delivery Box */}
-                <div className="space-y-2 p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Detected Delivery — Card #{additionalDeliveryCards.length + 2}</span>
-                    <span className="text-[10px] text-orange-400 font-bold">{pendingUploadData?.newRows?.length || pendingUploadRows?.length || 0} items</span>
+                {/* New Scanned Card */}
+                <div className="rounded-2xl bg-orange-500/5 border border-orange-500/25 p-3 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-orange-400">New Scan</span>
+                    <span className="text-[9px] font-bold text-orange-400">{pendingUploadData?.newRows?.length || pendingUploadRows?.length || 0} items</span>
                   </div>
-                  <p className="font-extrabold text-orange-300 truncate" title={pendingUploadData?.supplierName}>
+                  <p className="text-xs font-black text-orange-300 leading-tight line-clamp-2" title={pendingUploadData?.supplierName}>
                     {pendingUploadData?.supplierName || 'New Supplier'}
                   </p>
-                  <div className="text-[10px] text-[var(--text-muted)] font-mono space-y-0.5">
-                    <div>Inv: <span className="text-emerald-400 font-bold">{pendingUploadData?.invoiceNumber}</span></div>
-                    <div>Ref: <span className="text-orange-400 font-bold">Auto-assigned unique</span></div>
-                    <div>Batch: <span className="text-orange-400 font-bold">Auto-assigned unique</span></div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[9px]">
+                      <span className="text-[var(--text-muted)]">Inv</span>
+                      <span className="font-bold text-emerald-400 truncate max-w-[80px]" title={pendingUploadData?.invoiceNumber}>{pendingUploadData?.invoiceNumber || '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px]">
+                      <span className="text-[var(--text-muted)]">Ref</span>
+                      <span className="font-bold text-orange-400/70 italic">Auto</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px]">
+                      <span className="text-[var(--text-muted)]">Batch</span>
+                      <span className="font-bold text-orange-400/70 italic">Auto</span>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
             {/* Description */}
-            <p className="rounded-2xl border border-[var(--border-color)]/70 bg-[var(--bg-color)]/40 px-4 py-3 text-xs text-[var(--text-muted)] leading-relaxed">
+            <div className="rounded-2xl border border-[var(--border-color)]/50 bg-[var(--bg-color)]/30 px-4 py-3 text-[11px] text-[var(--text-muted)] leading-relaxed">
               {pendingUploadData?.isSameSupplier ? (
                 <>
-                  Card #1 already contains <strong className="text-[var(--text-main)] font-black">{importedItems.length} items</strong> from <strong className="text-emerald-400 font-black">{pendingUploadData.supplierName}</strong>. You can merge the <strong className="text-emerald-400 font-black">{pendingUploadRows?.length || pendingUploadData.newRows?.length} newly imported items</strong> (duplicate items will combine quantities automatically).
+                  Card #1 has <strong className="text-[var(--text-main)] font-bold">{importedItems.length} items</strong> from <strong className="text-emerald-400 font-bold">{pendingUploadData.supplierName}</strong>. Merge <strong className="text-emerald-400 font-bold">{pendingUploadRows?.length || pendingUploadData.newRows?.length} new items</strong> — duplicates will combine quantities automatically.
                 </>
               ) : (
                 <>
-                  Separate delivery records are recommended for accurate supplier, batch, invoice, and inventory tracking.
+                  These invoices are from <strong className="text-[var(--text-main)]">different suppliers</strong>. A separate card keeps Reference, Batch &amp; Invoice numbers independent for accurate audits.
                 </>
               )}
-            </p>
+            </div>
 
-            {/* Action Buttons matching Receive Stock 4 decisions */}
-            <div className="space-y-2.5 pt-1">
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
               {!pendingUploadData?.isSameSupplier ? (
                 <>
-                  {/* Button 1: Create Separate Card for [Supplier] (RECOMMENDED) */}
+                  {/* Button 1: Create Separate Card (RECOMMENDED) */}
                   <button
                     type="button"
                     onClick={handleCreateSeparateCard}
-                    className="min-h-[60px] w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 hover:from-orange-500 hover:to-amber-400 text-white font-black text-xs leading-snug transition-all cursor-pointer flex items-center justify-center gap-3 shadow-lg shadow-orange-600/25 active:scale-[0.98]"
+                    className="relative flex w-full items-center gap-3 rounded-2xl bg-gradient-to-r from-orange-600 to-amber-500 px-4 py-3.5 text-white shadow-lg shadow-orange-600/20 transition-all hover:from-orange-500 hover:to-amber-400 active:scale-[0.98] cursor-pointer"
                   >
-                    <Layers className="w-4 h-4" />
-                    <span>Create Separate Card for {pendingUploadData?.supplierName || 'Supplier'} (Independent Ref#, Batch#, Inv#)</span>
+                    <Layers className="h-4 w-4 flex-shrink-0" />
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="text-xs font-black leading-tight">Create Separate Card</div>
+                      <div className="text-[10px] font-medium opacity-80 mt-0.5 truncate">{pendingUploadData?.supplierName || 'New Supplier'} · independent ref &amp; batch</div>
+                    </div>
+                    <span className="flex-shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide">Recommended</span>
                   </button>
 
-                  {/* Button 2: Merge into Card #1 anyway */}
+                  {/* Button 2: Merge into Card 1 anyway */}
                   <button
                     type="button"
                     onClick={handleMergeAppend}
-                    className="min-h-[48px] w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/40 text-[var(--text-main)] font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-3 border border-[var(--border-color)]"
+                    className="flex w-full items-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)] px-4 py-3 text-[var(--text-main)] transition-all hover:bg-[var(--border-color)]/30 cursor-pointer"
                   >
-                    <Plus className="w-4 h-4 text-emerald-400" />
-                    <span>Merge into Card #1 Anyway</span>
+                    <Plus className="h-4 w-4 flex-shrink-0 text-emerald-400" />
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="text-xs font-bold">Merge into Card #1</div>
+                      <div className="text-[10px] text-[var(--text-muted)] mt-0.5">Combine items, quantities auto-added</div>
+                    </div>
                   </button>
 
-                  {/* Button 3: Replace Card #1 */}
+                  {/* Button 3: Replace Card 1 */}
                   <button
                     type="button"
                     onClick={handleMergeReplace}
-                    className="min-h-[48px] w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-400 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-3 border border-orange-500/20"
+                    className="flex w-full items-center gap-3 rounded-2xl border border-orange-500/20 bg-[var(--bg-color)] px-4 py-3 text-orange-400 transition-all hover:bg-orange-500/8 cursor-pointer"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Replace Card #1 with New Scanned Delivery</span>
+                    <RefreshCw className="h-3.5 w-3.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="text-xs font-bold">Replace Card #1</div>
+                      <div className="text-[10px] text-orange-400/60 mt-0.5">Discard current items, start fresh</div>
+                    </div>
                   </button>
                 </>
               ) : (
                 <>
-                  {/* Same Supplier: Merge Items */}
+                  {/* Same Supplier: Merge Items (RECOMMENDED) */}
                   <button
                     type="button"
                     onClick={handleMergeAppend}
-                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
+                    className="relative flex w-full items-center gap-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 px-4 py-3.5 text-white shadow-lg shadow-emerald-600/20 transition-all hover:from-emerald-500 hover:to-teal-400 active:scale-[0.98] cursor-pointer"
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>Merge Items into Card #1 (Combine Quantities &amp; Avoid Duplicates)</span>
+                    <Plus className="h-4 w-4 flex-shrink-0" />
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="text-xs font-black">Merge into Card #1</div>
+                      <div className="text-[10px] font-medium opacity-80 mt-0.5">Combine quantities, duplicates handled</div>
+                    </div>
+                    <span className="flex-shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide">Recommended</span>
                   </button>
 
-                  {/* Same Supplier: Create Separate Card anyway */}
+                  {/* Same Supplier: Separate Card */}
                   <button
                     type="button"
                     onClick={handleCreateSeparateCard}
-                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-300 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-orange-500/20"
+                    className="flex w-full items-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--bg-color)] px-4 py-3 text-[var(--text-main)] transition-all hover:bg-[var(--border-color)]/30 cursor-pointer"
                   >
-                    <Layers className="w-4 h-4 text-orange-400" />
-                    <span>Keep as Separate Delivery Card (Independent Ref#, Batch#, Inv#)</span>
+                    <Layers className="h-4 w-4 flex-shrink-0 text-orange-400" />
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="text-xs font-bold">Keep as Separate Card</div>
+                      <div className="text-[10px] text-[var(--text-muted)] mt-0.5">Independent ref#, batch# &amp; invoice</div>
+                    </div>
                   </button>
 
                   {/* Same Supplier: Replace */}
                   <button
                     type="button"
                     onClick={handleMergeReplace}
-                    className="w-full py-2.5 px-4 rounded-2xl bg-[var(--bg-color)] hover:bg-orange-500/10 text-orange-400 font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-orange-500/20"
+                    className="flex w-full items-center gap-3 rounded-2xl border border-orange-500/20 bg-[var(--bg-color)] px-4 py-3 text-orange-400 transition-all hover:bg-orange-500/8 cursor-pointer"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Replace All (Start Fresh with New Items)</span>
+                    <RefreshCw className="h-3.5 w-3.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="text-xs font-bold">Replace All</div>
+                      <div className="text-[10px] text-orange-400/60 mt-0.5">Start fresh with new scanned items</div>
+                    </div>
                   </button>
                 </>
               )}
 
-              {/* Button 4: Cancel Import */}
               <button
                 type="button"
                 onClick={() => { setShowMergeChoiceModal(false); setPendingUploadRows(null); setPendingUploadData(null); }}
-                className="min-h-[46px] w-full py-2.5 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-muted)] font-bold text-xs transition-all cursor-pointer border border-[var(--border-color)]"
+                className="flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-[var(--bg-color)] hover:bg-[var(--border-color)]/30 text-[var(--text-muted)] font-semibold text-xs transition-all cursor-pointer border border-[var(--border-color)]"
               >
                 Cancel Import
               </button>
