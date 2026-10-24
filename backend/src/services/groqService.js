@@ -376,13 +376,29 @@ Output strictly valid JSON with no markdown tags or explanatory text:
     console.warn('[GroqService] Vision API failed, continuing to OCR:', redactGroqSecrets(visionErr.message));
   }
 
-  // ── Strategy 2: Tesseract OCR + Text LLM Merging ───────────────────────────
-  // If Vision extracted items, check if OCR found any additional items from the document
+  // Fast Return: If Vision API already extracted the items, return immediately!
+  // Running local Tesseract OCR on high-res image takes 30-40s and causes timeouts.
+  if (visionItems.length > 0) {
+    console.log(`[GroqService] ✓ Vision successfully extracted ${visionItems.length} items. Returning immediately without slow OCR.`);
+    return {
+      supplierName: detectedSupplierName,
+      invoiceNumber: extractedInvoiceNumber,
+      date: extractedDate,
+      invoiceTotal: detectedTotal,
+      subtotal: detectedSubtotal,
+      discount: detectedDiscount,
+      discountPercent: detectedDiscountPercent,
+      items: visionItems,
+      warnings: extractionWarnings
+    };
+  }
+
+  // ── Strategy 2: Tesseract OCR + Text LLM Fallback (only runs if Vision got 0 items) ───
   try {
     const extractedText = await extractTextFromImageOCR(imageBase64Data);
 
     if (extractedText && extractedText.trim().length >= 10) {
-      console.log(`[GroqService] Running Tesseract OCR + LLM pass to catch any missed items...`);
+      console.log(`[GroqService] Vision found no items. Running Tesseract OCR + LLM pass...`);
       const ocrResult = await parseInvoiceTextWithGroq(extractedText);
 
       if (ocrResult && Array.isArray(ocrResult.items) && ocrResult.items.length > 0) {

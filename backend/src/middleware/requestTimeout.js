@@ -36,6 +36,8 @@ const isSkippedRoute = (req) => {
   if (url.startsWith('/uploads/')) return true;
   // Skip the single JSON-body image upload API endpoint.
   if (url.includes('/upload-image')) return true;
+  // Skip AI OCR and invoice parsing (can take 30-60s for multi-pass / LLM vision)
+  if (url.includes('/ocr-preview') || url.includes('/import/preview')) return true;
   return false;
 };
 
