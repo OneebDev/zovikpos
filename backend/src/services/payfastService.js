@@ -5,8 +5,8 @@ const crypto = require('crypto');
  */
 const getPayfastConfig = () => {
   return {
-    merchantId: process.env.PAYFAST_MERCHANT_ID || '10046084',
-    merchantKey: process.env.PAYFAST_MERCHANT_KEY || '5g23zd20hlv74',
+    merchantId: process.env.PAYFAST_MERCHANT_ID || '10000100',
+    merchantKey: process.env.PAYFAST_MERCHANT_KEY || '46f0cd694581a',
     passphrase: process.env.PAYFAST_PASSPHRASE || '',
     processUrl: process.env.PAYFAST_SANDBOX_URL || 'https://sandbox.payfast.co.za/eng/process',
     isSandbox: process.env.PAYFAST_MODE !== 'live',
