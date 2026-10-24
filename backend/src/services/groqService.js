@@ -150,7 +150,7 @@ const callGroqAPI = async (payload, retries = null) => {
   for (const modelCandidate of fallbackModels) {
     // Keep image extraction large enough for long invoices (100 compact item rows fit comfortably).
     // This is a per-response ceiling; account OTPM limits are handled by normal 429 key rotation.
-    const tokenLimit = isVisionRequest ? Math.min(payload.max_tokens || 1000, 1000) : (payload.max_tokens || 8192);
+    const tokenLimit = isVisionRequest ? Math.min(payload.max_tokens || 880, 880) : (payload.max_tokens || 8192);
     const currentPayload = {
       ...payload,
       model: modelCandidate,
@@ -300,7 +300,7 @@ Output strictly valid JSON with no markdown tags or explanatory text:
         ]
       }],
       temperature: 0.05,
-      max_tokens: 1000
+      max_tokens: 880
     });
 
     if (resData) {
