@@ -51,10 +51,11 @@ const InAppQRScanner = ({ isOpen, onClose, onScanSuccess }) => {
             fps: 15,
             qrbox: (viewfinderWidth, viewfinderHeight) => {
               const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-              const qrboxSize = Math.floor(minEdge * 0.75);
+              const qrboxSize = Math.max(160, Math.floor(minEdge * 0.75));
               return { width: qrboxSize, height: qrboxSize };
             },
             aspectRatio: 1.0,
+            disableFlip: false,
           },
           (decodedText) => {
             if (isMounted) {
@@ -63,21 +64,68 @@ const InAppQRScanner = ({ isOpen, onClose, onScanSuccess }) => {
                   navigator.vibrate([40, 60, 40]);
                 } catch { /* Ignore vibration failures; scanning can continue. */ }
               }
-              html5QrCode
-                .stop()
-                .then(() => {
+              try {
+                if (html5QrCode.isScanning) {
+                  html5QrCode.stop().catch(() => {}).finally(() => {
+                    onScanSuccess(decodedText);
+                    onClose();
+                  });
+                } else {
                   onScanSuccess(decodedText);
                   onClose();
-                })
-                .catch(() => {
-                  onScanSuccess(decodedText);
-                  onClose();
-                });
+                }
+              } catch {
+                onScanSuccess(decodedText);
+                onClose();
+              }
             }
           },
           () => {}
         );
+
+        if (isMounted) {
+          setScanning(false);
+        }
       } catch (err) {
+        // Fallback: if cameraConfig with deviceId failed, retry with pure facingMode: 'environment'
+        try {
+          if (isMounted && html5QrCode) {
+            await html5QrCode.start(
+              { facingMode: 'environment' },
+              {
+                fps: 15,
+                qrbox: (w, h) => {
+                  const m = Math.min(w, h);
+                  return { width: Math.max(160, Math.floor(m * 0.75)), height: Math.max(160, Math.floor(m * 0.75)) };
+                },
+                aspectRatio: 1.0,
+              },
+              (decodedText) => {
+                if (isMounted) {
+                  try {
+                    if (html5QrCode.isScanning) {
+                      html5QrCode.stop().catch(() => {}).finally(() => {
+                        onScanSuccess(decodedText);
+                        onClose();
+                      });
+                    } else {
+                      onScanSuccess(decodedText);
+                      onClose();
+                    }
+                  } catch {
+                    onScanSuccess(decodedText);
+                    onClose();
+                  }
+                }
+              },
+              () => {}
+            );
+            if (isMounted) {
+              setScanning(false);
+              return;
+            }
+          }
+        } catch { /* proceed to main error handling below */ }
         if (isMounted) {
           console.error('Camera startup error:', err);
           const isNotAllowed =
