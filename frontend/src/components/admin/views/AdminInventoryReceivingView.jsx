@@ -3717,7 +3717,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                         </div>
 
                         {/* Card Fields: Quantity, Unit, Cost per Unit, Expiry Date (Optional), Subtotal */}
-                        <div className="receiving-card-fields grid min-w-0 grid-cols-2 gap-2.5 pt-1 border-t border-[var(--border-color)]/60 sm:grid-cols-5 sm:items-center sm:gap-2.5">
+                        <div className="receiving-card-fields grid min-w-0 grid-cols-2 gap-2.5 pt-1 border-t border-[var(--border-color)]/60 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,1.2fr)_minmax(150px,1.35fr)] sm:items-start sm:gap-2.5">
 
                           {/* Quantity */}
                           <div className="min-w-0">
@@ -3731,7 +3731,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                               value={row.quantity}
                               onChange={(e) => handleRowChange(index, 'quantity', e.target.value)}
                               placeholder="0"
-                              className="w-full min-w-0 px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                              className="h-11 w-full min-w-0 px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
                             />
                           </div>
 
@@ -3741,7 +3741,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                             <ThemedSelect
                               value={row.unit}
                               onChange={(e) => handleRowChange(index, 'unit', e.target.value)}
-                              className="w-full px-2.5 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                              className="h-11 w-full px-2.5 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                             >
                               <option value="KG">KG</option>
                               <option value="G">G</option>
@@ -3768,7 +3768,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                               value={row.unitCost}
                               onChange={(e) => handleRowChange(index, 'unitCost', e.target.value)}
                               placeholder="0"
-                              className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                              className="h-11 w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
                             />
                             <span className="text-[9px] text-[var(--text-muted)] block mt-0.5">
                               Cost for 1 {row.unit || 'Unit'}
@@ -3785,7 +3785,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                               type="date"
                               value={row.expiryDate ? (typeof row.expiryDate === 'string' && row.expiryDate.length === 10 ? row.expiryDate : getTodayDateString(new Date(row.expiryDate))) : ''}
                               onChange={(e) => handleRowChange(index, 'expiryDate', e.target.value)}
-                              className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                              className="h-11 w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                             />
                             <span className="text-[9px] text-[var(--text-muted)] block mt-0.5">
                               Leave empty if non-perishable
@@ -3793,13 +3793,13 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                           </div>
 
                           {/* Subtotal */}
-                          <div className="col-span-2 flex min-w-0 flex-col items-start justify-center rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]/80 p-2.5 sm:col-span-1 sm:items-end">
-                            <span className="text-[10px] font-black uppercase text-[var(--text-muted)] tracking-wider">
-                              Subtotal
-                            </span>
-                            <span className="text-base font-black text-orange-400 font-mono">
-                              Rs. {lineSubtotal.toLocaleString()}
-                            </span>
+                          <div className="col-span-2 min-w-0 sm:col-span-1 flex flex-col">
+                            <label className="block font-extrabold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px] text-right">Subtotal</label>
+                            <div className="flex h-11 min-w-[150px] flex-col items-end justify-center overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)]/80 px-3">
+                              <span className="w-full truncate text-right text-base font-black text-orange-400 font-mono">
+                                Rs. {lineSubtotal.toLocaleString()}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
@@ -4155,7 +4155,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                               </div>
 
                               {/* Row inputs */}
-                              <div className="receiving-card-fields grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1">
+                              <div className="receiving-card-fields grid grid-cols-2 gap-2.5 pt-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,1.2fr)_minmax(150px,1.35fr)] sm:items-start">
                                 <div>
                                   <label className="block text-[9px] font-bold text-[var(--text-muted)] uppercase mb-0.5">Quantity</label>
                                   <input
@@ -4164,7 +4164,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                     min="0.01"
                                     value={r.quantity}
                                     onChange={(e) => handleCardRowChange(card.id, rIdx, 'quantity', e.target.value)}
-                                    className="w-full px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none"
+                                    className="h-11 w-full px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none"
                                   />
                                 </div>
 
@@ -4173,7 +4173,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                   <ThemedSelect
                                     value={r.unit}
                                     onChange={(e) => handleCardRowChange(card.id, rIdx, 'unit', e.target.value)}
-                                    className="w-full px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none cursor-pointer"
+                                    className="h-11 w-full px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none cursor-pointer"
                                   >
                                     {STANDARD_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                                   </ThemedSelect>
@@ -4187,7 +4187,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                     min="0"
                                     value={r.unitCost}
                                     onChange={(e) => handleCardRowChange(card.id, rIdx, 'unitCost', e.target.value)}
-                                    className="w-full px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none"
+                                    className="h-11 w-full px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none"
                                   />
                                 </div>
 
@@ -4199,13 +4199,15 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                     type="date"
                                     value={r.expiryDate ? (typeof r.expiryDate === 'string' && r.expiryDate.length === 10 ? r.expiryDate : getTodayDateString(new Date(r.expiryDate))) : ''}
                                     onChange={(e) => handleCardRowChange(card.id, rIdx, 'expiryDate', e.target.value)}
-                                    className="w-full px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none cursor-pointer"
+                                    className="h-11 w-full px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-mono font-bold text-[var(--text-main)] focus:outline-none cursor-pointer"
                                   />
                                 </div>
 
-                                <div className="flex flex-col justify-center items-end bg-[var(--card-bg)] p-2 rounded-xl border border-[var(--border-color)] col-span-2 sm:col-span-1">
-                                  <span className="text-[9px] font-black text-[var(--text-muted)] uppercase">Subtotal</span>
-                                  <span className="text-xs font-mono font-black text-orange-400">Rs. {lineSubtotal.toLocaleString()}</span>
+                                <div className="col-span-2 min-w-0 sm:col-span-1 flex flex-col">
+                                  <label className="block text-[9px] font-bold text-[var(--text-muted)] uppercase mb-0.5 text-right">Subtotal</label>
+                                  <div className="flex h-11 min-w-[150px] flex-col items-end justify-center overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] px-2.5">
+                                    <span className="w-full truncate text-right text-xs font-mono font-black text-orange-400">Rs. {lineSubtotal.toLocaleString()}</span>
+                                  </div>
                                 </div>
                               </div>
                             </div>

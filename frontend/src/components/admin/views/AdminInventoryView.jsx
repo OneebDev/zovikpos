@@ -3644,7 +3644,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                             </div>
 
                             {/* Clean Fields Grid (Receive Stock Style): Quantity, Unit, Category, Cost per Unit, Expiry Date (Optional), Subtotal */}
-                            <div className="grid min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] sm:grid-cols-6 gap-2.5 items-center pt-2 border-t border-[var(--border-color)]/60 text-xs">
+                            <div className="grid min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-2.5 items-start pt-2 border-t border-[var(--border-color)]/60 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_minmax(0,1.2fr)_minmax(150px,1.35fr)]">
                               {/* Quantity / Initial Stock */}
                               <div>
                                 <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
@@ -3657,7 +3657,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                   value={card.stockLevel}
                                   onChange={(e) => handleIngredientCardChange(card.id, 'stockLevel', e.target.value)}
                                   placeholder="0"
-                                  className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                                  className="h-11 w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
                                 />
                               </div>
 
@@ -3669,7 +3669,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                 <ThemedSelect
                                   value={card.unit}
                                   onChange={(e) => handleIngredientCardChange(card.id, 'unit', e.target.value)}
-                                  className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                  className="h-11 w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                                 >
                                   <option value="KG">KG</option>
                                   <option value="G">G</option>
@@ -3691,7 +3691,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                 <ThemedSelect
                                   value={card.category}
                                   onChange={(e) => handleIngredientCardChange(card.id, 'category', e.target.value)}
-                                  className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                  className="h-11 w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                                 >
                                   <option value="General">General</option>
                                   <option value="Meat & Protein">Meat & Protein</option>
@@ -3721,7 +3721,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                   value={card.costPrice}
                                   onChange={(e) => handleIngredientCardChange(card.id, 'costPrice', e.target.value)}
                                   placeholder="0"
-                                  className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-amber-400 focus:outline-none focus:border-orange-500"
+                                  className="h-11 w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-amber-400 focus:outline-none focus:border-orange-500"
                                 />
                               </div>
 
@@ -3735,16 +3735,18 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                   type="date"
                                   value={card.expiryDate || ''}
                                   onChange={(e) => handleIngredientCardChange(card.id, 'expiryDate', e.target.value)}
-                                  className="w-full px-2 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono text-[11px] font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                  className="h-11 w-full px-2 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono text-[11px] font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                                 />
                               </div>
 
                               {/* Subtotal */}
-                              <div className="min-h-[42px] self-stretch flex flex-col items-start sm:items-end justify-between bg-[var(--bg-color)]/70 px-3 py-1.5 rounded-xl border border-[var(--border-color)]">
-                                <span className="text-[9px] font-bold uppercase text-[var(--text-muted)]">Subtotal</span>
-                                <span className="text-xs font-black text-orange-400 font-mono">
-                                  Rs. {lineSubtotal.toLocaleString()}
-                                </span>
+                              <div className="flex flex-col min-w-[150px]">
+                                <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 text-right">Subtotal</label>
+                                <div className="h-11 flex flex-col items-end justify-center overflow-hidden bg-[var(--bg-color)]/70 px-3 rounded-xl border border-[var(--border-color)]">
+                                  <span className="w-full truncate text-right text-xs font-black text-orange-400 font-mono">
+                                    Rs. {lineSubtotal.toLocaleString()}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -4190,7 +4192,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                 </div>
 
                                 {/* Clean Fields Grid: Quantity, Unit, Category, Cost per Unit, Expiry Date (Optional), Subtotal */}
-                                <div className="grid min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] sm:grid-cols-6 gap-2.5 items-center pt-2 border-t border-[var(--border-color)]/60 text-xs">
+                                <div className="grid min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-2.5 items-start pt-2 border-t border-[var(--border-color)]/60 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_minmax(0,1.2fr)_minmax(150px,1.35fr)]">
                                   {/* Quantity / Initial Stock */}
                                   <div>
                                     <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1">
@@ -4203,7 +4205,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                       value={item.stockLevel ?? item.quantity ?? 0}
                                       onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'stockLevel', e.target.value)}
                                       placeholder="0"
-                                      className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
+                                      className="h-11 w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
                                     />
                                   </div>
 
@@ -4215,7 +4217,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                     <ThemedSelect
                                       value={item.unit}
                                       onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'unit', e.target.value)}
-                                      className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                      className="h-11 w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                                     >
                                       <option value="KG">KG</option>
                                       <option value="G">G</option>
@@ -4237,7 +4239,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                     <ThemedSelect
                                       value={item.category}
                                       onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'category', e.target.value)}
-                                      className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                      className="h-11 w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                                     >
                                       <option value="General">General</option>
                                       <option value="Meat & Protein">Meat & Protein</option>
@@ -4267,7 +4269,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                       value={item.costPrice}
                                       onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'costPrice', e.target.value)}
                                       placeholder="0"
-                                      className="w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-amber-400 focus:outline-none focus:border-orange-500"
+                                      className="h-11 w-full px-2.5 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono font-bold text-amber-400 focus:outline-none focus:border-orange-500"
                                     />
                                   </div>
 
@@ -4281,16 +4283,18 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                       type="date"
                                       value={item.expiryDate || ''}
                                       onChange={(e) => handleAdditionalCardItemChange(card.id, item.id, 'expiryDate', e.target.value)}
-                                      className="w-full px-2 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono text-[11px] font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
+                                      className="h-11 w-full px-2 py-1.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl font-mono text-[11px] font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                                     />
                                   </div>
 
                                   {/* Subtotal */}
-                                  <div className="min-h-[42px] self-stretch flex flex-col items-start sm:items-end justify-between bg-[var(--bg-color)]/70 px-3 py-1.5 rounded-xl border border-[var(--border-color)]">
-                                    <span className="text-[9px] font-bold uppercase text-[var(--text-muted)]">Subtotal</span>
-                                    <span className="text-xs font-black text-orange-300 font-mono">
-                                      Rs. {lineSubtotal.toLocaleString()}
-                                    </span>
+                                  <div className="flex flex-col min-w-[150px]">
+                                    <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 text-right">Subtotal</label>
+                                    <div className="h-11 flex flex-col items-end justify-center overflow-hidden bg-[var(--bg-color)]/70 px-3 rounded-xl border border-[var(--border-color)]">
+                                      <span className="w-full truncate text-right text-xs font-black text-orange-300 font-mono">
+                                        Rs. {lineSubtotal.toLocaleString()}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
