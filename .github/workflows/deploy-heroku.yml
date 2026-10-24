@@ -1,0 +1,55 @@
+name: CI/CD Pipeline - Deploy Backend & AI Service to Heroku
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'ai-service/**'
+      - '.github/workflows/deploy-heroku.yml'
+
+jobs:
+  deploy-backend:
+    name: Deploy Backend to Heroku
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Deploy Backend via Git Subtree
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          
+          # Isolate backend folder into a split branch
+          BACKEND_COMMIT=$(git subtree split --prefix=backend HEAD)
+          
+          # Push to Heroku backend repository
+          git push https://heroku:${{ secrets.HEROKU_API_KEY }}@git.heroku.com/zovik-pos-backend.git "${BACKEND_COMMIT}:refs/heads/main" --force
+
+  deploy-ai-service:
+    name: Deploy AI Service to Heroku
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Deploy AI Microservice via Git Subtree
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          
+          # Isolate ai-service folder into a split branch
+          AI_COMMIT=$(git subtree split --prefix=ai-service HEAD)
+          
+          # Push to Heroku AI service repository
+          git push https://heroku:${{ secrets.HEROKU_API_KEY }}@git.heroku.com/zovik-pos-ai.git "${AI_COMMIT}:refs/heads/main" --force
