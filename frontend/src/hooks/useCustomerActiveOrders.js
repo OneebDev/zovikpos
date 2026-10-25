@@ -18,7 +18,15 @@ const fetchCustomerOrders = async () => {
   const sessionId = localStorage.getItem('customer_sessionId');
   if (!sessionId) return { activeOrders: [], failedOrders: [] };
 
-  const response = await api.get(`/orders?sessionId=${sessionId}`);
+  // For logged-in customers, omit sessionId filter so the backend returns all
+  // their orders (filtered by userId server-side). This keeps active orders
+  // from a previous table visible after switching tables.
+  const isLoggedIn = Boolean(
+    localStorage.getItem('customer_token') || localStorage.getItem('token') ||
+    sessionStorage.getItem('customer_token') || sessionStorage.getItem('token')
+  );
+  const url = isLoggedIn ? '/orders' : `/orders?sessionId=${sessionId}`;
+  const response = await api.get(url);
   const orders = response.data.orders || [];
 
   const ACTIVE_ORDER_STATUSES = ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PREPARING', 'READY'];

@@ -134,7 +134,19 @@ function App() {
       lastTouchAt = now;
       inFlight = true;
       api.get(`/sessions/${sessionId}`, { headers: { 'X-Session-Activity': 'true' } })
-        .catch(() => {})
+        .catch((err) => {
+          // On 403 or 404, the stored session is stale or belongs to another customer.
+          // Clear it to stop the infinite retry loop on every user interaction.
+          const status = err?.response?.status;
+          if (status === 403 || status === 404) {
+            localStorage.removeItem('customer_sessionId');
+            localStorage.removeItem('customer_verifiedSessionId');
+            localStorage.removeItem('customer_sessionSecret');
+            sessionStorage.removeItem('customer_sessionId');
+            sessionStorage.removeItem('customer_verifiedSessionId');
+            sessionStorage.removeItem('customer_sessionSecret');
+          }
+        })
         .finally(() => { inFlight = false; });
     };
     const events = ['pointerdown', 'keydown', 'touchstart', 'scroll'];

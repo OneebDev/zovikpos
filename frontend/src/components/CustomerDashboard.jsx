@@ -1607,12 +1607,24 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
               const protectedCustomer = checkIsCustomerLoggedIn()
                 || Object.values(cart).some((item) => Number(item?.quantity) > 0)
                 || (() => { try { return (JSON.parse(localStorage.getItem('customer_active_orders_cache') || '{}').activeOrders || []).some((order) => ['PENDING', 'PAID', 'PREPARING', 'READY'].includes(order.status)); } catch { return false; } })();
-              if (!protectedCustomer) {
-                ['customer_sessionId', 'customer_verifiedSessionId', 'customer_tableToken', 'customer_tableId', 'customer_cart', 'customer_checkoutStep'].forEach((key) => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
+              // Always clear the stale session ID on 403/404 to prevent retry loops.
+              // Auth tokens are preserved so logged-in customers can start a new session.
+              const sessionErrStatus = sessionError?.response?.status;
+              if (sessionErrStatus === 403 || sessionErrStatus === 404) {
+                ['customer_sessionId', 'customer_verifiedSessionId', 'customer_sessionSecret', 'customer_tableToken', 'customer_tableId', 'customer_cart', 'customer_checkoutStep'].forEach((key) => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
                 setSessionId('');
                 setTableId('');
                 setCart({});
                 setIsSessionVerified(false);
+              }
+              if (!protectedCustomer) {
+                if (sessionErrStatus !== 403 && sessionErrStatus !== 404) {
+                  ['customer_sessionId', 'customer_verifiedSessionId', 'customer_tableToken', 'customer_tableId', 'customer_cart', 'customer_checkoutStep'].forEach((key) => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
+                  setSessionId('');
+                  setTableId('');
+                  setCart({});
+                  setIsSessionVerified(false);
+                }
                 setRequiresTableQr(true);
               } else {
                 setRequiresTableQr(true);

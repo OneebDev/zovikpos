@@ -18,6 +18,8 @@ const getPhysicalCustomerSession = async (sessionId) => prisma.session.findUniqu
     expiresAt: true,
     lastActivityAt: true,
     tableId: true,
+    customerId: true,
+    secretHash: true,
     table: { select: { id: true, isActive: true, tableNumber: true, branchId: true, qrToken: true } },
     cart: { select: { items: { select: { id: true } } } },
     orders: { select: { id: true, status: true } },
@@ -25,7 +27,7 @@ const getPhysicalCustomerSession = async (sessionId) => prisma.session.findUniqu
 });
 
 // Rule B: check idle expiry only when allowed by Rule B1/B2/B3.
-const requireActivePhysicalSession = async (sessionId, res) => {
+const requireActivePhysicalSession = async (sessionId, res, req) => {
   const session = await getPhysicalCustomerSession(sessionId);
   if (!session || session.status !== 'ACTIVE') {
     res.status(403).json({ error: 'Your table session is unavailable. Scan the QR code attached to your table to continue.', code: 'TABLE_SESSION_REQUIRED' });
@@ -34,6 +36,24 @@ const requireActivePhysicalSession = async (sessionId, res) => {
   if (!session.tableId || !isPhysicalTable(session.table)) {
     res.status(403).json({ error: 'Scan the QR code attached to your table before using the cart.', code: 'TABLE_SESSION_REQUIRED' });
     return null;
+  }
+  // Ownership check: if session is claimed by a customer, the caller must be that customer
+  if (req && session.customerId) {
+    if (req.user?.role === 'CUSTOMER' && req.user.id !== session.customerId) {
+      res.status(403).json({ error: 'This cart belongs to another customer.', code: 'TABLE_SESSION_REQUIRED' });
+      return null;
+    }
+    if (!req.user) {
+      res.status(403).json({ error: 'This cart belongs to another customer.', code: 'TABLE_SESSION_REQUIRED' });
+      return null;
+    }
+  } else if (req && !session.customerId && session.secretHash && !req.user) {
+    const { verifySessionSecret } = require('../utils/sessionSecurity');
+    const providedSecret = req.headers?.['x-session-secret'];
+    if (!providedSecret || !verifySessionSecret(providedSecret, session.secretHash)) {
+      res.status(403).json({ error: 'Invalid session credentials.', code: 'TABLE_SESSION_REQUIRED' });
+      return null;
+    }
   }
   const cartItemCount = session.cart?.items?.length || 0;
   if (isSessionIdleExpired(session, cartItemCount, session.orders)) {
@@ -46,8 +66,12 @@ const requireActivePhysicalSession = async (sessionId, res) => {
     res.status(403).json({ error: 'Your dining session has expired due to inactivity. Please scan the QR code again to start a new session.', code: 'TABLE_SESSION_REQUIRED' });
     return null;
   }
-  // Throttled activity touch (fire-and-forget)
-  touchSessionActivity(sessionId, session.lastActivityAt).catch(() => {});
+  // Throttled activity touch: only on mutations (POST/PUT/DELETE) or explicit user interaction header
+  // Passive GET requests/polling without X-Session-Activity header must not extend idle timeout
+  const isExplicitActivity = req?.headers?.['x-session-activity'] === 'true' || (req && !['GET', 'HEAD', 'OPTIONS'].includes(req.method));
+  if (isExplicitActivity) {
+    touchSessionActivity(sessionId, session.lastActivityAt).catch(() => {});
+  }
   return session;
 };
 
@@ -117,7 +141,7 @@ const getCart = async (req, res) => {
 
   try {
     // Check session is still active
-    if (!await requireActivePhysicalSession(sessionId, res)) return;
+    if (!await requireActivePhysicalSession(sessionId, res, req)) return;
 
     const cart = await getOrCreateCart(sessionId);
 
@@ -188,7 +212,7 @@ const addItemToCart = async (req, res) => {
 
   try {
     // Check session is still active
-    if (!await requireActivePhysicalSession(sessionId, res)) return;
+    if (!await requireActivePhysicalSession(sessionId, res, req)) return;
 
     const menuItem = await prisma.menuItem.findUnique({
       where: { id: parseInt(menuItemId, 10) },
@@ -280,7 +304,7 @@ const updateCartItem = async (req, res) => {
 
   try {
     // Check session is still active
-    if (!await requireActivePhysicalSession(sessionId, res)) return;
+    if (!await requireActivePhysicalSession(sessionId, res, req)) return;
 
     const cart = await getOrCreateCart(sessionId);
     const parsedId = parseInt(itemId, 10);
@@ -354,7 +378,7 @@ const removeCartItem = async (req, res) => {
 
   try {
     // Check session is still active
-    if (!await requireActivePhysicalSession(sessionId, res)) return;
+    if (!await requireActivePhysicalSession(sessionId, res, req)) return;
 
     const cart = await getOrCreateCart(sessionId);
     const parsedId = parseInt(itemId, 10);
@@ -388,7 +412,7 @@ const clearCart = async (req, res) => {
 
   try {
     // Check session is still active
-    if (!await requireActivePhysicalSession(sessionId, res)) return;
+    if (!await requireActivePhysicalSession(sessionId, res, req)) return;
 
     const cart = await getOrCreateCart(sessionId);
     await prisma.cartItem.deleteMany({

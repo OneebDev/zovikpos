@@ -437,8 +437,12 @@ const createOrder = async (req, res) => {
       emitToKitchen('order:new', order);
     }
 
-    // Send confirmation email asynchronously with dynamic tracking QR
-    sendOrderPlacementEmail(order).catch(err => console.error('[Email] Placement email error:', err.message));
+    // Send confirmation email only when the order is already confirmed (PAID at creation).
+    // COD orders (PENDING, UNPAID) and online payment orders (PAYMENT_PENDING) should NOT
+    // receive a "confirmed" email until the cashier verifies payment or payment is approved.
+    if (order.status === 'PAID') {
+      sendOrderPlacementEmail(order).catch(err => console.error('[Email] Placement email error:', err.message));
+    }
 
     // Invalidate cached admin dashboard stats
     clearDashboardStatsCache();
@@ -562,6 +566,40 @@ const updateOrderStatus = async (req, res) => {
             await restoreInventoryForOrder(order.id, userId, note || `Order status updated to ${status}`, tx);
           }
 
+          // Authoritative Actual Preparation Duration persistence for AI ETA
+          if (['READY', 'COMPLETED'].includes(status)) {
+            const existingEta = await tx.eTAPrediction.findUnique({
+              where: { orderId: order.id },
+            });
+
+            // Idempotent: record duration once on completion (READY preserves prep time over later COMPLETED pickup)
+            if (!existingEta || existingEta.actualTime === null) {
+              const now = new Date();
+              const elapsedMinutes = parseFloat(((now.getTime() - new Date(order.createdAt).getTime()) / 60000).toFixed(2));
+              const actualTime = Math.max(0.1, elapsedMinutes);
+
+              if (existingEta) {
+                await tx.eTAPrediction.update({
+                  where: { id: existingEta.id },
+                  data: { actualTime },
+                });
+              } else {
+                await tx.eTAPrediction.create({
+                  data: {
+                    orderId: order.id,
+                    baseEta: actualTime,
+                    adjustedEta: actualTime,
+                    actualTime,
+                    queueLength: 0,
+                    kitchenLoad: 'Medium',
+                    peakHour: false,
+                    historicalDelay: 0,
+                  },
+                });
+              }
+            }
+          }
+
           const fresh = await tx.order.findUnique({
             where: { id: order.id },
             include: {
@@ -583,20 +621,8 @@ const updateOrderStatus = async (req, res) => {
       throw txErr;
     }
 
-    // STEP 2: Background — ETA, emails, audit (non-blocking)
+    // STEP 2: Background — emails, audit (non-blocking)
     setImmediate(async () => {
-
-      if (['READY', 'COMPLETED'].includes(status)) {
-        try {
-          const actualMinutes = (new Date() - new Date(order.createdAt)) / 60000;
-          await prisma.eTAPrediction.updateMany({
-            where: { orderId: order.id },
-            data: { actualTime: parseFloat(actualMinutes.toFixed(2)) },
-          });
-        } catch (etaErr) {
-          console.warn('[ETA] Background actualTime update warning:', etaErr.message);
-        }
-      }
     });
 
     // STEP 3: Broadcast Realtime Socket Events immediately
@@ -654,20 +680,16 @@ const getAllOrders = async (req, res) => {
     const whereClause = {};
     const paginatedAdminRequest = userRole === 'ADMIN' && (pageParam !== undefined || pageSizeParam !== undefined || exportAll === 'true');
 
-    // Customer sees orders belonging to their active dining session OR their customer user ID
+    // Customer sees orders belonging to their user ID; optionally also scoped to a session
     if (userRole === 'CUSTOMER') {
       const headerSessionId = req.headers['x-session-id'];
       const effectiveSessionId = sessionId || headerSessionId;
 
-      if (effectiveSessionId && userId) {
-        whereClause.OR = [
-          { sessionId: effectiveSessionId },
-          { userId: userId },
-        ];
-      } else if (effectiveSessionId) {
+      // Always require userId for CUSTOMER role to prevent cross-customer leakage
+      whereClause.userId = userId;
+      if (effectiveSessionId) {
+        // Additionally scope to session when provided (AND, never OR)
         whereClause.sessionId = effectiveSessionId;
-      } else {
-        whereClause.userId = userId;
       }
     }
 

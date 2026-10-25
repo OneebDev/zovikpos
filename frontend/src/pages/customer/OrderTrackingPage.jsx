@@ -171,7 +171,7 @@ const OrderTrackingPage = () => {
   useEffect(() => {
     if (!orderCreatedAt) return;
 
-    if (orderStatus === 'READY' || orderStatus === 'COMPLETED') {
+    if (['READY', 'COMPLETED', 'CANCELLED', 'PAYMENT_FAILED', 'REJECTED', 'REFUNDED'].includes(orderStatus)) {
       setTimeLeftSeconds(0);
       return;
     }
@@ -183,7 +183,7 @@ const OrderTrackingPage = () => {
     const targetMs = createdAtMs + prepMins * 60 * 1000;
 
     const updateTimer = () => {
-      const diff = Math.max(0, Math.floor((targetMs - Date.now()) / 1000));
+      const diff = Math.floor((targetMs - Date.now()) / 1000);
       setTimeLeftSeconds(diff);
     };
 
@@ -219,7 +219,29 @@ const OrderTrackingPage = () => {
     }
   };
 
-  const handleDownloadInvoice = () => window.print();
+  const handleDownloadInvoice = () => {
+    if (!order) return;
+    const orderNum = order.orderNumber || `#ORD-${order.id}`;
+    const tableLabel = displayTableLabel || 'N/A';
+    const dateStr = new Date(order.createdAt).toLocaleString();
+    const payMethod = (order.paymentMethod || 'N/A').toUpperCase();
+    const payStatus = order.paymentStatus || 'UNPAID';
+    const itemsHtml = (order.orderItems || []).map(item => {
+      const name = item.nameSnapshot || item.menuItem?.name || 'Item';
+      const price = item.priceSnapshot ?? item.price ?? 0;
+      return `<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e5e5">${item.quantity} &times; ${name}</td><td style="padding:8px 12px;border-bottom:1px solid #e5e5e5;text-align:right">Rs ${(price * item.quantity).toFixed(2)}</td></tr>`;
+    }).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${orderNum}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:40px;color:#171717;background:#fff}h1{font-size:28px;margin:0 0 4px}h2{font-size:16px;color:#78716C;margin:0 0 24px;font-weight:500}.meta{display:flex;gap:32px;margin-bottom:24px;flex-wrap:wrap}.meta div{font-size:13px;color:#78716C}.meta strong{display:block;color:#171717;font-size:14px;margin-top:2px}table{width:100%;border-collapse:collapse;margin:16px 0}th{background:#fafaf9;padding:8px 12px;text-align:left;font-size:12px;text-transform:uppercase;color:#78716C;border-bottom:2px solid #e5e5e5}td{font-size:14px}.totals{margin-top:8px;text-align:right;font-size:15px}.totals strong{font-size:20px;color:#E85D2A}.footer{margin-top:32px;padding-top:16px;border-top:1px solid #e5e5e5;font-size:12px;color:#a8a29e;text-align:center}@media print{body{padding:20px}}</style></head><body><h1>Invoice</h1><h2>${orderNum}</h2><div class="meta"><div>Table<strong>${tableLabel}</strong></div><div>Date<strong>${dateStr}</strong></div><div>Payment<strong>${payMethod}</strong></div><div>Status<strong>${payStatus}</strong></div></div><table><thead><tr><th>Item</th><th style="text-align:right">Amount</th></tr></thead><tbody>${itemsHtml}</tbody></table><div class="totals"><div>Subtotal: Rs ${(order.subtotal || 0).toFixed(2)}</div><div>Tax: Rs ${(order.tax || 0).toFixed(2)}</div>${Number(order.discount) > 0 ? `<div>Discount: -Rs ${(order.discount || 0).toFixed(2)}</div>` : ''}<div><strong>Total: Rs ${(order.total || 0).toFixed(2)}</strong></div></div><div class="footer">ZovikPOS &bull; Thank you for your order!</div></body></html>`;
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `invoice-${orderNum.replace(/[^a-zA-Z0-9-]/g, '')}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const steps = [
     { key: 'PENDING', label: 'Order placed', description: 'Order placed, awaiting confirmation', icon: ShoppingBag },
@@ -315,8 +337,11 @@ const OrderTrackingPage = () => {
   const circumference = 2 * Math.PI * circleRadius;
   const prepMinsTotal = order.etaPrediction?.adjustedEta ? Math.round(order.etaPrediction.adjustedEta) : 15;
   const totalDurationSecs = prepMinsTotal * 60;
-  const elapsedSecs = Math.max(0, totalDurationSecs - timeLeftSeconds);
-  const timeProgressPercent = isCompleted ? 100 : isReady ? 100 : Math.min(95, Math.max(12, (elapsedSecs / totalDurationSecs) * 100));
+  const isOverdue = timeLeftSeconds < 0;
+  const elapsedSecs = isOverdue
+    ? totalDurationSecs + Math.abs(timeLeftSeconds)
+    : Math.max(0, totalDurationSecs - timeLeftSeconds);
+  const timeProgressPercent = isCompleted ? 100 : isReady ? 100 : isOverdue ? 100 : Math.min(95, Math.max(12, (elapsedSecs / totalDurationSecs) * 100));
   const strokeDashoffset = circumference - (timeProgressPercent / 100) * circumference;
 
   return (
@@ -370,10 +395,19 @@ const OrderTrackingPage = () => {
             </div>
 
             {/* Status Pill Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-emerald-700 dark:text-emerald-300 text-xs font-black self-start sm:self-auto">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-              <span>{order.status}</span>
-            </div>
+            {(() => {
+              const isFailedStatus = ['CANCELLED', 'PAYMENT_FAILED', 'REJECTED', 'REFUNDED'].includes(order.status);
+              return (
+                <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black self-start sm:self-auto ${
+                  isFailedStatus
+                    ? 'bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                    : 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                }`}>
+                  <span className={`w-2.5 h-2.5 rounded-full ${isFailedStatus ? 'bg-rose-500' : 'bg-emerald-500 animate-ping'}`} />
+                  <span>{order.status}</span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Table Transfer Feedback */}
@@ -418,7 +452,7 @@ const OrderTrackingPage = () => {
           {/* ── ANIMATED CIRCULAR PROGRESS & REAL-TIME COUNTDOWN TIMER ──────────── */}
           <section className="tracking-hero" key={order.status} aria-live="polite" aria-atomic="true">
             <h2 className="tracking-hero__headline">
-              {isCompleted ? 'Enjoy your meal!' : isReady ? 'Your order is ready' : order.status === 'PREPARING' ? 'Your food is being prepared' : order.status === 'PAID' ? 'Your order is confirmed' : 'We have received your order'}
+              {isCompleted ? 'Enjoy your meal!' : isReady ? 'Your order is ready' : order.status === 'CANCELLED' ? 'Your order has been cancelled' : order.status === 'PAYMENT_FAILED' ? 'Payment verification failed' : order.status === 'REJECTED' ? 'Your order was rejected' : order.status === 'REFUNDED' ? 'Your order has been refunded' : order.status === 'PREPARING' ? 'Your food is being prepared' : order.status === 'PAID' ? 'Your order is confirmed' : 'We have received your order'}
             </h2>
             <div className="tracking-hero__content">
           <div className="flex flex-col items-center justify-center py-4 space-y-4">
@@ -455,6 +489,11 @@ const OrderTrackingPage = () => {
                         <stop offset="0%" stopColor="var(--success)" />
                         <stop offset="100%" stopColor="var(--success)" />
                       </>
+                    ) : isOverdue ? (
+                      <>
+                        <stop offset="0%" stopColor="#D97706" />
+                        <stop offset="100%" stopColor="#DC2626" />
+                      </>
                     ) : (
                       <>
                         <stop offset="0%" stopColor="var(--accent)" />
@@ -473,6 +512,11 @@ const OrderTrackingPage = () => {
                       <Check className="w-6 h-6 stroke-[3]" />
                     </div>
                     <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block mt-1">Handed Over</span>
+                    {order.etaPrediction?.actualTime ? (
+                      <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 block">
+                        Prepared in {order.etaPrediction.actualTime} mins
+                      </span>
+                    ) : null}
                   </div>
                 ) : isReady ? (
                   <div className="space-y-1">
@@ -480,17 +524,22 @@ const OrderTrackingPage = () => {
                       <Sparkles className="w-6 h-6" />
                     </div>
                     <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">Ready for Pickup!</span>
+                    {order.etaPrediction?.actualTime ? (
+                      <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 block">
+                        Prepared in {order.etaPrediction.actualTime} mins
+                      </span>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="space-y-1">
                     <span className="text-[10px] font-black uppercase tracking-wider text-[#78716C] dark:text-[#A8A29E] block">
-                      Estimated Time
+                      {isOverdue ? 'Overdue' : 'Estimated Time'}
                     </span>
-                    {/* REAL-TIME TICKING COUNTDOWN TIMER */}
-                    <h2 className="text-3xl sm:text-4xl font-black text-[#171717] dark:text-white tracking-tight font-mono leading-none">
-                      {timeLeftSeconds > 0 ? formatCountdown(timeLeftSeconds) : `~${prepMinsTotal} Mins`}
+                    {/* REAL-TIME TICKING COUNTDOWN / OVERTIME TIMER */}
+                    <h2 className={`text-2xl sm:text-3xl font-black tracking-tight font-mono leading-none ${isOverdue ? 'text-amber-600 dark:text-amber-400' : 'text-[#171717] dark:text-white'}`}>
+                      {timeLeftSeconds !== 0 ? formatCountdown(timeLeftSeconds) : `~${prepMinsTotal} Mins`}
                     </h2>
-                    <span className="text-[10px] font-bold text-[#E85D2A] bg-orange-50 dark:bg-orange-950/40 px-2.5 py-0.5 rounded-full inline-block mt-1">
+                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full inline-block mt-1 ${isOverdue ? 'text-amber-700 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300' : 'text-[#E85D2A] bg-orange-50 dark:bg-orange-950/40'}`}>
                       Kitchen: {order.etaPrediction?.kitchenLoad || 'Normal'}
                     </span>
                   </div>

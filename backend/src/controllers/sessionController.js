@@ -161,8 +161,22 @@ const getSession = async (req, res) => {
       session.status = 'EXPIRED';
     }
 
-    if (req.user?.role === 'CUSTOMER' && session.customerId && session.customerId !== req.user.id) {
-      return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+    // Ownership validation for customer sessions
+    if (session.customerId) {
+      // If caller is an authenticated CUSTOMER, they must own this session
+      if (req.user?.role === 'CUSTOMER' && session.customerId !== req.user.id) {
+        return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+      }
+      // If caller is unauthenticated (guest), they cannot access a claimed session
+      if (!req.user) {
+        return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+      }
+    } else if (session.secretHash && !req.user) {
+      // Unclaimed session with secretHash: verify secret for guest access
+      const providedSecret = req.headers['x-session-secret'];
+      if (!providedSecret || !verifySessionSecret(providedSecret, session.secretHash)) {
+        return res.status(403).json({ error: 'Invalid session credentials.' });
+      }
     }
 
     // Revised Rule B: Evaluate idle expiry based on B1, B2, B3 rules
@@ -181,8 +195,12 @@ const getSession = async (req, res) => {
           if (session.cart?.items) session.cart.items = [];
         }
       } else {
-        // Throttled activity touch (fire-and-forget, no await)
-        touchSessionActivity(sessionId, session.lastActivityAt).catch(() => {});
+        // Throttled activity touch only on genuine explicit user activity (interaction event)
+        // Background polling without X-Session-Activity header must not extend idle timeout
+        const isExplicitActivity = req.headers['x-session-activity'] === 'true';
+        if (isExplicitActivity) {
+          touchSessionActivity(sessionId, session.lastActivityAt).catch(() => {});
+        }
       }
     }
 
@@ -216,8 +234,22 @@ const closeSession = async (req, res) => {
       return res.status(404).json({ error: 'Session not found.' });
     }
 
-    if (req.user?.role === 'CUSTOMER' && session.customerId && session.customerId !== req.user.id) {
-      return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+    // Ownership validation for customer sessions
+    if (session.customerId) {
+      // If caller is an authenticated CUSTOMER, they must own this session
+      if (req.user?.role === 'CUSTOMER' && session.customerId !== req.user.id) {
+        return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+      }
+      // If caller is unauthenticated (guest), they cannot access a claimed session
+      if (!req.user) {
+        return res.status(403).json({ error: 'This dining session belongs to another customer.' });
+      }
+    } else if (session.secretHash && !req.user) {
+      // Unclaimed session with secretHash: verify secret for guest access
+      const providedSecret = req.headers['x-session-secret'];
+      if (!providedSecret || !verifySessionSecret(providedSecret, session.secretHash)) {
+        return res.status(403).json({ error: 'Invalid session credentials.' });
+      }
     }
 
     // Verify session secret if caller is customer or anonymous table user
@@ -337,6 +369,23 @@ const transferSessionTable = async (req, res) => {
     )) {
       return res.status(403).json({
         error: 'Scan a valid table QR code before switching tables.',
+        code: 'TABLE_SESSION_REQUIRED',
+      });
+    }
+
+    // Verify session has not expired due to inactivity before transferring
+    const transferCart = await prisma.cart.findUnique({
+      where: { sessionId },
+      select: { items: { select: { id: true } } },
+    });
+    const transferCartCount = transferCart?.items?.length || 0;
+    if (isSessionIdleExpired(currentSession, transferCartCount, [])) {
+      await prisma.session.update({ where: { id: sessionId }, data: { status: 'EXPIRED' } }).catch(() => {});
+      if (transferCartCount > 0) {
+        await prisma.cartItem.deleteMany({ where: { cart: { sessionId } } }).catch(() => {});
+      }
+      return res.status(403).json({
+        error: 'Your table session has expired due to inactivity. Scan your table QR code again.',
         code: 'TABLE_SESSION_REQUIRED',
       });
     }

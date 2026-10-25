@@ -177,13 +177,19 @@ const initSocket = (server) => {
             return;
           }
 
-          // If session has secretHash, allow if socket is authenticated or secret matches
-          if (session.secretHash) {
-            const hasAuthToken = Boolean(socket.data?.user?.id);
-            const { verifySessionSecret } = require('../utils/sessionSecurity');
-            const secretMatches = secret ? verifySessionSecret(secret, session.secretHash) : false;
+          // Verify the caller owns this session or has the correct secret
+          const { verifySessionSecret } = require('../utils/sessionSecurity');
+          const secretMatches = session.secretHash && secret ? verifySessionSecret(secret, session.secretHash) : false;
+          const callerUserId = socket.data?.user?.id;
 
-            if (!hasAuthToken && !secretMatches) {
+          if (session.customerId) {
+            // Session is claimed: only the owning customer or a matching secret can join
+            if (callerUserId !== session.customerId && !secretMatches) {
+              return;
+            }
+          } else if (session.secretHash) {
+            // Unclaimed session with secretHash: require auth token or matching secret
+            if (!callerUserId && !secretMatches) {
               return;
             }
           }

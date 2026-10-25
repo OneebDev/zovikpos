@@ -204,12 +204,40 @@ const sendOrderPlacementEmail = async (order) => {
 };
 
 /**
- * 3. Payment Confirmed Notification
+ * 3. Payment Confirmed Notification with Order Receipt
  */
 const sendPaymentConfirmedEmail = async (order) => {
   const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
   const orderNum = order.orderNumber || `#000${order.id}`;
+  const tableLabel = formatTableLabel({ tableLabel: order.tableLabel });
   const isCOD = (order.paymentMethod || '').toUpperCase() === 'COD';
+
+  let orderItems = order.orderItems;
+  if ((!orderItems || orderItems.length === 0) && order.id) {
+    try {
+      const { prisma } = require('../config/db');
+      const freshOrder = await prisma.order.findUnique({
+        where: { id: order.id },
+        include: { orderItems: { include: { menuItem: true } } },
+      });
+      if (freshOrder?.orderItems) {
+        orderItems = freshOrder.orderItems;
+      }
+    } catch (err) {
+      console.warn('[Email] Could not load order items for receipt:', err.message);
+    }
+  }
+
+  const { text: itemsText, html: itemsHtml } = buildItemsHtml(orderItems || []);
+
+  let baseUrl = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://zovik-pos.vercel.app' : 'http://localhost:5173');
+  try {
+    const configuredUrl = new URL(process.env.FRONTEND_URL || baseUrl);
+    if (configuredUrl.protocol === 'http:' || configuredUrl.protocol === 'https:') {
+      baseUrl = configuredUrl.toString().replace(/\/$/, '');
+    }
+  } catch {}
+  const trackingUrl = `${baseUrl}/customer/track/${encodeURIComponent(order.trackingToken || order.id)}`;
 
   const subject = isCOD
     ? `Cash Payment Received: ${orderNum} - ZovikPOS`
@@ -218,20 +246,26 @@ const sendPaymentConfirmedEmail = async (order) => {
   const amount = formatCurrency(order.total);
   const paymentMethod = isCOD ? 'Cash at counter' : (order.paymentMethod || 'Online');
   const dateTime = formatDateTime(order.createdAt);
-  const preheader = `Payment received for order ${orderNum}.`;
-  const bodyText = `${isCOD ? 'Your cash payment' : 'Your payment'} of ${amount} for order ${orderNum} has been ${isCOD ? 'received at the counter' : 'verified and confirmed'}.\n\nPayment method: ${paymentMethod}\n${order.paymentTxId ? `Transaction reference: ${order.paymentTxId}\n` : ''}${dateTime ? `Order date and time: ${dateTime}\n` : ''}\nYour receipt has been generated.`;
+  const preheader = `Receipt for order ${orderNum}. Payment received.`;
+  const bodyText = `${isCOD ? 'Your cash payment' : 'Your payment'} of ${amount} for order ${orderNum} has been ${isCOD ? 'received at the counter' : 'verified and confirmed'}.\n\nOrder Number: ${orderNum}\nTable: ${tableLabel}\nPayment Method: ${paymentMethod}\n${order.paymentTxId ? `Transaction reference: ${order.paymentTxId}\n` : ''}${dateTime ? `Order date and time: ${dateTime}\n` : ''}\nReceipt details:\n${itemsText}\n\nSubtotal: ${formatCurrency(order.subtotal)}\nTax: ${formatCurrency(order.tax)}\n${Number(order.discount) > 0 ? `Discount: ${formatCurrency(order.discount)}\n` : ''}Total Paid: ${amount}\n\nTrack your live order status: ${trackingUrl}`;
+
   const contentHtml = `${headline(isCOD ? 'Cash payment received' : 'Payment verified', 'Payment received', 'success')}
     ${bodyParagraph(isCOD
       ? `Your cash payment of <strong>${escapeHtml(amount)}</strong> for order <strong>${escapeHtml(orderNum)}</strong> has been received at the counter.`
       : `Your payment of <strong>${escapeHtml(amount)}</strong> via <strong>${escapeHtml(paymentMethod)}</strong> for order <strong>${escapeHtml(orderNum)}</strong> has been verified.`)}
     ${summaryBox([
       ['Order number', orderNum],
+      ['Table', tableLabel],
       ['Amount received', amount, true],
       ['Payment method', paymentMethod],
       ['Transaction reference', order.paymentTxId],
       ['Order date and time', dateTime],
     ])}
-    ${notice('Your receipt has been generated. Thank you.', 'success')}`;
+    ${itemsHtml ? `<h2 class="email-text" style="margin:0 0 10px;color:#0f172a;font-size:16px;line-height:1.4;">Receipt details</h2>${itemsHtml}` : ''}
+    ${totalsTable({ subtotal: order.subtotal, tax: order.tax, discount: order.discount, total: order.total })}
+    ${divider()}
+    ${bodyParagraph('Follow your order as the kitchen prepares it.')}
+    ${primaryButton(trackingUrl, 'Track my order')}`;
 
   const htmlTitle = isCOD ? 'Cash Payment Received' : 'Payment Confirmed';
   const htmlSub = isCOD ? `Counter Receipt for ${orderNum}` : `Receipt for ${orderNum}`;

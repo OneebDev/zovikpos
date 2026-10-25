@@ -104,8 +104,33 @@ const touchSessionActivity = async (sessionId, currentLastActivityAt = null) => 
 
   try {
     const cutoff = new Date(now.getTime() - THROTTLE_SECONDS * 1000);
-    const idleTtlMs = getSessionIdleMinutes() * 60 * 1000;
-    const newExpiresAt = new Date(now.getTime() + idleTtlMs);
+
+    // Fetch current session state to determine correct Rule B expiry tier
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      select: {
+        cart: { select: { items: { select: { id: true } } } },
+        orders: { select: { status: true } },
+      },
+    });
+
+    const cartItemCount = session?.cart?.items?.length || 0;
+    const orderList = session?.orders || [];
+    const hasUnfinishedOrders = orderList.some((o) => !FINISHED_ORDER_STATUSES.has(o.status));
+
+    // Rule B3: If unfinished orders exist, use a generous expiry (never idle-expire)
+    // Rule B2: If cart has items, use CART_ABANDON_MINUTES
+    // Rule B1: Otherwise use SESSION_IDLE_MINUTES
+    let ttlMs;
+    if (hasUnfinishedOrders) {
+      // Use the longer of cart-abandon or 60 minutes to prevent premature expiry
+      ttlMs = Math.max(getCartAbandonMinutes(), 60) * 60 * 1000;
+    } else if (cartItemCount > 0) {
+      ttlMs = getCartAbandonMinutes() * 60 * 1000;
+    } else {
+      ttlMs = getSessionIdleMinutes() * 60 * 1000;
+    }
+    const newExpiresAt = new Date(now.getTime() + ttlMs);
 
     await prisma.session.updateMany({
       where: {
