@@ -385,7 +385,7 @@ const CustomerCartPage = ({ user }) => {
   const totalQty = Object.values(cart).reduce((s, i) => s + i.quantity, 0);
   const etaIsPending = totalQty > 0 && (etaLoading || (etaResolvedCartKey !== cartEtaKey && etaFailedCartKey !== cartEtaKey));
   const cartItems = Object.values(cart);
-  const visibleCartItems = showAllCartItems || cartItems.length <= 4 ? cartItems : cartItems.slice(0, 3);
+  // Always show all items — scrollable container handles overflow on all devices.
 
   const getItemImage = item => {
     if (item?.imageUrl && typeof item.imageUrl === 'string' && item.imageUrl.trim() !== '') {
@@ -774,7 +774,7 @@ const CustomerCartPage = ({ user }) => {
               <h2 className="customer-cart-section-title"><span>Your items</span><span className="customer-cart-count">{totalQty}</span></h2>
 
               <div className="customer-cart-rows">
-                {visibleCartItems.map((item) => (
+                {cartItems.map((item) => (
                   <div
                     key={item.id}
                     className="customer-cart-row"

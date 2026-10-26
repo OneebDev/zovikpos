@@ -2189,7 +2189,10 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   const handleDismissFailedOrders = () => {
     for (const fo of failedOrders) {
       dismissFailedOrder(fo.id);
-      api.put(`/orders/${fo.id}/status`, { status: 'CANCELLED', note: 'Customer dismissed failed payment' }).catch(() => { });
+      // Only set status to CANCELLED if order is NOT already marked as REJECTED or CANCELLED
+      if (fo.status !== 'REJECTED' && fo.status !== 'CANCELLED') {
+        api.put(`/orders/${fo.id}/status`, { status: 'CANCELLED', note: 'Customer dismissed failed payment' }).catch(() => { });
+      }
     }
   };
 

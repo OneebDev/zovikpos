@@ -1154,12 +1154,13 @@
   min-height: 232px;
   height: 232px;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 16px;
   overflow: hidden;
   isolation: isolate;
   border: 1px solid var(--border);
   border-radius: 24px;
-  padding: 20px;
+  padding: 20px 24px;
   box-sizing: border-box;
   color: var(--text);
   background: linear-gradient(135deg, var(--surface), var(--accent-soft));
@@ -1219,8 +1220,8 @@
 .customer-promo__content {
   position: relative;
   z-index: 2;
-  width: min(100%, 440px);
-  max-width: 440px;
+  width: auto;
+  max-width: 600px;
   min-width: 0;
   flex: 1 1 auto;
 }
@@ -1333,7 +1334,7 @@
   width: 64px;
   height: 80px;
   flex: 0 0 64px;
-  margin: 0 2px 0 0;
+  margin: 0 0 0 auto;
   place-items: center;
 }
 
@@ -1457,9 +1458,9 @@
 @media (min-width: 640px) {
   .customer-promo { --promo-side-padding: 7.5%; height: 292px; padding-inline: 20px; }
   .customer-promo__viewport { flex-basis: 260px; height: 260px; }
-  .customer-promo__slide { min-height: 260px; height: 260px; gap: 20px; padding: 32px 56px; }
+  .customer-promo__slide { min-height: 260px; height: 260px; gap: 20px; padding: 32px 36px; }
   .customer-promo__content h1 { font-size: 32px; }
-  .customer-promo__visual { width: 112px; height: 132px; flex-basis: 112px; margin-inline: 8px; }
+  .customer-promo__visual { width: 112px; height: 132px; flex-basis: 112px; margin: 0 0 0 auto; }
   .customer-promo__visual-tile { width: 64px; height: 64px; border-radius: 20px; }
   .customer-promo__visual-tile svg { width: 28px; height: 28px; }
   .customer-promo__visual-ring--outer { width: 126px; }

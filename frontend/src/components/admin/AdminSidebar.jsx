@@ -71,6 +71,9 @@ const navGroups = [
 ];
 
 const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isMobileOpen, onCloseMobile, onLogout }) => {
+  // On mobile drawer, always show expanded view regardless of desktop collapsed state
+  const isCollapsed = collapsed && !isMobileOpen;
+
   return (
     <>
       {/* Mobile Drawer Backdrop Overlay */}
@@ -84,31 +87,31 @@ const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isM
       {/* Floating Sidebar Rail */}
       <aside
         className={`floating-sidebar ${
-          collapsed ? 'w-20' : 'w-64'
+          isCollapsed ? 'w-20' : 'w-64'
         } ${
           isMobileOpen ? 'floating-sidebar--visible w-64' : 'floating-sidebar--hidden lg:translate-x-0'
         }`}
       >
         {/* Sidebar Header Brand */}
-        <div className="floating-sidebar__header">
-          <div className="flex items-center space-x-3 overflow-hidden">
-            <img src="/assets/zovikpos-mark.svg" alt="ZovikPOS logo" className="w-10 h-10 rounded-xl shrink-0 shadow-lg shadow-orange-600/30" />
-            {!collapsed && (
+        <div className={`floating-sidebar__header ${isCollapsed ? 'floating-sidebar__header--collapsed' : ''}`}>
+          {!isCollapsed && (
+            <div className="flex items-center space-x-3 overflow-hidden">
+              <img src="/assets/zovikpos-mark.svg" alt="ZovikPOS logo" className="w-10 h-10 rounded-xl shrink-0 shadow-lg shadow-orange-600/30" />
               <div className="animate-fade-in truncate">
                 <h1 className="font-extrabold text-sm text-[var(--panel-text)] tracking-tight font-display">ZOVIKPOS</h1>
                 <p className="text-[10px] text-orange-400 font-bold uppercase tracking-wider">Enterprise POS</p>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Desktop Collapse Toggle */}
           <button
             onClick={onToggleCollapse}
-            className="hidden lg:flex btn-icon shrink-0"
-            title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-            aria-label={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+            className={`hidden lg:flex btn-icon shrink-0 ${isCollapsed ? 'm-auto' : ''}`}
+            title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+            aria-label={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           >
-            {collapsed ? <ChevronRight className="w-4 h-4 shrink-0" /> : <ChevronLeft className="w-4 h-4 shrink-0" />}
+            {isCollapsed ? <ChevronRight className="w-4 h-4 shrink-0" /> : <ChevronLeft className="w-4 h-4 shrink-0" />}
           </button>
         </div>
 
@@ -116,7 +119,7 @@ const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isM
         <div className="floating-sidebar__nav">
           {navGroups.map((group, groupIdx) => (
             <div key={groupIdx} className="mb-4">
-              {!collapsed && (
+              {!isCollapsed && (
                 <div className="floating-sidebar__section-title">
                   {group.title}
                 </div>
@@ -134,16 +137,16 @@ const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isM
                         onSelectTab(item.id);
                         if (isMobileOpen) onCloseMobile();
                       }}
-                      className={`floating-sidebar__item ${collapsed ? 'floating-sidebar__item--collapsed' : ''} ${
+                      className={`floating-sidebar__item ${isCollapsed ? 'floating-sidebar__item--collapsed' : ''} ${
                         isActive ? 'floating-sidebar__item--active' : ''
                       }`}
-                      title={collapsed ? item.label : undefined}
+                      title={isCollapsed ? item.label : undefined}
                     >
                       <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-orange-400'}`} />
-                      {!collapsed && <span className="truncate">{item.label}</span>}
+                      {!isCollapsed && <span className="truncate">{item.label}</span>}
 
                       {/* Tooltip for Collapsed Sidebar */}
-                      {collapsed && (
+                      {isCollapsed && (
                         <div className="floating-sidebar__tooltip">
                           {item.label}
                         </div>
@@ -160,11 +163,11 @@ const AdminSidebar = ({ activeTab, onSelectTab, collapsed, onToggleCollapse, isM
         <div className="floating-sidebar__footer">
           <button
             onClick={onLogout}
-            className={`floating-sidebar__item ${collapsed ? 'floating-sidebar__item--collapsed' : ''} text-rose-400 hover:text-rose-300 hover:bg-rose-500/15`}
-            title={collapsed ? 'Log Out' : undefined}
+            className={`floating-sidebar__item ${isCollapsed ? 'floating-sidebar__item--collapsed' : ''} text-rose-400 hover:text-rose-300 hover:bg-rose-500/15`}
+            title={isCollapsed ? 'Log Out' : undefined}
           >
             <LogOut className="w-4 h-4 shrink-0" />
-            {!collapsed && <span>Log Out</span>}
+            {!isCollapsed && <span>Log Out</span>}
           </button>
         </div>
       </aside>

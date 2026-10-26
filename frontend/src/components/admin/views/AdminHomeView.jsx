@@ -12,6 +12,8 @@ import {
   RefreshCw,
   ListOrdered,
   Loader2,
+  Trophy,
+  Sparkles,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -21,27 +23,45 @@ import {
   Line,
   LabelList,
   ComposedChart,
+  PieChart,
+  Pie,
   Cell,
   XAxis,
   YAxis,
   Tooltip,
   CartesianGrid,
+  Legend,
 } from 'recharts';
 import DateRangeFilterBar, { getPresetRange } from '../../common/DateRangeFilterBar';
 import { paymentMethodKey, paymentMethodLabel } from '../../../utils/paymentMethods';
 
 const formatCurrency = (value) => `Rs. ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-const formatStatus = (value) => String(value || 'UNKNOWN').replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+// Override display labels for specific statuses.
+// CANCELLED → "Rejected" (flow treats them equivalently).
+// PENDING → "COD Payment Pending" (cash on delivery orders awaiting cashier confirmation).
+// PAYMENT_PENDING → "Online Payment Pending" (online payment orders awaiting verification).
+const STATUS_LABEL_OVERRIDES = {
+  CANCELLED: 'Rejected',
+  PENDING: 'COD Payment Pending',
+  PAYMENT_PENDING: 'Online Payment Pending',
+};
+const formatStatus = (value) => {
+  const key = String(value || 'UNKNOWN').toUpperCase();
+  return STATUS_LABEL_OVERRIDES[key] || String(value || 'UNKNOWN').replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
 const formatPaymentMethod = (value) => {
   const normalized = String(value || '').trim().toUpperCase();
   return paymentMethodLabel(normalized) || formatStatus(normalized);
 };
-const KNOWN_ORDER_STATUSES = ['COMPLETED', 'READY', 'PREPARING', 'PAID', 'PENDING', 'PAYMENT_PENDING', 'REJECTED', 'CANCELLED', 'PAYMENT_FAILED', 'REFUNDED'];
+// Active pipeline statuses — always show in the breakdown list even with 0 count so queues are always visible.
+const ALWAYS_SHOW_STATUSES = ['READY', 'PREPARING', 'PAID', 'PENDING', 'PAYMENT_PENDING'];
+const KNOWN_ORDER_STATUSES = ['COMPLETED', 'READY', 'PREPARING', 'PAID', 'PENDING', 'PAYMENT_PENDING', 'CANCELLED', 'REJECTED', 'PAYMENT_FAILED', 'REFUNDED'];
 const statusColor = (status) => {
   const key = String(status || '').toUpperCase();
   if (['COMPLETED', 'READY', 'SERVED'].includes(key)) return '#10b981';
   if (['CANCELLED', 'REJECTED', 'FAILED', 'PAYMENT_FAILED', 'REFUNDED'].includes(key)) return '#f43f5e';
-  if (['PENDING', 'PAYMENT_PENDING', 'PENDING_VERIFICATION'].includes(key)) return '#f59e0b';
+  if (key === 'PENDING') return '#f59e0b'; // Amber for COD Pending
+  if (key === 'PAYMENT_PENDING' || key === 'PENDING_VERIFICATION') return '#d97706'; // Deeper warm amber for Online Payment Pending
   if (['PAID', 'PREPARING', 'PROCESSING'].includes(key)) return '#3b82f6';
   return '#8b5cf6';
 };
@@ -88,8 +108,33 @@ const AdminHomeView = ({
   }, [stats?.revenueTimeline]);
   const orderStatusChartData = useMemo(() => {
     const counts = new Map((stats?.orderStatusCounts || []).map(({ status, count }) => [status, count]));
+    // Merge known statuses with any from the backend.
+    // Group by display label so equivalent statuses (e.g. CANCELLED and REJECTED which both label as 'Rejected')
+    // merge into a single row instead of showing multiple separate 'Rejected' lines.
     const statuses = [...new Set([...KNOWN_ORDER_STATUSES, ...counts.keys()])];
-    return statuses.map((status) => ({ status, label: formatStatus(status), count: Number(counts.get(status) || 0) }))
+    const grouped = new Map();
+
+    statuses.forEach((status) => {
+      const label = formatStatus(status);
+      const count = Number(counts.get(status) || 0);
+      const isAlwaysShow = ALWAYS_SHOW_STATUSES.includes(status);
+
+      if (!grouped.has(label)) {
+        grouped.set(label, {
+          status,
+          label,
+          count,
+          alwaysShow: isAlwaysShow,
+        });
+      } else {
+        const existing = grouped.get(label);
+        existing.count += count;
+        if (isAlwaysShow) existing.alwaysShow = true;
+      }
+    });
+
+    return Array.from(grouped.values())
+      .filter((entry) => entry.count > 0 || entry.alwaysShow)
       .sort((a, b) => b.count - a.count || KNOWN_ORDER_STATUSES.indexOf(a.status) - KNOWN_ORDER_STATUSES.indexOf(b.status));
   }, [stats?.orderStatusCounts]);
   const paymentMethodChartData = useMemo(() => {
@@ -379,7 +424,7 @@ const AdminHomeView = ({
 
       {/* Additional Charts Row: Payment Method Breakdown & Order Status Pipeline */}
       <div className="grid min-w-0 lg:grid-cols-2 gap-6">
-        {/* Payment Methods Bar Chart */}
+        {/* Payment Methods Donut Chart */}
         <div className="min-w-0 h-full glass-card p-6 flex flex-col gap-4">
           <div className="flex justify-between items-center">
             <div>
@@ -397,35 +442,74 @@ const AdminHomeView = ({
             </button>
           </div>
 
-          <div className="relative w-full min-w-0 flex-1 min-h-[200px] pt-2">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
-                <BarChart data={paymentMethodChartData} layout="vertical" margin={{ left: 12, right: 42 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.35} horizontal={false} />
-                  <XAxis type="number" domain={[0, Math.max(1, ...paymentMethodChartData.map((item) => item.revenue))]} allowDecimals={false} stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `Rs ${Number(value).toLocaleString()}`} />
-                  <YAxis type="category" dataKey="name" width={95} stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip
-                    cursor={false}
-                    contentStyle={{
-                      backgroundColor: 'var(--card-bg)',
-                      borderColor: 'var(--border-color)',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      color: 'var(--text-main)',
-                    }}
-                    labelStyle={{ color: 'var(--text-main)' }}
-                    itemStyle={{ color: 'var(--text-main)' }}
-                    formatter={(value, name, props) => [formatCurrency(value), `Revenue · ${props.payload.count} orders`]}
-                  />
-                  <Bar dataKey="revenue" name="Revenue" fill="#f97316" radius={[0, 6, 6, 0]} barSize={18}>
-                    <LabelList dataKey="revenue" position="right" formatter={(value) => formatCurrency(value)} style={{ fill: 'var(--text-muted)', fontSize: 9, fontWeight: 700 }} />
-                  </Bar>
-                </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {paymentMethodChartData.every((m) => m.revenue === 0) ? (
+            <div className="flex-1 flex items-center justify-center text-xs text-[var(--text-muted)] min-h-[200px]">
+              No payment activity in this date range.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4 flex-1">
+              {/* Donut chart */}
+              <div className="w-full" style={{ height: 220 }}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
+                  <PieChart>
+                    <Pie
+                      data={paymentMethodChartData.filter((m) => m.revenue > 0)}
+                      dataKey="revenue"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="48%"
+                      outerRadius="72%"
+                      paddingAngle={3}
+                      strokeWidth={0}
+                    >
+                      {paymentMethodChartData.filter((m) => m.revenue > 0).map((entry, idx) => {
+                        const colors = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#f43f5e'];
+                        return <Cell key={entry.name} fill={colors[idx % colors.length]} />;
+                      })}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'var(--card-bg)',
+                        borderColor: 'var(--border-color)',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        color: 'var(--text-main)',
+                      }}
+                      formatter={(value, name, props) => [formatCurrency(value), `${name} · ${props.payload.count} orders`]}
+                    />
+                    <Legend
+                      iconType="circle"
+                      iconSize={8}
+                      wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+                      formatter={(value) => <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{value}</span>}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Method breakdown rows */}
+              <div className="space-y-2">
+                {paymentMethodChartData.map((m, idx) => {
+                  const colors = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#f43f5e'];
+                  const total = paymentMethodChartData.reduce((sum, x) => sum + x.revenue, 0);
+                  const pct = total > 0 ? Math.round((m.revenue / total) * 100) : 0;
+                  return (
+                    <div key={m.name} className="flex items-center gap-3 text-xs">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: colors[idx % colors.length] }} />
+                      <span className="flex-1 font-semibold text-[var(--text-main)] truncate">{m.name}</span>
+                      <span className="text-[var(--text-muted)] shrink-0">{m.count} orders</span>
+                      <span className="font-bold text-[var(--text-main)] shrink-0 w-20 text-right">{formatCurrency(m.revenue)}</span>
+                      <span className="shrink-0 w-10 text-right font-extrabold" style={{ color: colors[idx % colors.length] }}>{pct}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Order Status Distribution Chart */}
-        <div className="min-w-0 glass-card p-6 space-y-4">
+        {/* Order Status Distribution — Donut Chart */}
+        <div className="min-w-0 glass-card p-6 flex flex-col gap-4">
           <div className="flex justify-between items-center">
             <div>
               <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
@@ -442,32 +526,67 @@ const AdminHomeView = ({
             </button>
           </div>
 
-          <div className="relative w-full min-w-0 pt-2" style={{ height: Math.max(200, orderStatusChartData.length * 58) }}>
-            {orderStatusChartData.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-[var(--text-muted)]">
-                No orders in the selected period.
+          {orderStatusChartData.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-xs text-[var(--text-muted)] min-h-[200px]">
+              No orders in the selected period.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4 flex-1">
+              {/* Donut chart — only render slices for statuses with actual orders */}
+              <div className="w-full" style={{ height: 220 }}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
+                  <PieChart>
+                    <Pie
+                      data={orderStatusChartData.filter((e) => e.count > 0)}
+                      dataKey="count"
+                      nameKey="label"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="48%"
+                      outerRadius="72%"
+                      paddingAngle={3}
+                      strokeWidth={0}
+                    >
+                      {orderStatusChartData.filter((e) => e.count > 0).map((entry) => (
+                        <Cell key={entry.status} fill={statusColor(entry.status)} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'var(--card-bg)',
+                        borderColor: 'var(--border-color)',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        color: 'var(--text-main)',
+                      }}
+                      formatter={(value, name) => [`${value} orders`, name]}
+                    />
+                    <Legend
+                      iconType="circle"
+                      iconSize={8}
+                      wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+                      formatter={(value) => <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{value}</span>}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 1, height: 1 }}>
-                <BarChart data={orderStatusChartData} layout="vertical" margin={{ left: 8, right: 36, top: 4, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.35} horizontal={false} />
-                  <XAxis type="number" domain={[0, 'dataMax']} allowDecimals={false} stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="label" width={120} stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip
-                    cursor={false}
-                    contentStyle={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)', borderRadius: '12px', fontSize: '11px', color: 'var(--text-main)' }}
-                    labelStyle={{ color: 'var(--text-main)' }}
-                    itemStyle={{ color: 'var(--text-main)' }}
-                    formatter={(count) => [`${count} orders`, 'Status count']}
-                  />
-                  <Bar dataKey="count" name="Orders" radius={[0, 6, 6, 0]} barSize={18} minPointSize={2}>
-                    {orderStatusChartData.map((entry) => <Cell key={entry.status} fill={statusColor(entry.status)} />)}
-                    <LabelList dataKey="count" position="right" fill="var(--text-main)" fontSize={11} fontWeight={700} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
+              {/* Status breakdown rows */}
+              <div className="space-y-2">
+                {orderStatusChartData.map((entry) => {
+                  const total = orderStatusChartData.reduce((sum, x) => sum + x.count, 0);
+                  const pct = total > 0 ? Math.round((entry.count / total) * 100) : 0;
+                  return (
+                    <div key={entry.status} className="flex items-center gap-3 text-xs">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: statusColor(entry.status) }} />
+                      <span className="flex-1 font-semibold text-[var(--text-main)] truncate">{entry.label}</span>
+                      <span className="font-bold text-[var(--text-main)] shrink-0">{entry.count} orders</span>
+                      <span className="shrink-0 w-10 text-right font-extrabold" style={{ color: statusColor(entry.status) }}>{pct}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -477,28 +596,87 @@ const AdminHomeView = ({
         <div className="glass-card p-6 space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
-              <Flame className="w-4 h-4 text-amber-400" />
-              <span>Top Selling Menu Items</span>
+              <span className="p-1.5 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 text-amber-400 border border-amber-500/20">
+                <Flame className="w-4 h-4" />
+              </span>
+              <span>Top 10 Best Sellers</span>
             </h3>
-            <button onClick={() => onNavigate('menu')} className="text-xs text-orange-400 hover:underline font-bold cursor-pointer">
-              Manage Catalog →
+            <button onClick={() => onNavigate('menu')} className="text-xs text-orange-400 hover:text-orange-300 font-bold cursor-pointer transition-colors flex items-center gap-1">
+              <span>Manage Catalog</span>
+              <span>→</span>
             </button>
           </div>
 
-          <div className="divide-y divide-[var(--border-color)]">
-            {stats.topItems?.length ? stats.topItems.map((item, idx) => (
-              <div key={`${item.name}-${idx}`} className="py-3 flex items-center gap-3 text-xs">
-                <span className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center font-extrabold text-[10px] shrink-0">{idx + 1}</span>
-                <div className="min-w-0 flex-1">
-                  <strong className="text-[var(--text-main)] block font-bold truncate">{item.name}</strong>
-                  <span className="text-[var(--text-muted)] text-[10px]">{item.category || 'Menu item'}</span>
-                </div>
-                <div className="text-right shrink-0">
-                  <strong className="text-orange-500 font-bold">{Number(item.quantity || 0).toLocaleString()} sold</strong>
-                  <span className="text-[10px] text-[var(--text-muted)] block">{formatCurrency(item.revenue)}</span>
-                </div>
-              </div>
-            )) : (
+          <div className="space-y-2">
+            {stats.topItems?.length ? (() => {
+              const top10 = stats.topItems.slice(0, 10);
+              const maxQty = Math.max(...top10.map((item) => Number(item.quantity || 0)), 1);
+
+              return top10.map((item, idx) => {
+                const qty = Number(item.quantity || 0);
+                const pctOfMax = Math.min(100, Math.round((qty / maxQty) * 100));
+
+                // Rank styling
+                const rankBadgeClass =
+                  idx === 0
+                    ? 'bg-gradient-to-br from-amber-400 to-yellow-600 text-black shadow-sm font-black shadow-amber-500/30'
+                    : idx === 1
+                    ? 'bg-gradient-to-br from-slate-200 to-slate-400 text-slate-900 font-black shadow-sm'
+                    : idx === 2
+                    ? 'bg-gradient-to-br from-amber-700 to-orange-800 text-amber-100 font-black shadow-sm'
+                    : 'bg-[var(--surface-subtle,#26262b)] text-[var(--text-muted)] border border-[var(--border-color)] font-bold';
+
+                return (
+                  <div
+                    key={`${item.name}-${idx}`}
+                    className="relative group p-2.5 rounded-xl border border-[var(--border-color)]/60 bg-[var(--surface,#1a1a1f)]/40 hover:bg-[var(--surface-hover,#222228)] transition-all overflow-hidden"
+                  >
+                    {/* Subtle volume background bar */}
+                    <div
+                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-orange-500/[0.08] to-transparent pointer-events-none transition-all duration-500"
+                      style={{ width: `${pctOfMax}%` }}
+                    />
+
+                    <div className="relative flex items-center gap-3">
+                      {/* Rank Indicator */}
+                      <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] shrink-0 ${rankBadgeClass}`}>
+                        {idx === 0 ? <Trophy className="w-3.5 h-3.5" /> : idx + 1}
+                      </span>
+
+                      {/* Item Info */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <strong className="text-[var(--text-main)] block font-bold text-xs truncate group-hover:text-orange-400 transition-colors">
+                            {item.name}
+                          </strong>
+                          {idx === 0 && (
+                            <span className="hidden sm:inline-flex items-center gap-0.5 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                              <Sparkles className="w-2.5 h-2.5" /> Top #1
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[var(--text-muted)] text-[10px] block truncate mt-0.5">
+                          {item.category || 'General'}
+                        </span>
+                      </div>
+
+                      {/* Sales Stats */}
+                      <div className="text-right shrink-0">
+                        <div className="flex items-baseline justify-end gap-1">
+                          <span className="text-xs font-black text-orange-400">
+                            {qty.toLocaleString()}
+                          </span>
+                          <span className="text-[10px] font-semibold text-[var(--text-muted)]">sold</span>
+                        </div>
+                        <span className="text-[10px] font-medium text-[var(--text-muted)] block mt-0.5">
+                          {formatCurrency(item.revenue)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              });
+            })() : (
               <div className="py-10 text-center text-xs text-[var(--text-muted)]">No completed sales in this date range.</div>
             )}
           </div>

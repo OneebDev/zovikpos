@@ -50,7 +50,19 @@ body:has(.customer-cart-page),
 .customer-cart-items-column, .customer-cart-checkout-column { display: contents; }
 .customer-cart-section-title { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--text-secondary); font-size: 12px; font-weight: 600; letter-spacing: .06em; line-height: 1.3; text-transform: uppercase; }
 .customer-cart-count { display: inline-flex; min-width: 22px; height: 22px; align-items: center; justify-content: center; padding: 0 6px; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
-.customer-cart-rows { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-sm); }
+.customer-cart-rows {
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 60dvh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  scroll-behavior: smooth;
+  /* subtle scrollbar styling */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
 .customer-cart-row { display: grid; min-width: 0; gap: 10px; padding: 12px; background: var(--surface); }
 .customer-cart-row + .customer-cart-row { border-top: 1px solid var(--border); }
 .customer-cart-row > .flex { display: flex; min-width: 0; align-items: center; gap: 12px; }
@@ -154,10 +166,17 @@ body:has(.customer-cart-page),
   .customer-cart-mobile-bar { right: 0; left: 0; }
 }
 
+@media (max-width: 599px) {
+  /* On small phones, leave room for the sticky bottom bar */
+  .customer-cart-rows { max-height: 48dvh; }
+}
+
 @media (min-width: 1024px) {
   .customer-cart-items-column { gap: 16px; }
   .customer-cart-summary { top: calc(84px + env(safe-area-inset-top, 0px)); }
   .customer-cart-mobile-bar { display: none; }
+  /* Desktop two-column layout has more vertical room */
+  .customer-cart-rows { max-height: 72dvh; }
 }
 
 /* Clear, compact order recap and confirmation treatment. */

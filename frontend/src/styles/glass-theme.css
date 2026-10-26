@@ -395,6 +395,13 @@
   justify-content: space-between;
   border-bottom: 1px solid var(--border-2);
   flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.floating-sidebar__header--collapsed {
+  justify-content: center !important;
+  padding: 0 !important;
 }
 
 .floating-sidebar__nav {

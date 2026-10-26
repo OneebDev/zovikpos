@@ -231,7 +231,7 @@ const verifyTransaction = async (req, res) => {
     }
 
     const previousStatus = order.status;
-    const newStatus = approve ? 'PAID' : 'PAYMENT_FAILED';
+    const newStatus = approve ? 'PAID' : 'REJECTED';
     const newPaymentStatus = approve ? 'VERIFIED' : 'FAILED';
 
     let updatedOrder;
@@ -270,7 +270,7 @@ const verifyTransaction = async (req, res) => {
           // If deduction fails, entire transaction rolls back and order is NOT marked PAID
           if (approve && previousStatus !== 'PAID') {
             await deductInventoryForConfirmedOrder(order.id, staffUserId, tx);
-          } else if (!approve && previousStatus !== 'PAYMENT_FAILED') {
+          } else if (!approve && previousStatus !== 'REJECTED') {
             await restoreInventoryForOrder(order.id, staffUserId, reason || 'Payment verification rejected by staff.', tx);
           }
 
