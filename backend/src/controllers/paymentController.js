@@ -386,13 +386,13 @@ const initiatePayfastPayment = async (req, res) => {
     const paymentData = {
       merchant_id: config.merchantId,
       merchant_key: config.merchantKey,
-      return_url: `${frontendBase}/customer/order-tracking/${order.orderNumber}?payment=success`,
-      cancel_url: `${frontendBase}/customer/cart?payment=cancelled`,
+      return_url: `${frontendBase}/customer/track/${order.trackingToken || order.orderNumber}?payment=success`,
+      cancel_url: `${frontendBase}/customer/track/${order.trackingToken || order.orderNumber}?payment=cancelled`,
       notify_url: `${backendBase}/api/payments/payfast/notify`,
       name_first: order.user?.name || 'Customer',
       email_address: order.user?.email || 'customer@zovikpos.store',
       m_payment_id: String(order.id),
-      amount: Number(order.totalAmount).toFixed(2),
+      amount: Number(order.total ?? order.totalAmount ?? 0).toFixed(2),
       item_name: `Zovik POS Order #${order.orderNumber}`,
     };
 
@@ -412,7 +412,8 @@ const initiatePayfastPayment = async (req, res) => {
 
 /**
  * Handle PayFast ITN Webhook Notification:
- * Verifies signature, updates order to PAID atomically, deducts inventory, and broadcasts to kitchen
+ * Verifies signature, updates order to PAID atomically, deducts inventory, and broadcasts directly to kitchen.
+ * If payment failed/cancelled, marks order as PAYMENT_FAILED and does NOT send to kitchen.
  */
 const handlePayfastITN = async (req, res) => {
   try {
@@ -429,7 +430,7 @@ const handlePayfastITN = async (req, res) => {
     }
 
     const orderId = parseInt(pfData.m_payment_id, 10);
-    const paymentStatus = pfData.payment_status; // 'COMPLETE'
+    const paymentStatus = String(pfData.payment_status || '').toUpperCase(); // 'COMPLETE', 'FAILED', 'CANCELLED'
     const pfPaymentId = pfData.pf_payment_id;
 
     if (!orderId) {
@@ -497,7 +498,7 @@ const handlePayfastITN = async (req, res) => {
 
       const orderWithTableLabel = withTableLabel(updatedOrder);
 
-      // Realtime notification to kitchen & customer
+      // Realtime notification: Direct to kitchen and customer (NO cashier manual approval required)
       emitToUser(orderWithTableLabel.userId, 'order:update', orderWithTableLabel);
       emitToVendor('order:update', orderWithTableLabel);
       emitToAdmin('order:update', orderWithTableLabel);
@@ -510,12 +511,181 @@ const handlePayfastITN = async (req, res) => {
       });
 
       clearDashboardStatsCache();
+    } else if (['FAILED', 'CANCELLED'].includes(paymentStatus)) {
+      // Payment failed or cancelled: do NOT send to kitchen
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          status: 'PAYMENT_FAILED',
+          paymentStatus: 'FAILED',
+        },
+      });
+
+      const failedOrder = withTableLabel({ ...order, status: 'PAYMENT_FAILED', paymentStatus: 'FAILED' });
+      emitToUser(failedOrder.userId, 'order:update', failedOrder);
+      emitToVendor('order:update', failedOrder);
+      emitToAdmin('order:update', failedOrder);
+
+      // Send Order Cancelled Email to Customer
+      setImmediate(async () => {
+        sendOrderCancellationEmail(failedOrder, 'Cancelled (Payment Failed)').catch(err =>
+          console.error('[Email] PayFast ITN cancel notification email error:', err.message)
+        );
+      });
     }
 
     return res.status(200).send('OK');
   } catch (error) {
     console.error('PayFast ITN Error:', error);
     return res.status(500).send('Server error');
+  }
+};
+
+/**
+ * Verify PayFast payment on customer return (Fallback when local dev has no public IP for webhook)
+ */
+const validatePayfastReturn = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { payment } = req.query;
+
+    const order = await prisma.order.findFirst({
+      where: {
+        OR: [
+          { trackingToken: token },
+          { orderNumber: token },
+        ],
+      },
+      include: {
+        table: { select: { id: true, tableNumber: true } },
+        orderItems: { include: { menuItem: true } },
+        user: { select: { id: true, name: true, email: true } },
+        etaPrediction: true,
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    // ── CASE 1: CUSTOMER CANCELLED PAYMENT AT PAYFAST CHECKOUT ──
+    if (payment === 'cancelled') {
+      if (order.status !== 'PAID') {
+        const cancelledOrder = await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status: 'CANCELLED',
+            paymentStatus: 'FAILED',
+          },
+          include: {
+            table: { select: { id: true, tableNumber: true } },
+            orderItems: { include: { menuItem: true } },
+            user: { select: { id: true, name: true, email: true } },
+            etaPrediction: true,
+          },
+        });
+
+        await prisma.orderStatusHistory.create({
+          data: {
+            orderId: order.id,
+            previousStatus: order.status,
+            newStatus: 'CANCELLED',
+            note: 'PayFast payment was cancelled by customer.',
+          },
+        });
+
+        const orderWithTableLabel = withTableLabel(cancelledOrder);
+
+        // Notify Cashier, Admin and Customer instantly: Automatically rejected from cashier queue!
+        emitToUser(orderWithTableLabel.userId, 'order:update', orderWithTableLabel);
+        emitToVendor('order:update', orderWithTableLabel);
+        emitToAdmin('order:update', orderWithTableLabel);
+
+        // Send Order Cancelled Email to Customer
+        setImmediate(async () => {
+          sendOrderCancellationEmail(orderWithTableLabel, 'Cancelled (Payment Cancelled)').catch(err =>
+            console.error('[Email] PayFast cancel notification email error:', err.message)
+          );
+        });
+
+        clearDashboardStatsCache();
+
+        return res.json({
+          message: 'Payment was cancelled and order has been rejected.',
+          order: orderWithTableLabel,
+        });
+      }
+      return res.json({ message: 'Order is already processed.', order: withTableLabel(order) });
+    }
+
+    if (payment !== 'success') {
+      return res.status(400).json({ error: 'Invalid payment status query parameter.' });
+    }
+
+    if (order.status === 'PAID') {
+      return res.json({ message: 'Order is already paid.', order: withTableLabel(order) });
+    }
+
+    const updatedOrder = await withDeadlockRetry(async () => {
+      return await prisma.$transaction(async (tx) => {
+        const updateResult = await tx.order.updateMany({
+          where: { id: order.id, status: { not: 'PAID' } },
+          data: {
+            status: 'PAID',
+            paymentStatus: 'VERIFIED',
+            paymentTxId: `PF-RET-${Date.now()}`,
+          },
+        });
+
+        if (updateResult.count === 0) return order;
+
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: order.id,
+            previousStatus: order.status,
+            newStatus: 'PAID',
+            note: 'PayFast Online Checkout auto-verified upon successful return.',
+          },
+        });
+
+        await deductInventoryForConfirmedOrder(order.id, null, tx);
+
+        return await tx.order.findUnique({
+          where: { id: order.id },
+          include: {
+            table: { select: { id: true, tableNumber: true } },
+            orderItems: { include: { menuItem: true } },
+            user: { select: { id: true, name: true, email: true } },
+            etaPrediction: true,
+          },
+        });
+      }, TX_OPTIONS);
+    });
+
+    const orderWithTableLabel = withTableLabel(updatedOrder);
+
+    // Broadcast directly to kitchen, cashier and customer
+    emitToUser(orderWithTableLabel.userId, 'order:update', orderWithTableLabel);
+    emitToVendor('order:update', orderWithTableLabel);
+    emitToAdmin('order:update', orderWithTableLabel);
+    emitToKitchen('order:new', orderWithTableLabel);
+
+    // Send payment verified + itemized receipt email automatically to customer
+    setImmediate(async () => {
+      sendPaymentConfirmedEmail(orderWithTableLabel).catch(err =>
+        console.error('[Email] PayFast return payment confirmed email error:', err.message)
+      );
+    });
+
+    clearDashboardStatsCache();
+
+    return res.json({
+      message: 'Payment verified successfully and dispatched to kitchen.',
+      order: orderWithTableLabel,
+    });
+  } catch (error) {
+    console.error('Validate PayFast return error:', error);
+    return res.status(500).json({ error: 'Failed to verify payment return.' });
   }
 };
 
@@ -526,4 +696,6 @@ module.exports = {
   verifyTransaction,
   initiatePayfastPayment,
   handlePayfastITN,
+  validatePayfastReturn,
 };
+

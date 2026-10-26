@@ -1,9 +1,8 @@
-﻿import  { useMemo } from 'react';
+import  { useMemo } from 'react';
 import { resolveTableLabel } from '../../../utils/customerTableLabel';
 import {
   ChefHat,
   Clock,
-  BrainCircuit,
 } from 'lucide-react';
 
 const AdminKitchenMonitorView = ({ orders = [] }) => {
@@ -64,13 +63,6 @@ const AdminKitchenMonitorView = ({ orders = [] }) => {
                       <span>{item.quantity}× {item.nameSnapshot || item.menuItem?.name}</span>
                     </div>
                   ))}
-                </div>
-
-                <div className="pt-2 border-t border-[var(--border-color)] flex justify-between items-center text-[10px] text-[var(--text-muted)]">
-                  <span className="flex items-center space-x-1">
-                    <BrainCircuit className="w-3 h-3 text-orange-400" />
-                    <span>AI ETA: ~{order.estimatedPrepTime || 15} mins</span>
-                  </span>
                 </div>
               </div>
             ))}

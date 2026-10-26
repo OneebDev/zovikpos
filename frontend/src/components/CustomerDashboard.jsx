@@ -2351,6 +2351,13 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
     promoTimerRef.current = null;
   }, []);
 
+  const scrollToMenu = useCallback(() => {
+    const target = document.getElementById('menu-section') || document.querySelector('.customer-menu-controls');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
+
   const scrollPromoToPosition = useCallback((position, behavior = 'smooth') => {
     const viewport = promoScrollRef.current;
     const slide = viewport?.querySelector(`[data-promo-position="${position}"]`);
@@ -2947,6 +2954,21 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                 {transferLoading ? 'Starting…' : 'Start new session'}
               </button>
 
+              {/* Option: View / Track Current Order when active orders exist */}
+              {activeOrders.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTableSwitchModal(false);
+                    const firstOrder = activeOrders[0];
+                    navigate(`/customer/track/${firstOrder.trackingToken || firstOrder.id}`);
+                  }}
+                  className="tsw-btn tsw-btn--secondary"
+                >
+                  Track current order ({currentTableSnapshot || stableTableLabel})
+                </button>
+              )}
+
               {/* Cancel */}
               <button
                 type="button"
@@ -3217,171 +3239,46 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
               </div>
             )}
 
-            {/* Active Order Banner — ZovikPOS Premium */}
-            {activeOrders.length === 1 && (
-              <div className="customer-active-order">
-                <div className="customer-active-order__top">
-                  <div className="flex items-center space-x-3">
-                    <div className="customer-active-order__indicator" aria-hidden="true">
-                      <span className="relative flex h-2.5 w-2.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#E85D2A] opacity-60"></span>
-                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#E85D2A]"></span>
-                      </span>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <strong className="customer-active-order__number" title={activeOrders[0].orderNumber || `#${activeOrders[0].id}`}>
-                          Order {activeOrders[0].orderNumber || `#${activeOrders[0].id}`}
-                        </strong>
-                        <span className={`customer-active-order__status customer-active-order__status--${String(activeOrders[0].status || '').toLowerCase()}`}>
-                          {activeOrders[0].status}
-                        </span>
-                      </div>
-                      <p className="customer-active-order__table">
-                        <strong>
-                          {resolveTableLabel({ ...activeOrders[0], forCustomer: true })}
-                        </strong>
-                      </p>
-                    </div>
-                  </div>
-                  <div className="customer-active-order__actions">
-                    {/* TEMP: hidden table-switch button
-                    <button
-                      onClick={() => {
-                        if (deliveryChangeOrderId === activeOrders[0].id) {
-                          setDeliveryChangeOrderId(null);
-                        } else {
-                          setDeliveryChangeOrderId(activeOrders[0].id);
-                          setDeliveryChangeTarget(activeOrders[0].tableNumber || tableId);
-                        }
-                      }}
-                      className="px-3 py-2 bg-white dark:bg-[#2A2A2A] hover:bg-[#FAF9F7] dark:hover:bg-[#333] text-[#171717] dark:text-[#E5E5E5] border border-[#E7E5E4] dark:border-[#404040] font-bold rounded-xl text-xs transition-all cursor-pointer flex items-center gap-1"
-                    >
-                      <span>📍</span>
-                      <span className="hidden sm:inline">Change Seat</span>
-                    </button>
-                    */}
-                    <button
-                      onClick={() => navigate(`/customer/track/${activeOrders[0].trackingToken || activeOrders[0].id}`)}
-                      className="customer-active-order__track"
-                    >
-                      <span>Track Order</span>
-                    </button>
-                  </div>
-                </div>
-                {/* Inline Delivery Table Picker */}
-                {deliveryChangeOrderId === activeOrders[0].id && (
-                  <div className="mt-3 p-3 bg-[#FAF9F7] rounded-2xl border border-[#E7E5E4] flex flex-col sm:flex-row items-start sm:items-center gap-2.5 animate-fade-in">
-                    <span className="text-xs font-bold text-[#171717] whitespace-nowrap shrink-0">
-                      New delivery table:
-                    </span>
-                    <DeliveryTableDropdown
-                      value={deliveryChangeTarget}
-                      tables={availableTables}
-                      loading={availableTablesLoading}
-                      onChange={setDeliveryChangeTarget}
-                      onOpen={refreshAvailableTables}
-                    />
-                    <div className="flex gap-2 w-full sm:w-auto">
-                      <button
-                        disabled={deliveryChangeLoading || availableTablesLoading || !deliveryChangeTarget}
-                        onClick={() => handleDeliveryTableChange(activeOrders[0].id, deliveryChangeTarget)}
-                        className="flex-1 sm:flex-none px-4 py-2 bg-[#E85D2A] hover:bg-[#D94E1B] disabled:opacity-50 text-white font-extrabold text-xs rounded-xl transition-all shadow-sm cursor-pointer"
-                      >
-                        {deliveryChangeLoading ? 'Saving...' : 'Confirm'}
-                      </button>
-                      <button
-                        onClick={() => setDeliveryChangeOrderId(null)}
-                        className="px-3 py-2 text-xs text-[#78716C] hover:text-[#171717] font-bold bg-white border border-[#E7E5E4] rounded-xl cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeOrders.length > 1 && (
-              <div className="bg-white dark:bg-[#1E1E1E] border border-[#E85D2A]/25 dark:border-[#E85D2A]/40 p-4 sm:p-5 rounded-3xl space-y-3 shadow-md shadow-[#E85D2A]/8">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#E85D2A] animate-ping" />
-                    <span className="text-xs font-black uppercase tracking-wider text-orange-950 dark:text-orange-300">
-                      Active Orders in Progress ({activeOrders.length})
-                    </span>
-                  </div>
-                  <span className="text-[11px] font-bold text-[#E85D2A] dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 px-2.5 py-1 rounded-full border border-orange-100 dark:border-orange-900/50">
-                    Live Kitchen Sync
-                  </span>
-                </div>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {activeOrders.map((ord) => (
-                    <div
-                      key={ord.id}
-                      className="bg-white p-3.5 rounded-2xl border border-gray-100 flex flex-col space-y-2.5 shadow-xs hover:border-orange-200 transition-all"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="space-y-1">
-                          <div className="flex items-center space-x-2">
-                            <strong className="text-xs font-bold text-gray-900">
-                              {ord.orderNumber || `#000${ord.id}`}
+            {/* Active Orders Banner — Unified Sleek ZovikPOS Style (Matches Image 2 exactly for 1 or multiple orders) */}
+            {activeOrders.length > 0 && (
+              <div className="space-y-3">
+                {activeOrders.map((ord) => (
+                  <div key={ord.id} className="customer-active-order">
+                    <div className="customer-active-order__top">
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className="customer-active-order__indicator shrink-0" aria-hidden="true">
+                          <span className="relative flex h-2.5 w-2.5 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#E85D2A] opacity-60"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#E85D2A]"></span>
+                          </span>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <strong className="customer-active-order__number" title={ord.orderNumber || `#${ord.id}`}>
+                              Order {ord.orderNumber || `#${ord.id}`}
                             </strong>
-                            <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
+                            <span className={`customer-active-order__status customer-active-order__status--${String(ord.status || '').toLowerCase()}`}>
                               {ord.status}
                             </span>
                           </div>
-                          <p className="text-[11px] text-gray-500">
-                            Delivering to: <strong className="text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded font-bold">{resolveTableLabel({ ...ord, forCustomer: true })}</strong> • {ord.orderItems?.length || 0} items
+                          <p className="customer-active-order__table">
+                            <strong>
+                              {resolveTableLabel({ ...ord, forCustomer: true })}
+                            </strong>
                           </p>
                         </div>
+                      </div>
+                      <div className="customer-active-order__actions">
                         <button
                           onClick={() => navigate(`/customer/track/${ord.trackingToken || ord.id}`)}
-                          className="px-3 py-1.5 bg-[#E85D2A] hover:bg-[#D94E1B] text-white font-bold rounded-xl text-[11px] transition-all shadow-xs cursor-pointer shrink-0 ml-2"
+                          className="customer-active-order__track"
                         >
-                          Track →
+                          <span>Track Order</span>
                         </button>
                       </div>
-
-                      {/* Change Location Button / Picker for multi-orders */}
-                      {deliveryChangeOrderId === ord.id ? (
-                        <div className="p-2.5 bg-orange-50/70 rounded-xl border border-orange-100 space-y-2 text-xs">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-orange-950 text-[11px]">Select Delivery Table:</span>
-                            <button onClick={() => setDeliveryChangeOrderId(null)} className="text-[10px] font-bold text-gray-400 hover:text-gray-600">✕ Close</button>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <DeliveryTableDropdown
-                              value={deliveryChangeTarget}
-                              tables={availableTables}
-                              loading={availableTablesLoading}
-                              onChange={setDeliveryChangeTarget}
-                              onOpen={refreshAvailableTables}
-                              compact
-                            />
-                            <button
-                              disabled={deliveryChangeLoading || availableTablesLoading || !deliveryChangeTarget}
-                              onClick={() => handleDeliveryTableChange(ord.id, deliveryChangeTarget)}
-                              className="px-2.5 py-1 bg-[#E85D2A] hover:bg-[#F97316] disabled:opacity-50 text-white font-bold text-[11px] rounded-lg transition-all"
-                            >
-                              {deliveryChangeLoading ? '...' : 'Save'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setDeliveryChangeOrderId(ord.id);
-                            setDeliveryChangeTarget(ord.tableNumber || tableId);
-                          }}
-                          className="text-[11px] text-orange-600 hover:text-orange-800 font-bold hover:underline self-start flex items-center space-x-1"
-                        >
-                          <span>📍 Change delivery seat/table for this order</span>
-                        </button>
-                      )}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -3471,7 +3368,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                         <button
                           type="button"
                           tabIndex={isClone ? -1 : undefined}
-                          onClick={() => navigate('/customer/cart')}
+                          onClick={scrollToMenu}
                           className="customer-promo__cta"
                         >
                           <span>Explore menu</span>
@@ -3527,7 +3424,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
               </section>
 
               {/* SEARCH AND CATEGORY FILTERS */}
-              <div className="customer-menu-controls">
+              <div id="menu-section" className="customer-menu-controls scroll-mt-20">
                 <div className="customer-search">
                   <Search className="customer-search__icon" aria-hidden="true" />
                   <input

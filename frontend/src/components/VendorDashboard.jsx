@@ -562,12 +562,24 @@ const VendorDashboard = ({ user }) => {
     }
   };
 
+  // Sub-tab inside Payment Verification: 'all' | 'cod' | 'online'
+  const [verificationSubTab, setVerificationSubTab] = useState('all');
+
   // Filter orders for Payment Verification Tab (both COD & Online)
   const verificationOrders = useMemo(() => orders.filter(
     (o) =>
       ['PENDING', 'PAYMENT_PENDING'].includes(o.status) ||
       ['UNPAID', 'PENDING_VERIFICATION'].includes(o.paymentStatus)
   ).filter((o) => !['CANCELLED', 'COMPLETED', 'PAID', 'REFUNDED'].includes(o.status)), [orders]);
+
+  const codVerificationOrders = useMemo(() => verificationOrders.filter((o) => o.paymentMethod === 'COD'), [verificationOrders]);
+  const onlineVerificationOrders = useMemo(() => verificationOrders.filter((o) => o.paymentMethod !== 'COD'), [verificationOrders]);
+
+  const displayedVerificationOrders = useMemo(() => {
+    if (verificationSubTab === 'cod') return codVerificationOrders;
+    if (verificationSubTab === 'online') return onlineVerificationOrders;
+    return verificationOrders;
+  }, [verificationSubTab, verificationOrders, codVerificationOrders, onlineVerificationOrders]);
 
   const activeOrders = useMemo(() => orders.filter((o) => ['PAID', 'PREPARING', 'READY'].includes(o.status)), [orders]);
 
@@ -808,17 +820,63 @@ const VendorDashboard = ({ user }) => {
 
         {/* ── TAB 1: PAYMENT VERIFICATIONS ────────────────────────────────────── */}
         {activeTab === 'verification' && (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {verificationOrders.length === 0 ? (
-              <div className="col-span-full py-16 text-center bg-[var(--card-bg)]/60 border border-[var(--border-color)] border-dashed rounded-3xl">
-                <ShieldAlert className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                <p className="text-sm font-bold text-[var(--text-main)]">No Pending Verifications</p>
-                <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm mx-auto">
-                  Orders with pending cash or mobile wallet payment details will appear here.
-                </p>
-              </div>
-            ) : (
-              verificationOrders.map((order) => (
+          <div className="space-y-4">
+            {/* Sub-Filters: All, Cash at Counter (COD), Online Payments */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setVerificationSubTab('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                  verificationSubTab === 'all'
+                    ? 'bg-white/10 text-white border-white/20 shadow-sm'
+                    : 'text-[var(--text-muted)] border-transparent hover:text-[var(--text-main)] hover:bg-white/5'
+                }`}
+              >
+                All Verifications ({verificationOrders.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setVerificationSubTab('cod')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                  verificationSubTab === 'cod'
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 shadow-sm'
+                    : 'text-[var(--text-muted)] border-transparent hover:text-amber-400 hover:bg-amber-500/10'
+                }`}
+              >
+                💵 Cash at Counter ({codVerificationOrders.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setVerificationSubTab('online')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                  verificationSubTab === 'online'
+                    ? 'bg-orange-500/20 text-orange-400 border-orange-500/30 shadow-sm'
+                    : 'text-[var(--text-muted)] border-transparent hover:text-orange-400 hover:bg-orange-500/10'
+                }`}
+              >
+                💳 Online Payments ({onlineVerificationOrders.length})
+              </button>
+            </div>
+
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {displayedVerificationOrders.length === 0 ? (
+                <div className="col-span-full py-16 text-center bg-[var(--card-bg)]/60 border border-[var(--border-color)] border-dashed rounded-3xl">
+                  <ShieldAlert className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                  <p className="text-sm font-bold text-[var(--text-main)]">
+                    {verificationSubTab === 'cod'
+                      ? 'No Pending Cash Verifications'
+                      : verificationSubTab === 'online'
+                      ? 'No Pending Online Verifications'
+                      : 'No Pending Verifications'}
+                  </p>
+                  <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm mx-auto">
+                    {verificationSubTab === 'online'
+                      ? 'Online PayFast orders auto-verify upon completion and dispatch directly to kitchen.'
+                      : 'Orders with pending cash or mobile wallet payment details will appear here.'}
+                  </p>
+                </div>
+              ) : (
+                displayedVerificationOrders.map((order) => (
                 <div
                   key={order.id}
                   className="bg-[var(--card-bg)] border border-[var(--border-color)] hover:border-[var(--sb-primary)]/40 rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-lg hover:shadow-2xl transition-all duration-200 hover:-translate-y-0.5"
@@ -892,6 +950,7 @@ const VendorDashboard = ({ user }) => {
                 </div>
               ))
             )}
+            </div>
           </div>
         )}
 

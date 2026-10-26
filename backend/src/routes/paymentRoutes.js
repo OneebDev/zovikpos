@@ -6,6 +6,7 @@ const {
   verifyTransaction,
   initiatePayfastPayment,
   handlePayfastITN,
+  validatePayfastReturn,
 } = require('../controllers/paymentController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { optionalAuthMiddleware } = require('../middleware/authMiddleware');
@@ -20,6 +21,9 @@ const router = express.Router();
 
 // Public webhook: PayFast ITN notification (called directly by PayFast server)
 router.post('/payfast/notify', express.urlencoded({ extended: true }), handlePayfastITN);
+
+// Public route: Verify PayFast payment on return (works for both local and production)
+router.post('/payfast/return/:token', optionalAuthMiddleware, validatePayfastReturn);
 
 // Public / optional auth for fetching current payment availability settings
 router.get('/settings', optionalAuthMiddleware, getPaymentSettings);

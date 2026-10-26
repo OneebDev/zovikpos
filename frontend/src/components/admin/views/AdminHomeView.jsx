@@ -75,7 +75,17 @@ const AdminHomeView = ({
     else if (preset === 'ALL') setPeriod('all');
   };
 
-  const revenueChartData = useMemo(() => stats?.revenueTimeline || [], [stats?.revenueTimeline]);
+  const revenueChartData = useMemo(() => {
+    const raw = stats?.revenueTimeline || [];
+    if (raw.length === 1) {
+      // Pad single data point with flanking points so the line/area chart can draw a visual trajectory
+      return [
+        { label: '', revenue: 0, orderCount: 0 },
+        raw[0],
+      ];
+    }
+    return raw;
+  }, [stats?.revenueTimeline]);
   const orderStatusChartData = useMemo(() => {
     const counts = new Map((stats?.orderStatusCounts || []).map(({ status, count }) => [status, count]));
     const statuses = [...new Set([...KNOWN_ORDER_STATUSES, ...counts.keys()])];

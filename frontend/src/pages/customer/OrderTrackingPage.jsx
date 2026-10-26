@@ -81,6 +81,26 @@ const OrderTrackingPage = () => {
 
     const fetchOrder = async () => {
       try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const isPaymentSuccess = searchParams.get('payment') === 'success';
+        const isPaymentCancelled = searchParams.get('payment') === 'cancelled';
+
+        // If returned from PayFast with success, auto-verify immediately so local/hosted orders become PAID with zero cashier intervention
+        if (isPaymentSuccess) {
+          try {
+            await api.post(`/payments/payfast/return/${encodeURIComponent(trackingToken)}?payment=success`);
+          } catch (retErr) {
+            console.warn('PayFast return verify notice:', retErr?.response?.data?.message || retErr.message);
+          }
+        } else if (isPaymentCancelled) {
+          // If customer cancelled at PayFast checkout, auto-reject order so it clears from cashier queue
+          try {
+            await api.post(`/payments/payfast/return/${encodeURIComponent(trackingToken)}?payment=cancelled`);
+          } catch (retErr) {
+            console.warn('PayFast cancel notify notice:', retErr?.response?.data?.message || retErr.message);
+          }
+        }
+
         const res = await api.get(`/orders/track/${encodeURIComponent(trackingToken)}`, { signal: controller.signal });
         if (isMounted && !timedOut) {
           if (!res.data?.order) throw new Error('Order tracking details not found.');

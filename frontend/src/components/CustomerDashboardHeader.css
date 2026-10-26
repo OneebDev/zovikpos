@@ -401,11 +401,23 @@
 }
 
 .mobile-action {
-  display: none;
+  display: none !important;
+}
+
+@media (max-width: 479px) {
+  .mobile-action {
+    display: inline-grid !important;
+  }
 }
 
 .desktop-action {
   display: inline-grid;
+}
+
+@media (max-width: 479px) {
+  .desktop-action {
+    display: none !important;
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -751,9 +763,43 @@
 .customer-active-order__top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .customer-active-order__top > div:first-child { display: flex; min-width: 0; align-items: flex-start; gap: 10px; }
 .customer-active-order__top > div:first-child > div { min-width: 0; flex: 1 1 auto; }
-.customer-active-order__indicator { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border-radius: 50%; background: var(--accent-soft); }
-.customer-active-order__indicator > span { position: relative; display: inline-flex; width: 9px; height: 9px; }
-.customer-active-order__indicator > span > span:last-child { position: relative; display: block; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.customer-active-order__indicator {
+  display: flex !important;
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  max-width: 24px !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  aspect-ratio: 1 / 1 !important;
+  flex: 0 0 24px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 50% !important;
+  background: var(--accent-soft) !important;
+  overflow: hidden !important;
+}
+.customer-active-order__indicator span {
+  flex-shrink: 0 !important;
+}
+.customer-active-order__indicator > span {
+  position: relative !important;
+  display: inline-flex !important;
+  width: 10px !important;
+  height: 10px !important;
+  aspect-ratio: 1 / 1 !important;
+}
+.customer-active-order__indicator > span > span {
+  border-radius: 50% !important;
+}
+.customer-active-order__indicator > span > span:last-child {
+  position: relative !important;
+  display: block !important;
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 50% !important;
+  background: var(--accent) !important;
+}
 .customer-active-order__number { display: block; max-width: min(100%, 460px); overflow: hidden; color: var(--text); font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .customer-active-order__status { flex: 0 0 auto; padding: 3px 8px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-secondary); font-size: 10px; font-weight: 700; text-transform: capitalize; }
 .customer-active-order__status--pending { background: var(--warning-soft); color: var(--warning); }

@@ -388,11 +388,19 @@ const getDashboardStats = async (req, res) => {
         });
         revenueTimeline = Object.values(hoursMap);
       } else {
-        const monthly = isCustomRange ? spanDays > 92 : (period === 'all' || spanDays > 92);
+        const monthly = isCustomRange ? spanDays > 92 : (spanDays > 92);
         const timeline = new Map();
         if (paidOrders.length > 0 || (from && to)) {
-          const cursor = new Date(first.getFullYear(), first.getMonth(), monthly ? 1 : first.getDate());
-          const finalBucket = new Date(last.getFullYear(), last.getMonth(), monthly ? 1 : last.getDate());
+          // If all-time orders span only a single date, provide 7 recent days or flanking points so a chart curve renders
+          let effectiveFirst = first;
+          let effectiveLast = last;
+          if (period === 'all' && spanDays <= 1) {
+            effectiveFirst = new Date(first.getTime() - 3 * 24 * 60 * 60 * 1000);
+            effectiveLast = new Date(Math.max(last.getTime(), Date.now()));
+          }
+
+          const cursor = new Date(effectiveFirst.getFullYear(), effectiveFirst.getMonth(), monthly ? 1 : effectiveFirst.getDate());
+          const finalBucket = new Date(effectiveLast.getFullYear(), effectiveLast.getMonth(), monthly ? 1 : effectiveLast.getDate());
           while (cursor <= finalBucket) {
             const key = monthly
               ? `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`

@@ -461,6 +461,16 @@ body:has(.customer-tracking-page),
 .tracking-receipt__grand-total strong { color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tracking-actions { background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: none; border-top: 1px solid var(--border); }
 @keyframes tracking-live-pulse { 50% { opacity: .45; transform: scale(.82); } }
+@media (min-width: 1024px) {
+  .customer-tracking-content {
+    width: min(100%, 840px);
+    margin: 28px auto 0;
+  }
+  .customer-tracking-header {
+    padding-inline: max(24px, calc((100vw - 840px) / 2));
+  }
+}
+
 @media (max-width: 420px) {
   .customer-tracking-header { grid-template-columns: 44px minmax(0, 1fr) auto; }
   .customer-tracking-header h1 { font-size: var(--text-md); }
