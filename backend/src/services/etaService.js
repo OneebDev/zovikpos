@@ -135,8 +135,15 @@ const calculateETA = async (items) => {
 
     let historicalDelay = 0;
     if (recentPredictions.length > 0) {
-      const totalDelay = recentPredictions.reduce((sum, pred) => sum + (pred.actualTime - pred.adjustedEta), 0);
-      historicalDelay = totalDelay / recentPredictions.length;
+      // Filter out extreme outliers (orders left completed days/hours later)
+      const validDelays = recentPredictions
+        .map(pred => pred.actualTime - pred.adjustedEta)
+        .filter(delay => Number.isFinite(delay) && Math.abs(delay) <= 30);
+
+      if (validDelays.length > 0) {
+        const totalDelay = validDelays.reduce((sum, d) => sum + d, 0);
+        historicalDelay = Math.max(-5, Math.min(10, totalDelay / validDelays.length));
+      }
     }
 
     // 6. Predict ETA using AI (FastAPI RandomForestRegressor)
