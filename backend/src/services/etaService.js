@@ -14,7 +14,7 @@ const exceptionLogger = require('../utils/exceptionLogger');
 // assumed parallel capacity explicit and environment-overridable.
 const KITCHEN_PARALLEL_CAPACITY = Math.max(1, Number(process.env.ETA_KITCHEN_CAPACITY) || 4);
 const KITCHEN_CAPACITY_WINDOW_MINUTES = 60;
-const MAX_ETA_MINUTES = 120;
+const MAX_ETA_MINUTES = 60; // Cap at 60 min — 120 was hitting the ceiling too often
 
 const calculateETA = async (items) => {
   try {
@@ -79,9 +79,13 @@ const calculateETA = async (items) => {
     });
 
     // Count active orders and sum their remaining configured kitchen work.
+    // Only count orders placed in the last 3 hours to avoid stale/stuck orders
+    // inflating the queue (e.g., orders that stayed PREPARING for days).
+    const staleThreshold = new Date(Date.now() - 3 * 60 * 60 * 1000);
     const activeOrders = await prisma.order.findMany({
       where: {
-        status: { in: ['PENDING', 'PAID', 'PREPARING'] }
+        status: { in: ['PENDING', 'PAID', 'PREPARING'] },
+        createdAt: { gte: staleThreshold }
       },
       select: {
         orderItems: {
