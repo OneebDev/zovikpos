@@ -172,7 +172,7 @@ const normalizeUnit = (unit) => {
 
   // Count standard forms
   if (['DOZEN', 'DOZENS', 'DZ'].includes(u)) return 'DOZEN';
-  if (['PCS', 'PC', 'PIECE', 'PIECES', 'UNIT', 'UNITS', 'NO', 'NOS'].includes(u)) return 'PCS';
+  if (['PCS', 'PC', 'PIECE', 'PIECES', 'UNIT', 'UNITS', 'NO', 'NOS', 'POS'].includes(u)) return 'PCS';
 
   // Packaging canonical forms
   if (['BOX', 'BOXES', 'BX'].includes(u)) return 'BOX';

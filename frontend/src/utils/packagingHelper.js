@@ -212,7 +212,7 @@ export const canonicalUnit = (unit = '') => {
   if (['LTR', 'LITER', 'LITERS', 'LITRE', 'LITRES'].includes(value)) return 'L';
   if (['ML', 'MILLILITER', 'MILLILITERS', 'MILLILITRE', 'MILLILITRES'].includes(value)) return 'ML';
   if (['CL', 'CENTILITER', 'CENTILITERS'].includes(value)) return 'CL';
-  if (['PC', 'PIECE', 'PIECES', 'UNIT', 'UNITS', 'NO', 'NOS'].includes(value)) return 'PCS';
+  if (['PC', 'PIECE', 'PIECES', 'UNIT', 'UNITS', 'NO', 'NOS', 'POS'].includes(value)) return 'PCS';
   if (['DOZEN', 'DOZENS', 'DZ'].includes(value)) return 'DOZEN';
   if (['POUND', 'POUNDS', 'LB', 'LBS'].includes(value)) return 'LB';
   if (['OUNCE', 'OUNCES', 'OZ'].includes(value)) return 'OZ';
