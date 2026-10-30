@@ -237,6 +237,18 @@ export const getPresetPackagingForName = (name = '') => {
       return config;
     }
   }
+  // 3. Fallback: If converting between packaging units or packaging <-> base units, default to 1:1 gracefully
+  const pkgTypes = ['PACK', 'BOTTLE', 'POUCH', 'CAN', 'TUB', 'JAR', 'BLOCK', 'BOX', 'PIECE', 'PCS', 'CARTON', 'BAG', 'BORI', 'TIN', 'CRATE', 'ROLL'];
+  if (pkgTypes.includes(source) && ['KG', 'L', 'PCS'].includes(target)) {
+    return qty * 1;
+  }
+  if (pkgTypes.includes(target) && ['KG', 'L', 'PCS'].includes(source)) {
+    return qty * 1;
+  }
+  if (pkgTypes.includes(source) && pkgTypes.includes(target)) {
+    return qty * 1;
+  }
+
   return null;
 };
 
