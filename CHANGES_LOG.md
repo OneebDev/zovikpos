@@ -86,3 +86,26 @@ This document tracks all architectural, database, backend, and frontend modifica
     - Resolved `ReferenceError: AlertCircle is not defined` by importing `AlertCircle` from `lucide-react`, ensuring smooth inline error rendering when catalog name conflicts occur.
 
 ---
+
+
+### 7. Inventory Receiving Workflow, Error Dialogs & Confirmation UX
+- **File**: `backend/src/utils/unitConverter.js` & `frontend/src/utils/packagingHelper.js`
+  - Added `POS` as a direct alias for `PCS` in unit normalization maps to gracefully handle legacy database entries and OCR typos.
+- **Database Hotfix (Production Heroku)**:
+  - Corrected legacy record `Bread (White)` (ID 335) unit from typo `POS` to `PCS`.
+- **File**: `frontend/src/components/admin/views/AdminInventoryView.jsx`
+  - Implemented missing `handleUpdateSingleCardInCatalog` handler (PUT `/inventory/:id`) allowing direct catalog updates from card forms.
+  - Plumbed `showErrorDialog` prop down to `AdminInventoryReceivingView`.
+- **File**: `frontend/src/components/admin/views/AdminInventoryReceivingView.jsx`
+  - **Stock Received Success Card**:
+    - Connected the detailed summary card (Reference, Supplier, Invoice, Count, Subtotal, Discount, Net Total) across all receiving workflows:
+      - Primary Receiving Submission (`executeSubmitReceiving`)
+      - Additional Supplier Delivery Cards (`executeSubmitAdditionalCard`)
+      - Batch Confirmations (`handleConfirmReceivingBatch`)
+      - Saved Draft Confirmations (`handleConfirmDraft`)
+  - **Form Reset & State Cleaning**:
+    - Added clean reset upon receiving completion; clearing current delivery rows and additional cards so old data is eliminated.
+    - Added check on "New Receiving" tab to automatically wipe completed receiving cache and start with fresh blank entry forms.
+    - Added draft auto-save guard preventing completed deliveries from re-saving to `sessionStorage`.
+  - **Persistent Error Dialog Integration**:
+    - Replaced ephemeral auto-dismissing toast notifications on critical errors with `PersistentErrorDialog` modal prompts requiring explicit user acknowledgment (Close/OK) to dismiss.
