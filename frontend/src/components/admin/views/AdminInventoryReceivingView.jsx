@@ -587,6 +587,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
   // â”€â”€ Save draft to sessionStorage whenever key state changes â”€â”€
   useEffect(() => {
+    if (completedReceiving) return;
     try {
       // Avoid storing massive base64 image data (>1MB) to prevent sessionStorage quota errors
       const draftPayload = {
@@ -1981,6 +1982,8 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         };
 
         setCompletedReceiving(record);
+        resetPrimaryReceivingEntry();
+        setAdditionalCards([]);
 
         if (showToast) {
           showToast('Stock has been updated successfully.', 'success');
@@ -3077,7 +3080,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         <div className="flex min-w-0 items-center gap-2 w-full lg:w-auto lg:shrink-0">
           <button
             type="button"
-            onClick={() => { setSubTab('NEW_RECEIVING'); setCompletedReceiving(null); }}
+            onClick={() => { setSubTab('NEW_RECEIVING'); if (completedReceiving) { handleResetForNewReceiving(); } else { setCompletedReceiving(null); } }}
             className={`flex min-w-0 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-2xl border px-2 py-2.5 text-[10px] font-black transition-all cursor-pointer sm:px-4 sm:text-xs lg:flex-initial ${
               subTab === 'NEW_RECEIVING'
                 ? 'bg-orange-600 text-white border-orange-600 shadow-md'
