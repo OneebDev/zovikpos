@@ -2172,12 +2172,12 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     confirmingDraftLocks.current.add(key);
     setConfirmingDraftIds(prev => new Set(prev).add(key));
     try {
+      const rec = receivingsList.find(r => String(r.id) === String(receivingId));
       await api.post('/inventory/receivings/confirm-batch', { receivingIds: [Number(receivingId)] }, {
         timeout: 15000,
         headers: { 'Idempotency-Key': confirmDraftAttemptKeys.current.get(key) },
       });
       confirmDraftAttemptKeys.current.delete(key);
-      if (showToast) showToast('Stock has been updated successfully.', 'success');
       if (String(editingDraftId) === String(receivingId)) {
         setEditingDraftId(null);
         try {
@@ -2186,8 +2186,22 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       }
       await fetchReceivings({ silent: true });
       if (onRefresh) onRefresh();
+      setCompletedReceiving({
+        receivingRef: rec?.receivingNumber || ('RCV-' + String(receivingId)),
+        supplierName: rec?.supplier?.name || rec?.supplierName || 'Received Stock',
+        invoiceNumber: rec?.invoiceNumber || 'Not Provided',
+        itemCount: rec?.items?.length || 0,
+        subtotal: Number(rec?.totalCost || 0),
+        discount: 0,
+        totalCost: Number(rec?.totalCost || 0)
+      });
     } catch (err) {
-      if (showToast) showToast(err.response?.data?.error || 'Failed to confirm draft', 'error');
+      const draftErr = err.response?.data?.error || 'Failed to confirm draft';
+      if (showErrorDialog) {
+        showErrorDialog({ title: 'Draft Confirmation Failed', message: draftErr });
+      } else if (showToast) {
+        showToast(draftErr, 'error');
+      }
     } finally {
       confirmingDraftLocks.current.delete(key);
       setConfirmingDraftIds(prev => { const next = new Set(prev); next.delete(key); return next; });
@@ -2672,14 +2686,20 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         await fetchReceivings({ silent: true });
         setAdditionalCards(prev => prev.filter(c => c.id !== cardId));
       } else {
-        if (showToast) showToast(`Stock received successfully for ${supName}!`, 'success');
         setAdditionalCards(prev => prev.filter(c => c.id !== cardId));
         if (onRefresh) onRefresh();
+        setCompletedReceiving({
+          receivingRef: payload.receivingRef || ('RCV-' + Date.now().toString().slice(-6)),
+          supplierName: supName,
+          invoiceNumber: payload.invoiceNumber || 'Not Provided',
+          itemCount: rowsToSubmit ? rowsToSubmit.length : 0,
+          subtotal: payload.subtotal || 0,
+          discount: payload.discount || 0,
+          totalCost: Math.max(0, (payload.subtotal || 0) - (payload.discount || 0))
+        });
       }
       return true;
     } catch (err) {
-      console.error('Submit card error:', err);
-      if (targetStatus === 'DRAFT') setDraftSaveResult({ success: false, message: err.response?.data?.error || 'Draft could not be saved. Your entered data has been kept.' });
       const cardErr = err.response?.data?.error || err.message || 'Failed to submit receiving.';
       if (showErrorDialog) {
         showErrorDialog({ title: 'Delivery Error', message: cardErr });
@@ -2911,7 +2931,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     setConfirmBatchLoading(true);
     setConfirmBatchError('');
     try {
-      await api.post('/inventory/receivings/confirm-batch', request.payload, {
+      const { data } = await api.post('/inventory/receivings/confirm-batch', request.payload, {
         timeout: 15000,
         headers: { 'Idempotency-Key': request.key },
       });
@@ -2921,13 +2941,21 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       confirmBatchRequestRef.current = null;
       await fetchReceivings({ silent: true });
       onRefresh?.();
-      showToast?.('All selected deliveries were confirmed and stock was updated.', 'success');
+      const confirmedCount = data?.receivings?.length || 1;
+      const primaryRec = data?.receivings?.[0];
+      setCompletedReceiving({
+        receivingRef: primaryRec?.receivingNumber || 'BATCH-' + Date.now().toString().slice(-6),
+        supplierName: confirmedCount > 1 ? (confirmedCount + ' Deliveries Batch') : (primaryRec?.supplier?.name || 'Received Stock'),
+        invoiceNumber: primaryRec?.invoiceNumber || 'N/A',
+        itemCount: confirmBatchSummary.length,
+        subtotal: confirmBatchTotal,
+        discount: 0,
+        totalCost: confirmBatchTotal
+      });
     } catch (error) {
       const message = error.response?.data?.error || error.message || 'Could not confirm the selected deliveries.';
       const card = error.response?.data?.card;
       const batchErr = card ? (card + ': ' + message) : message;
-      setConfirmBatchError(batchErr);
-      if (showErrorDialog) showErrorDialog({ title: 'Delivery Confirmation Failed', message: batchErr });
       setConfirmBatchError(batchErr);
       if (showErrorDialog) showErrorDialog({ title: 'Delivery Confirmation Failed', message: batchErr });
     } finally {
