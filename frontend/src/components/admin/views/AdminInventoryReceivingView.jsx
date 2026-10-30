@@ -2677,7 +2677,12 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     } catch (err) {
       console.error('Submit card error:', err);
       if (targetStatus === 'DRAFT') setDraftSaveResult({ success: false, message: err.response?.data?.error || 'Draft could not be saved. Your entered data has been kept.' });
-      if (showToast) showToast(err.response?.data?.error || 'Failed to submit receiving.', 'error');
+      const cardErr = err.response?.data?.error || err.message || 'Failed to submit receiving.';
+      if (showErrorDialog) {
+        showErrorDialog({ title: 'Delivery Error', message: cardErr });
+      } else if (showToast) {
+        showToast(cardErr, 'error');
+      }
       return false;
     } finally {
       setLoading(false);
@@ -2917,7 +2922,11 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     } catch (error) {
       const message = error.response?.data?.error || error.message || 'Could not confirm the selected deliveries.';
       const card = error.response?.data?.card;
-      setConfirmBatchError(card ? `${card}: ${message}` : message);
+      const batchErr = card ? (card + ': ' + message) : message;
+      setConfirmBatchError(batchErr);
+      if (showErrorDialog) showErrorDialog({ title: 'Delivery Confirmation Failed', message: batchErr });
+      setConfirmBatchError(batchErr);
+      if (showErrorDialog) showErrorDialog({ title: 'Delivery Confirmation Failed', message: batchErr });
     } finally {
       setConfirmBatchLoading(false);
     }

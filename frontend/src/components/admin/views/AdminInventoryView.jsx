@@ -613,6 +613,28 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
     setIngredientCards(prev => prev.map(c => c.id === cardId ? { ...c, saveError: null } : c));
   };
 
+  const handleUpdateSingleCardInCatalog = async (card) => {
+    const catalogId = card.catalogItemId || inventory.find(i => i.name.toLowerCase().trim() === (card.name || '').toLowerCase().trim())?.id;
+    if (!catalogId) {
+      if (showToast) showToast('Could not locate catalog item to update.', 'error');
+      return;
+    }
+    try {
+      const payload = {
+        costPrice: parseFloat(card.costPrice) || 0,
+        category: card.category || 'General',
+        minThreshold: parseFloat(card.minThreshold) || 10,
+        maxThreshold: parseFloat(card.maxThreshold) || 100,
+        packageConversions: card.packageConversions || getPresetPackagingForName(card.name) || null
+      };
+      await api.put(`/inventory/${catalogId}`, payload);
+      if (showToast) showToast(`"${card.name}" updated in catalog!`, 'success');
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      if (showToast) showToast(err.response?.data?.error || 'Failed to update catalog item', 'error');
+    }
+  };
+
   const handleSaveSingleCardToCatalog = async (card) => {
     if (!card.name || !card.name.trim()) {
       if (showToast) showToast('Please enter an ingredient name.', 'error');
@@ -651,7 +673,12 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
             : c
         ));
       } else {
-        if (showToast) showToast(err.response?.data?.error || 'Failed to save item', 'error');
+        const saveErrMsg = err.response?.data?.error || 'Failed to save item';
+        if (showErrorDialog) {
+          showErrorDialog({ title: 'Catalog Save Failed', message: saveErrMsg });
+        } else if (showToast) {
+          showToast(saveErrMsg, 'error');
+        }
       }
     }
   };
@@ -2726,6 +2753,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
               suppliers={suppliersList}
               onRefresh={onRefresh}
               showToast={showToast}
+              showErrorDialog={showErrorDialog}
             />
           </Suspense>
         </div>
