@@ -70,3 +70,19 @@ This document tracks all architectural, database, backend, and frontend modifica
 
 ---
 
+
+### 6. Autocomplete Live Catalog Merge & In-Form Update Feature
+- **File**: `frontend/src/components/admin/views/AdminInventoryView.jsx`
+  - **Live Catalog Autocomplete**:
+    - Add Form dropdown now merges real database catalog items (`inventory`) with hardcoded presets, allowing custom items and same-name items with distinct units (e.g., `Mozzarella Cheese [PACK]` and `Mozzarella Cheese [KG]`) to appear directly in the suggestion list.
+    - Added `Mozzarella Cheese (Pack)` preset to `INGREDIENT_PRESETS`.
+    - Dropdown `✓ In Stock` badge now validates exact match against both `name` AND `unit`.
+  - **Catalog Details Auto-load**:
+    - Selecting or typing an existing catalog item now auto-fills its `costPrice`, `unit`, `category`, and `packageConversions` directly from the database into the card fields.
+  - **Dynamic "Update Catalog" Action**:
+    - When an item is already in catalog (`IN CATALOG`), the green action button dynamically converts to a blue **"Update Catalog"** button.
+    - Allows direct updates to cost price, category, and packaging sub-units without having to navigate to the separate catalog table.
+  - **Crash Prevention**:
+    - Resolved `ReferenceError: AlertCircle is not defined` by importing `AlertCircle` from `lucide-react`, ensuring smooth inline error rendering when catalog name conflicts occur.
+
+---

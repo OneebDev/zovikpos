@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import {
   Package,
   AlertTriangle,
+  AlertCircle,
   Plus,
   RefreshCw,
   Search,
@@ -111,6 +112,7 @@ const INGREDIENT_PRESETS = [
   { label: '🥛 Doodh (Fresh Milk)', name: 'Milk', unit: 'L', category: 'Dairy', aliases: ['doodh', 'milk', 'tetra pak'] },
   { label: '🥛 TetraPak Milk (Full Cream)', name: 'TetraPak Milk', unit: 'PACK', category: 'Dairy', aliases: ['olpers', 'nestle', 'milk pack'] },
   { label: '🧀 Mozzarella Cheese', name: 'Mozzarella Cheese', unit: 'KG', category: 'Dairy', aliases: ['cheese', 'pizza cheese'] },
+  { label: '🧀 Mozzarella Cheese (Pack)', name: 'Mozzarella Cheese', unit: 'PACK', category: 'Dairy', aliases: ['cheese', 'pizza cheese', 'mozzarella pack', 'cheese pack'] },
   { label: '🧀 Cheddar Cheese Block', name: 'Cheddar Cheese', unit: 'KG', category: 'Dairy', aliases: ['cheddar', 'cheese'] },
   { label: '🧀 Cheese Slices', name: 'Cheese Slices', unit: 'PACK', category: 'Dairy', aliases: ['slice cheese', 'burger cheese'] },
   { label: '🧈 Makhan (Butter)', name: 'Butter', unit: 'KG', category: 'Dairy', aliases: ['makhan', 'butter', 'blue band'] },
@@ -419,25 +421,40 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
       const updated = { ...card, [field]: value };
       const cardName = (field === 'name' ? value : (card.name || '')).trim().toLowerCase();
       const cardUnit = (field === 'unit' ? value : (card.unit || 'KG')).trim().toLowerCase();
+      
+      // Match against active catalog inventory
       const exactCatalogItem = inventory.find(i =>
         i.name.toLowerCase().trim() === cardName &&
         (i.unit || 'KG').toLowerCase().trim() === cardUnit
-      );
+      ) || (field === 'name' ? inventory.find(i => i.name.toLowerCase().trim() === cardName) : null);
+
       updated.isNewItem = !exactCatalogItem;
       if (exactCatalogItem) {
+        updated.catalogItemId = exactCatalogItem.id;
         updated.category = exactCatalogItem.category || updated.category;
+        if (field === 'name') {
+          if (exactCatalogItem.unit) updated.unit = exactCatalogItem.unit;
+          if (exactCatalogItem.costPrice && (!card.costPrice || card.costPrice === '0' || card.costPrice === 0)) {
+            updated.costPrice = exactCatalogItem.costPrice;
+          }
+          if (exactCatalogItem.packageConversions) {
+            updated.packageConversions = exactCatalogItem.packageConversions;
+          }
+        }
       }
 
       if (field === 'name') {
         const val = value.trim().toLowerCase();
         const matched = INGREDIENT_PRESETS.find(p => p.name.toLowerCase().trim() === val);
-        if (matched && !card.unit) {
+        if (matched && !card.unit && !exactCatalogItem) {
           updated.unit = matched.unit;
           updated.category = matched.category;
         }
-        const presetPkg = getPresetPackagingForName(val);
-        if (presetPkg) {
-          updated.packageConversions = presetPkg;
+        if (!exactCatalogItem?.packageConversions) {
+          const presetPkg = getPresetPackagingForName(val);
+          if (presetPkg) {
+            updated.packageConversions = presetPkg;
+          }
         }
       }
       return updated;
@@ -452,7 +469,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
 
   // Preset Selection -> Updates empty card or appends a new card to the active target supplier card
   const handleSelectPresetForCard = (preset) => {
-    const exists = inventory.some(i => i.name.toLowerCase().trim() === preset.name.toLowerCase().trim());
+    const exists = inventory.some(i => i.name.toLowerCase().trim() === preset.name.toLowerCase().trim() && (i.unit || 'KG').toLowerCase().trim() === (preset.unit || 'KG').toLowerCase().trim());
 
     if (activeTargetCardId === 'card-1' || !additionalDeliveryCards.some(c => c.id === activeTargetCardId)) {
       // Adding into Card #1
@@ -3608,12 +3625,34 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                     <div className="absolute z-50 left-0 right-0 mt-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl max-h-52 overflow-y-auto divide-y divide-[var(--border-color)]">
                                       {(() => {
                                         const query = (card.name || '').toLowerCase().trim();
-                                        const matches = INGREDIENT_PRESETS.filter(p =>
+                                        // Include actual database catalog items first
+                                        const catalogMatches = (inventory || [])
+                                          .filter(inv => inv.name && inv.name.toLowerCase().includes(query))
+                                          .map(inv => ({
+                                            label: `📦 ${inv.name}`,
+                                            name: inv.name,
+                                            unit: inv.unit || 'KG',
+                                            category: inv.category || 'General',
+                                            isCatalog: true
+                                          }));
+
+                                        const presetMatches = INGREDIENT_PRESETS.filter(p =>
                                           p.name.toLowerCase().includes(query) ||
                                           p.label.toLowerCase().includes(query) ||
                                           p.category.toLowerCase().includes(query) ||
                                           (p.aliases && p.aliases.some(a => a.toLowerCase().includes(query)))
                                         );
+
+                                        // Deduplicate by name and unit
+                                        const seenPairs = new Set();
+                                        const matches = [];
+                                        for (const m of [...catalogMatches, ...presetMatches]) {
+                                          const key = `${m.name.toLowerCase().trim()}__${(m.unit || 'kg').toLowerCase().trim()}`;
+                                          if (!seenPairs.has(key)) {
+                                            seenPairs.add(key);
+                                            matches.push(m);
+                                          }
+                                        };
 
                                         if (matches.length === 0) {
                                           return (
@@ -3624,19 +3663,37 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                         }
 
                                         return matches.slice(0, 10).map((item, pIdx) => {
-                                          const exists = inventory.some(i => i.name.toLowerCase().trim() === item.name.toLowerCase().trim());
+                                          const exists = inventory.some(i => i.name.toLowerCase().trim() === item.name.toLowerCase().trim() && (i.unit || 'KG').toLowerCase().trim() === (item.unit || 'KG').toLowerCase().trim());
                                           return (
                                             <button
                                               key={pIdx}
                                               type="button"
                                               onMouseDown={(e) => e.preventDefault()}
                                               onClick={() => {
-                                                handleIngredientCardChange(card.id, 'name', item.name);
-                                                handleIngredientCardChange(card.id, 'unit', item.unit);
-                                                handleIngredientCardChange(card.id, 'category', item.category);
-                                                handleIngredientCardChange(card.id, 'isNewItem', !exists);
-                                                handleIngredientCardChange(card.id, 'showSuggestions', false);
-                                              }}
+                                                  const matchedCatalog = (inventory || []).find(inv => 
+                                                    inv.name.toLowerCase().trim() === item.name.toLowerCase().trim() &&
+                                                    (inv.unit || 'KG').toLowerCase().trim() === (item.unit || 'KG').toLowerCase().trim()
+                                                  ) || (inventory || []).find(inv => inv.name.toLowerCase().trim() === item.name.toLowerCase().trim());
+
+                                                  setIngredientCards(prev => prev.map(c => {
+                                                    if (c.id !== card.id) return c;
+                                                    return {
+                                                      ...c,
+                                                      name: item.name,
+                                                      unit: item.unit || matchedCatalog?.unit || 'KG',
+                                                      category: matchedCatalog?.category || item.category || 'General',
+                                                      costPrice: matchedCatalog?.costPrice ?? c.costPrice ?? 0,
+                                                      minThreshold: matchedCatalog?.minThreshold ?? c.minThreshold ?? 10,
+                                                      maxThreshold: matchedCatalog?.maxThreshold ?? c.maxThreshold ?? 100,
+                                                      packageConversions: matchedCatalog?.packageConversions || getPresetPackagingForName(item.name) || c.packageConversions,
+                                                      isNewItem: !matchedCatalog,
+                                                      catalogItemId: matchedCatalog?.id || null,
+                                                      showSuggestions: false,
+                                                      saveError: null,
+                                                      existingCatalogItem: null
+                                                    };
+                                                  }));
+                                                }}
                                               className="w-full text-left px-3.5 py-2 hover:bg-orange-500/10 transition-colors flex items-center justify-between group cursor-pointer"
                                             >
                                               <div className="flex items-center space-x-2">
@@ -3683,16 +3740,28 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                   </span>
                                 )}
 
-                                {!card.saved && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveSingleCardToCatalog(card)}
-                                    className="inventory-save-catalog-btn h-9 min-w-[148px] shrink-0 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95"
-                                    title="Save this single ingredient to catalog immediately"
-                                  >
-                                    <Save className="w-3 h-3" />
-                                    <span>Save in Catalog</span>
-                                  </button>
+                                                                {!card.saved && (
+                                  card.isNewItem ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveSingleCardToCatalog(card)}
+                                      className="inventory-save-catalog-btn h-9 min-w-[148px] shrink-0 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95"
+                                      title="Save this single new ingredient to catalog immediately"
+                                    >
+                                      <Save className="w-3 h-3" />
+                                      <span>Save in Catalog</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateSingleCardInCatalog(card)}
+                                      className="inventory-save-catalog-btn h-9 min-w-[148px] shrink-0 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95"
+                                      title="Update this existing catalog item (cost price, packaging, category)"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                      <span>Update Catalog</span>
+                                    </button>
+                                  )
                                 )}
 
                                 <button
@@ -4193,12 +4262,33 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                         <div className="absolute z-50 left-0 right-0 mt-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl max-h-52 overflow-y-auto divide-y divide-[var(--border-color)]">
                                           {(() => {
                                             const query = (item.name || '').toLowerCase().trim();
-                                            const matches = INGREDIENT_PRESETS.filter(p =>
+                                            // Include actual database catalog items first
+                                            const catalogMatches = (inventory || [])
+                                              .filter(inv => inv.name && inv.name.toLowerCase().includes(query))
+                                              .map(inv => ({
+                                                label: `📦 ${inv.name}`,
+                                                name: inv.name,
+                                                unit: inv.unit || 'KG',
+                                                category: inv.category || 'General',
+                                                isCatalog: true
+                                              }));
+
+                                            const presetMatches = INGREDIENT_PRESETS.filter(p =>
                                               p.name.toLowerCase().includes(query) ||
                                               p.label.toLowerCase().includes(query) ||
                                               p.category.toLowerCase().includes(query) ||
                                               (p.aliases && p.aliases.some(a => a.toLowerCase().includes(query)))
                                             );
+
+                                            const seenPairs = new Set();
+                                            const matches = [];
+                                            for (const m of [...catalogMatches, ...presetMatches]) {
+                                              const key = `${m.name.toLowerCase().trim()}__${(m.unit || 'kg').toLowerCase().trim()}`;
+                                              if (!seenPairs.has(key)) {
+                                                seenPairs.add(key);
+                                                matches.push(m);
+                                              }
+                                            };
 
                                             if (matches.length === 0) {
                                               return (
