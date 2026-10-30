@@ -570,7 +570,7 @@ const calculateStringSimilarity = (str1, str2) => {
  * 7. Candidate Suggestion (0.60 - 0.84) -> REVIEW_MATCH status (never auto-accepted)
  * 8. Below 0.60 -> NEW_ITEM status
  */
-const findBestFuzzyCatalogMatch = (rawName, sku, catalogItems) => {
+const findBestFuzzyCatalogMatch = (rawName, sku, catalogItems, itemUnit = null) => {
   if (!catalogItems || catalogItems.length === 0) {
     return { item: null, status: 'NEW_ITEM', confidence: 0 };
   }
@@ -608,10 +608,16 @@ const findBestFuzzyCatalogMatch = (rawName, sku, catalogItems) => {
     }
   } catch { /* Optional OCR parsing/lookup fallback. */ }
 
-  // 2. Exact Normalized Name Match
-  const exactMatch = catalogItems.find(c => normalizeItemName(c.name) === cleanRaw);
-  if (exactMatch) {
-    return { item: exactMatch, status: 'MATCHED', confidence: 1.0, matchType: 'EXACT_NAME' };
+  // 2. Exact Normalized Name Match (with unit awareness)
+  const exactNameMatches = catalogItems.filter(c => normalizeItemName(c.name) === cleanRaw);
+  if (exactNameMatches.length > 0) {
+    let best = exactNameMatches[0];
+    if (itemUnit && exactNameMatches.length > 1) {
+      const cleanUnit = String(itemUnit).trim().toUpperCase();
+      const unitMatch = exactNameMatches.find(c => String(c.unit || '').trim().toUpperCase() === cleanUnit);
+      if (unitMatch) best = unitMatch;
+    }
+    return { item: best, status: 'MATCHED', confidence: 1.0, matchType: 'EXACT_NAME' };
   }
 
   // 3. Approved POS / Alias Match (Bidirectional & Full Coverage)
@@ -1225,7 +1231,7 @@ const parseAndMatchInvoice = async ({ rawText, fileBuffer, fileBase64, fileName,
   const seenIds = new Set();
 
   for (const item of rawRows) {
-    const matchResult = findBestFuzzyCatalogMatch(item.rawName, item.sku, catalogItems);
+    const matchResult = findBestFuzzyCatalogMatch(item.rawName, item.sku, catalogItems, item.unit);
 
     if (matchResult && matchResult.status === 'MATCHED' && matchResult.item) {
       const match = matchResult.item;

@@ -273,7 +273,7 @@ model InventoryItem {
   recipeItems    RecipeItem[]
   receivingItems InventoryReceivingItem[]
 
-  @@unique([branchId, name])
+  @@unique([branchId, name, unit])
 }
 
 model InventoryLog {

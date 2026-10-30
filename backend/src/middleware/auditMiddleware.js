@@ -11,7 +11,15 @@ const { prisma } = require('../config/db');
  * @param {*} [params.newValue]
  * @param {Object} [params.req] - Express request for IP tracking
  */
-const logAudit = async ({ userId = null, action, entity, entityId = null, oldValue = null, newValue = null, req = null }) => {
+const logAudit = async (firstArg, ...rest) => {
+  let params;
+  if (firstArg && typeof firstArg === 'object' && !Array.isArray(firstArg) && firstArg.action !== undefined) {
+    params = firstArg;
+  } else {
+    const [userId, action, entity, entityId, oldValue, newValue, req] = [firstArg, ...rest];
+    params = { userId, action, entity, entityId, oldValue, newValue, req };
+  }
+  const { userId = null, action, entity, entityId = null, oldValue = null, newValue = null, req = null } = params;
   try {
     const ip = req ? (req.ip || req.headers?.['x-forwarded-for'] || req.connection?.remoteAddress || null) : null;
     const finalUserId = userId || (req?.user?.id || null);
@@ -26,11 +34,13 @@ const logAudit = async ({ userId = null, action, entity, entityId = null, oldVal
     const oldStr = oldValue !== null && oldValue !== undefined ? (typeof oldValue === 'object' ? JSON.stringify(oldValue) : String(oldValue)) : null;
     const newStr = newValue !== null && newValue !== undefined ? (typeof newValue === 'object' ? JSON.stringify(newValue) : String(newValue)) : null;
 
+    const safeAction = String(action || 'SYSTEM_ACTION').trim();
+    const safeEntity = String(entity || 'System').trim();
     await prisma.auditLog.create({
       data: {
         userId: validUserId,
-        action,
-        entity,
+        action: safeAction,
+        entity: safeEntity,
         entityId: entityId ? String(entityId) : null,
         oldValue: oldStr,
         newValue: newStr,

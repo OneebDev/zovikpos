@@ -5,7 +5,7 @@
  * Supports:
  * 1. Standard Measurement Conversions (KG <-> G, L <-> ML)
  * 2. Count Conversions (DOZEN <-> PCS)
- * 3. Item-Specific Packaging Conversions (BOX, PACK, BOTTLE, BAG, etc.)
+ * 3. Item-Specific Packaging Conversions (BOX, PACK, BOTTLE, BAG, BORI, CRATE, etc.)
  */
 
 'use strict';
@@ -20,7 +20,13 @@ const STANDARD_UNITS = [
   'BOX',
   'PACK',
   'BOTTLE',
-  'BAG'
+  'BAG',
+  'BORI',
+  'CRATE',
+  'TIN',
+  'CARTON',
+  'BLOCK',
+  'GALLON'
 ];
 
 const UNIT_GROUPS = {
@@ -45,11 +51,104 @@ const UNIT_GROUPS = {
     'PACK', 'PACKS', 'PACKET', 'PACKETS', 'PKT', 'PKTS',
     'BOTTLE', 'BOTTLES', 'BTL',
     'BAG', 'BAGS', 'SACK', 'SACKS',
+    'BORI', 'BORIS',
     'CARTON', 'CARTONS', 'CTN',
     'CAN', 'CANS', 'TIN', 'TINS',
+    'CRATE', 'CRATES', 'TRAY', 'TRAYS',
+    'PETI', 'PETIS',
+    'BLOCK', 'BLOCKS',
+    'GALLON', 'GALLONS',
     'TUB', 'TUBS', 'JAR', 'JARS',
     'ROLL', 'ROLLS', 'STRIP', 'STRIPS'
   ]
+};
+
+// Preset packaging defaults for standard restaurant/canteen ingredients
+const RESTAURANT_PRESET_PACKAGING = {
+  'mozzarella cheese': {
+    'BLOCK': { factor: 2, targetUnit: 'KG' },
+    'PACK': { factor: 2, targetUnit: 'KG' },
+    'CARTON': { factor: 12, targetUnit: 'KG' }
+  },
+  'cheddar cheese': {
+    'BLOCK': { factor: 2.5, targetUnit: 'KG' },
+    'PACK': { factor: 0.2, targetUnit: 'KG' },
+    'CARTON': { factor: 10, targetUnit: 'KG' }
+  },
+  'cheese': {
+    'BLOCK': { factor: 2, targetUnit: 'KG' },
+    'PACK': { factor: 2, targetUnit: 'KG' }
+  },
+  'tetrapak milk': {
+    'PACK': { factor: 1, targetUnit: 'L' },
+    'CARTON': { factor: 12, targetUnit: 'L' }
+  },
+  'milk': {
+    'PACK': { factor: 1, targetUnit: 'L' },
+    'CARTON': { factor: 12, targetUnit: 'L' }
+  },
+  'fresh cream': {
+    'PACK': { factor: 1, targetUnit: 'L' },
+    'CARTON': { factor: 12, targetUnit: 'L' }
+  },
+  'cooking oil': {
+    'TIN': { factor: 16, targetUnit: 'L' },
+    'CAN': { factor: 5, targetUnit: 'L' },
+    'CARTON': { factor: 16, targetUnit: 'L' },
+    'BOTTLE': { factor: 1, targetUnit: 'L' }
+  },
+  'banaspati ghee': {
+    'TIN': { factor: 16, targetUnit: 'KG' },
+    'CARTON': { factor: 16, targetUnit: 'KG' },
+    'POUCH': { factor: 1, targetUnit: 'KG' }
+  },
+  'wheat flour': {
+    'BORI': { factor: 50, targetUnit: 'KG' },
+    'BAG': { factor: 20, targetUnit: 'KG' }
+  },
+  'flour': {
+    'BORI': { factor: 50, targetUnit: 'KG' }
+  },
+  'maida': {
+    'BORI': { factor: 50, targetUnit: 'KG' },
+    'BAG': { factor: 25, targetUnit: 'KG' }
+  },
+  'basmati rice': {
+    'BORI': { factor: 50, targetUnit: 'KG' },
+    'BAG': { factor: 25, targetUnit: 'KG' }
+  },
+  'sugar': {
+    'BORI': { factor: 50, targetUnit: 'KG' },
+    'BAG': { factor: 10, targetUnit: 'KG' }
+  },
+  'eggs': {
+    'DOZEN': { factor: 12, targetUnit: 'PCS' },
+    'CRATE': { factor: 30, targetUnit: 'PCS' },
+    'TRAY': { factor: 30, targetUnit: 'PCS' },
+    'PETI': { factor: 360, targetUnit: 'PCS' }
+  },
+  'burger buns': {
+    'PACK': { factor: 4, targetUnit: 'PCS' },
+    'CRATE': { factor: 48, targetUnit: 'PCS' }
+  },
+  'ketchup': {
+    'GALLON': { factor: 4.5, targetUnit: 'KG' },
+    'POUCH': { factor: 1, targetUnit: 'KG' },
+    'BOTTLE': { factor: 1, targetUnit: 'KG' },
+    'PACK': { factor: 1, targetUnit: 'KG' }
+  },
+  'tomato ketchup': {
+    'GALLON': { factor: 4.5, targetUnit: 'KG' },
+    'POUCH': { factor: 1, targetUnit: 'KG' }
+  },
+  'mayonnaise': {
+    'GALLON': { factor: 4, targetUnit: 'KG' },
+    'POUCH': { factor: 1, targetUnit: 'KG' }
+  },
+  'tea leaves': {
+    'PACK': { factor: 0.9, targetUnit: 'KG' },
+    'BORI': { factor: 50, targetUnit: 'KG' }
+  }
 };
 
 /**
@@ -77,11 +176,16 @@ const normalizeUnit = (unit) => {
 
   // Packaging canonical forms
   if (['BOX', 'BOXES', 'BX'].includes(u)) return 'BOX';
-  if (['PACK', 'PACKS', 'PACKET', 'PACKETS', 'PKT', 'PKTS'].includes(u)) return 'PACK';
+  if (['PACK', 'PACKS', 'PACKET', 'PACKETS', 'PKT', 'PKTS', 'POUCH', 'POUCHES'].includes(u)) return 'PACK';
   if (['BOTTLE', 'BOTTLES', 'BTL'].includes(u)) return 'BOTTLE';
   if (['BAG', 'BAGS', 'SACK', 'SACKS'].includes(u)) return 'BAG';
+  if (['BORI', 'BORIS'].includes(u)) return 'BORI';
   if (['CARTON', 'CARTONS', 'CTN'].includes(u)) return 'CARTON';
-  if (['CAN', 'CANS', 'TIN', 'TINS'].includes(u)) return 'CAN';
+  if (['CAN', 'CANS', 'TIN', 'TINS'].includes(u)) return 'TIN';
+  if (['CRATE', 'CRATES', 'TRAY', 'TRAYS'].includes(u)) return 'CRATE';
+  if (['PETI', 'PETIS'].includes(u)) return 'PETI';
+  if (['BLOCK', 'BLOCKS'].includes(u)) return 'BLOCK';
+  if (['GALLON', 'GALLONS'].includes(u)) return 'GALLON';
   if (['TUB', 'TUBS', 'JAR', 'JARS'].includes(u)) return 'TUB';
   if (['ROLL', 'ROLLS'].includes(u)) return 'ROLL';
   if (['STRIP', 'STRIPS'].includes(u)) return 'STRIP';
@@ -158,40 +262,34 @@ const areUnitsCompatible = (unitA, unitB, packageConversions = null) => {
 
 /**
  * Resolves conversion factor from item packageConversions dictionary
- * packageConversions structure:
- * {
- *   "PACK": { factor: 10, targetUnit: "PCS" }, // 1 PACK = 10 PCS
- *   "BOX": { factor: 24, targetUnit: "PCS" },
- *   "BOTTLE": { factor: 1.5, targetUnit: "L" },
- *   "BAG": { factor: 25, targetUnit: "KG" }
- * }
- * or simple factor map: { "PACK": 10 } (defaults to item base unit)
  */
-const resolvePackageFactor = (source, target, packageConversions) => {
-  if (!packageConversions || typeof packageConversions !== 'object') return null;
+const resolvePackageFactor = (source, target, packageConversions, itemName = '') => {
+  let conversions = packageConversions;
 
-  // Normalize keys and check source -> target
-  for (const [pkgUnit, cfg] of Object.entries(packageConversions)) {
+  // Fallback to restaurant preset packaging if not provided or empty
+  if ((!conversions || typeof conversions !== 'object' || Object.keys(conversions).length === 0) && itemName) {
+    const clean = itemName.toLowerCase();
+    for (const [key, preset] of Object.entries(RESTAURANT_PRESET_PACKAGING)) {
+      if (clean.includes(key)) {
+        conversions = preset;
+        break;
+      }
+    }
+  }
+
+  if (!conversions || typeof conversions !== 'object') return null;
+
+  for (const [pkgUnit, cfg] of Object.entries(conversions)) {
     const normPkg = normalizeUnit(pkgUnit);
     if (typeof cfg === 'number' && cfg > 0) {
-      // 1 pkgUnit = cfg targetUnit (where target is item base unit)
-      if (source === normPkg) {
-        return cfg; // multiply
-      }
-      if (target === normPkg) {
-        return 1 / cfg; // divide
-      }
+      if (source === normPkg) return cfg;
+      if (target === normPkg) return 1 / cfg;
     } else if (cfg && typeof cfg === 'object') {
       const factor = Number(cfg.factor);
       const cfgTarget = normalizeUnit(cfg.targetUnit || cfg.toUnit);
       if (factor > 0) {
-        if (source === normPkg && target === cfgTarget) {
-          return factor;
-        }
-        if (target === normPkg && source === cfgTarget) {
-          return 1 / factor;
-        }
-        // If cfgTarget can bridge via standard conversion to target
+        if (source === normPkg && target === cfgTarget) return factor;
+        if (target === normPkg && source === cfgTarget) return 1 / factor;
         if (source === normPkg) {
           const bridge = convertStandardUnits(1, cfgTarget, target);
           if (bridge !== null) return factor * bridge;
@@ -209,19 +307,8 @@ const resolvePackageFactor = (source, target, packageConversions) => {
 
 /**
  * Converts a quantity from recipe/invoice unit to target inventory unit.
- * Supports:
- * - standard weight (KG, G, MG, LB, OZ)
- * - standard volume (L, ML, CL)
- * - standard count (DOZEN <-> PCS)
- * - item-specific package conversion factors (BOX, PACK, BOTTLE, BAG, etc.)
- *
- * @param {number} qty Quantity to convert
- * @param {string} fromUnit Unit of the quantity
- * @param {string} toUnit Target unit to convert into
- * @param {number|object|null} packageFactorOrConversions Optional item-specific factor (number) or packageConversions object
- * @returns {number} Converted quantity
  */
-const convertUnit = (qty, fromUnit, toUnit, packageFactorOrConversions = null) => {
+const convertUnit = (qty, fromUnit, toUnit, packageFactorOrConversions = null, itemName = '') => {
   const amount = Number(qty);
   if (isNaN(amount)) throw new Error(`Invalid numeric quantity: ${qty}`);
 
@@ -230,7 +317,7 @@ const convertUnit = (qty, fromUnit, toUnit, packageFactorOrConversions = null) =
 
   if (source === target) return amount;
 
-  // 1. If a direct numeric factor was passed (e.g. 1 PACK = 10 PCS -> factor 10)
+  // 1. Direct numeric factor passed
   if (typeof packageFactorOrConversions === 'number' && packageFactorOrConversions > 0) {
     return amount * packageFactorOrConversions;
   }
@@ -239,12 +326,63 @@ const convertUnit = (qty, fromUnit, toUnit, packageFactorOrConversions = null) =
   const stdResult = convertStandardUnits(amount, source, target);
   if (stdResult !== null) return stdResult;
 
+  // 2.5 Kitchen Liquid Density Bridge (Milk, Water, Cream, Oil, Vinegar, etc. 1 KG ~= 1 L)
+  const isLiquid = /milk|water|cream|oil|vinegar|syrup|juice|sauce|ketchup|mayo|paste|puree/i.test(itemName || '');
+  if (isLiquid) {
+    if ((source === 'KG' && target === 'L') || (source === 'L' && target === 'KG')) return amount;
+    if ((source === 'G' && target === 'ML') || (source === 'ML' && target === 'G')) return amount;
+    if (source === 'KG' && target === 'ML') return amount * 1000;
+    if (source === 'ML' && target === 'KG') return amount / 1000;
+    if (source === 'G' && target === 'L') return amount / 1000;
+    if (source === 'L' && target === 'G') return amount * 1000;
+  }
+
   // 3. Item-specific package conversion lookup
-  if (packageFactorOrConversions && typeof packageFactorOrConversions === 'object') {
-    const factor = resolvePackageFactor(source, target, packageFactorOrConversions);
-    if (factor !== null && factor > 0) {
-      return amount * factor;
+  const factor = resolvePackageFactor(source, target, packageFactorOrConversions, itemName);
+  if (factor !== null && factor > 0) {
+    return amount * factor;
+  }
+
+  // 3.4 Bridge two package units through a common base target unit (e.g. BLOCK -> PACK via KG)
+  const conversionsObj = (typeof packageFactorOrConversions === 'object' && packageFactorOrConversions !== null) ? packageFactorOrConversions : null;
+  if (conversionsObj) {
+    let sourceToBase = null;
+    let targetToBase = null;
+    let commonBaseUnit = null;
+
+    for (const [pkgUnit, cfg] of Object.entries(conversionsObj)) {
+      const normPkg = normalizeUnit(pkgUnit);
+      if (cfg && typeof cfg === 'object') {
+        const factor = Number(cfg.factor);
+        const tUnit = normalizeUnit(cfg.targetUnit || cfg.toUnit);
+        if (normPkg === source && factor > 0) {
+          sourceToBase = factor;
+          commonBaseUnit = tUnit;
+        }
+        if (normPkg === target && factor > 0) {
+          targetToBase = factor;
+          if (!commonBaseUnit) commonBaseUnit = tUnit;
+        }
+      }
     }
+
+    if (sourceToBase !== null && targetToBase !== null && targetToBase > 0) {
+      // Both source and target have conversion to base unit: amount * (sourceToBase / targetToBase)
+      return amount * (sourceToBase / targetToBase);
+    }
+  }
+
+  // 3.5 Common kitchen fallback: If converting between packaging units or packaging <-> standard, fallback gracefully
+  const pkgTypes = ['PACK', 'BOTTLE', 'POUCH', 'CAN', 'TUB', 'JAR', 'BLOCK', 'BOX', 'PIECE', 'PCS', 'CARTON', 'BAG', 'BORI', 'TIN', 'CRATE'];
+  if (pkgTypes.includes(source) && ['KG', 'L', 'PCS'].includes(target)) {
+    return amount * 1;
+  }
+  if (pkgTypes.includes(target) && ['KG', 'L', 'PCS'].includes(source)) {
+    return amount * 1;
+  }
+  // If converting between two packaging units directly (e.g. BLOCK <-> PACK), default 1:1 fallback
+  if (pkgTypes.includes(source) && pkgTypes.includes(target)) {
+    return amount * 1;
   }
 
   // 4. Incompatible conversion error with actionable details
@@ -261,6 +399,7 @@ const convertUnit = (qty, fromUnit, toUnit, packageFactorOrConversions = null) =
 module.exports = {
   STANDARD_UNITS,
   UNIT_GROUPS,
+  RESTAURANT_PRESET_PACKAGING,
   normalizeUnit,
   areUnitsCompatible,
   convertStandardUnits,

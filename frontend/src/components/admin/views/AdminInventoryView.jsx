@@ -30,7 +30,9 @@ import {
 import { exportToCSV } from '../../../utils/exportUtils';
 import api from '../../../services/api';
 import { inferCategoryFromItemName } from '../../../utils/categoryHelper';
+import { getPresetPackagingForName, PRESET_PACKAGING_DEFAULTS } from '../../../utils/packagingHelper';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import PackagingUnitsEditor from '../common/PackagingUnitsEditor';
 import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 const AdminInventoryReceivingView = lazy(() => import('./AdminInventoryReceivingView'));
 const AdminRecipeBuilderView = lazy(() => import('./AdminRecipeBuilderView'));
@@ -327,7 +329,8 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
       originalDescription: overrides.originalDescription || '',
       isNewItem: overrides.isNewItem !== undefined ? overrides.isNewItem : true,
       saved: overrides.saved || false,
-      showSuggestions: false
+      showSuggestions: false,
+      packageConversions: overrides.packageConversions || (overrides.name ? getPresetPackagingForName(overrides.name) : null)
     };
   };
 
@@ -414,14 +417,27 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
     setIngredientCards(prev => prev.map(card => {
       if (card.id !== cardId) return card;
       const updated = { ...card, [field]: value };
+      const cardName = (field === 'name' ? value : (card.name || '')).trim().toLowerCase();
+      const cardUnit = (field === 'unit' ? value : (card.unit || 'KG')).trim().toLowerCase();
+      const exactCatalogItem = inventory.find(i =>
+        i.name.toLowerCase().trim() === cardName &&
+        (i.unit || 'KG').toLowerCase().trim() === cardUnit
+      );
+      updated.isNewItem = !exactCatalogItem;
+      if (exactCatalogItem) {
+        updated.category = exactCatalogItem.category || updated.category;
+      }
+
       if (field === 'name') {
         const val = value.trim().toLowerCase();
-        const exists = inventory.some(i => i.name.toLowerCase().trim() === val);
-        updated.isNewItem = !exists;
         const matched = INGREDIENT_PRESETS.find(p => p.name.toLowerCase().trim() === val);
-        if (matched) {
+        if (matched && !card.unit) {
           updated.unit = matched.unit;
           updated.category = matched.category;
+        }
+        const presetPkg = getPresetPackagingForName(val);
+        if (presetPkg) {
+          updated.packageConversions = presetPkg;
         }
       }
       return updated;
@@ -555,6 +571,31 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
   };
 
   // Save single card to catalog (creates catalog item with 0 stock)
+    // Link card to an existing catalog item
+  const handleLinkCardToExistingItem = (cardId, existingItem) => {
+    setIngredientCards(prev => prev.map(c => {
+      if (c.id === cardId) {
+        return {
+          ...c,
+          name: existingItem.name,
+          unit: existingItem.unit,
+          category: existingItem.category || c.category,
+          isNewItem: false,
+          saved: true,
+          saveError: null,
+          existingCatalogItem: null,
+          packageConversions: existingItem.packageConversions || c.packageConversions
+        };
+      }
+      return c;
+    }));
+    if (showToast) showToast(`Linked "${existingItem.name}" to existing catalog item (Unit: ${existingItem.unit}).`, 'info');
+  };
+
+  const handleDismissCardSaveError = (cardId) => {
+    setIngredientCards(prev => prev.map(c => c.id === cardId ? { ...c, saveError: null } : c));
+  };
+
   const handleSaveSingleCardToCatalog = async (card) => {
     if (!card.name || !card.name.trim()) {
       if (showToast) showToast('Please enter an ingredient name.', 'error');
@@ -572,7 +613,8 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
         sku: card.sku || null,
         supplierId: card.supplierId ? parseInt(card.supplierId, 10) : null,
         expiryDate: card.expiryDate ? card.expiryDate : null,
-        notes: card.notes || null
+        notes: card.notes || null,
+        packageConversions: card.packageConversions || getPresetPackagingForName(card.name) || null
       };
       await api.post('/inventory', payload);
       setIngredientCards(prev => prev.map(c => c.id === card.id ? { ...c, isNewItem: false, saved: true } : c));
@@ -580,7 +622,20 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
       if (showToast) showToast(`"${card.name}" saved to catalog! (Stock: 0)`, 'success');
       if (onRefresh) onRefresh();
     } catch (err) {
-      if (showToast) showToast(err.response?.data?.error || 'Failed to save item', 'error');
+      const existingItem = err.response?.data?.existingItem;
+      if (existingItem) {
+        setIngredientCards(prev => prev.map(c =>
+          c.id === card.id
+            ? {
+                ...c,
+                saveError: `"${card.name}" already exists in catalog (Base Unit: ${existingItem.unit}). Change the name or link to the existing item.`,
+                existingCatalogItem: existingItem
+              }
+            : c
+        ));
+      } else {
+        if (showToast) showToast(err.response?.data?.error || 'Failed to save item', 'error');
+      }
     }
   };
 
@@ -605,7 +660,8 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
         maxThreshold: parseFloat(c.maxThreshold) || 100,
         sku: c.sku || null,
         supplierId: c.supplierId ? parseInt(c.supplierId, 10) : null,
-        expiryDate: c.expiryDate ? c.expiryDate : null
+        expiryDate: c.expiryDate ? c.expiryDate : null,
+        packageConversions: c.packageConversions || getPresetPackagingForName(c.name) || null
       }));
       const response = await api.post('/inventory/bulk', { items: itemsPayload });
       const results = response.data?.results || [];
@@ -847,12 +903,21 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
           updated.quantity = value;
           updated.stockLevel = value;
         }
+        const cardName = (field === 'name' ? value : (item.name || '')).trim().toLowerCase();
+        const cardUnit = (field === 'unit' ? value : (item.unit || 'KG')).trim().toLowerCase();
+        const exactCatalogItem = inventory.find(i =>
+          i.name.toLowerCase().trim() === cardName &&
+          (i.unit || 'KG').toLowerCase().trim() === cardUnit
+        );
+        updated.isNewItem = !exactCatalogItem;
+        if (exactCatalogItem) {
+          updated.category = exactCatalogItem.category || updated.category;
+        }
+
         if (field === 'name') {
           const val = value.trim().toLowerCase();
-          const exists = inventory.some(i => i.name.toLowerCase().trim() === val);
-          updated.isNewItem = !exists;
           const matched = INGREDIENT_PRESETS.find(p => p.name.toLowerCase().trim() === val);
-          if (matched) {
+          if (matched && !item.unit) {
             updated.unit = matched.unit;
             updated.category = matched.category;
           }
@@ -1881,6 +1946,7 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
         costPrice: parseFloat(editingItem.costPrice) || 0,
         sku: editingItem.sku || null,
         supplierId: editingItem.supplierId ? parseInt(editingItem.supplierId, 10) : null,
+        packageConversions: editingItem.packageConversions || getPresetPackagingForName(editingItem.name) || null,
       };
       await api.put(`/inventory/${editingItem.id}`, payload);
       if (showToast) showToast(`Updated "${editingItem.name}" in catalog!`);
@@ -2851,23 +2917,12 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-[var(--text-main)] uppercase mb-1 tracking-wider text-[10px]">
-                    Unit *
+                    Base Unit (Fixed)
                   </label>
-                  <ThemedSelect
-                    value={editingItem.unit}
-                    onChange={(e) => setEditingItem({ ...editingItem, unit: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500"
-                  >
-                    <option value="KG">KG</option>
-                    <option value="G">G</option>
-                    <option value="L">L</option>
-                    <option value="ML">ML</option>
-                    <option value="PCS">PCS</option>
-                    <option value="DOZEN">DOZEN</option>
-                    <option value="BOX">BOX</option>
-                    <option value="PACK">PACK</option>
-                    <option value="BOTTLE">BOTTLE</option>
-                  </ThemedSelect>
+                  <div className="w-full px-3.5 py-2.5 bg-[var(--bg-color)]/60 border border-[var(--border-color)] rounded-xl text-xs font-black text-orange-400 flex items-center justify-between cursor-not-allowed" title="Base unit cannot be changed once created. To use a different base unit, delete and recreate the item.">
+                    <span>{editingItem.unit}</span>
+                    <span className="text-[10px] font-semibold text-[var(--text-muted)] flex items-center gap-1">🔒 Locked</span>
+                  </div>
                 </div>
 
                 <div>
@@ -2941,6 +2996,14 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                     </option>
                   ))}
                 </ThemedSelect>
+              </div>
+
+              <div className="pt-2">
+                <PackagingUnitsEditor
+                  baseUnit={editingItem.unit || 'KG'}
+                  packageConversions={editingItem.packageConversions || getPresetPackagingForName(editingItem.name)}
+                  onChange={(updatedConversions) => setEditingItem({ ...editingItem, packageConversions: updatedConversions })}
+                />
               </div>
 
               <div className="flex justify-end space-x-2 pt-3 border-t border-[var(--border-color)]">
@@ -3643,6 +3706,34 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                               </div>
                             </div>
 
+                            {/* Inline Duplicate / Unit Mismatch Alert Banner */}
+                            {card.saveError && (
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300 animate-fade-in">
+                                <div className="flex items-center gap-2">
+                                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                                  <span>{card.saveError}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                                  {card.existingCatalogItem && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleLinkCardToExistingItem(card.id, card.existingCatalogItem)}
+                                      className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold shadow-sm transition-all cursor-pointer"
+                                    >
+                                      Link to Existing ({card.existingCatalogItem.unit})
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDismissCardSaveError(card.id)}
+                                    className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[var(--text-main)] text-[11px] font-medium transition-all cursor-pointer"
+                                  >
+                                    Change Name
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
                             {/* Clean Fields Grid (Receive Stock Style): Quantity, Unit, Category, Cost per Unit, Expiry Date (Optional), Subtotal */}
                             <div className="grid min-w-0 grid-cols-[repeat(2,minmax(0,1fr))] gap-2.5 items-start pt-2 border-t border-[var(--border-color)]/60 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_minmax(0,1.2fr)_minmax(150px,1.35fr)]">
                               {/* Quantity / Initial Stock */}
@@ -3749,6 +3840,15 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                 </div>
                               </div>
                             </div>
+
+                            {/* Custom Packaging Sub-Units Setup */}
+                            <PackagingUnitsEditor
+                              baseUnit={card.unit || 'KG'}
+                              packageConversions={card.packageConversions || getPresetPackagingForName(card.name)}
+                              onChange={(updatedConversions) =>
+                                handleIngredientCardChange(card.id, 'packageConversions', updatedConversions)
+                              }
+                            />
                           </div>
                         );
                       })}
@@ -4297,6 +4397,15 @@ const AdminInventoryView = ({ inventory = [], logs = [], onRefresh, showToast, s
                                     </div>
                                   </div>
                                 </div>
+
+                                {/* Custom Packaging Sub-Units Setup */}
+                                <PackagingUnitsEditor
+                                  baseUnit={item.unit || 'KG'}
+                                  packageConversions={item.packageConversions || getPresetPackagingForName(item.name)}
+                                  onChange={(updatedConversions) =>
+                                    handleAdditionalCardItemChange(card.id, item.id, 'packageConversions', updatedConversions)
+                                  }
+                                />
                               </div>
                             );
                           })}

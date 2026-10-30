@@ -303,8 +303,9 @@ const receiveOneInTransaction = async (tx, receivingId) => {
     const item = await tx.inventoryItem.findUnique({ where: { id: line.inventoryItemId } });
     if (!item) throw new BatchError(`Catalog item ${line.inventoryItemId} no longer exists.`, 400, receiving.receivingNumber);
     let quantity;
-    try { quantity = convertUnit(line.quantity, line.unit, item.unit, item.packageConversions); }
+    try { quantity = convertUnit(line.quantity, line.unit, item.unit, item.packageConversions, item.name); }
     catch (error) {
+      console.error(`[Receiving Batch] Unit conversion error on item "${item.name}":`, error.message, { lineUnit: line.unit, itemUnit: item.unit, pkg: item.packageConversions });
       throw new BatchError(`${item.name}: ${error.message}`, 400, receiving.receivingNumber);
     }
     if (!Number.isFinite(quantity) || quantity <= 0) throw new BatchError(`${item.name}: converted quantity must be greater than zero.`, 400, receiving.receivingNumber);

@@ -155,7 +155,8 @@ const getInventoryItems = async (req, res) => {
     if (!branchId) {
       const seen = new Map();
       for (const item of items) {
-        const key = item.name.trim().toLowerCase();
+        // Group by item name AND unit so items with different base units remain distinct!
+        const key = `${item.name.trim().toLowerCase()}__${String(item.unit || '').trim().toLowerCase()}`;
         if (!seen.has(key)) {
           seen.set(key, { ...item });
         } else {
@@ -222,17 +223,19 @@ const addInventoryItem = async (req, res) => {
       resolvedBranchId = firstB ? firstB.id : 1;
     }
 
-    // Check branch uniqueness (case-insensitive)
+    // Check branch uniqueness for name + unit (case-insensitive)
+    const itemUnitUpper = (unit || 'KG').trim().toUpperCase();
     const existingSameBranch = await prisma.inventoryItem.findFirst({
       where: {
         name: { equals: name.trim(), mode: 'insensitive' },
+        unit: { equals: itemUnitUpper, mode: 'insensitive' },
         branchId: resolvedBranchId
       }
     });
 
     if (existingSameBranch) {
       return res.status(400).json({
-        error: `An inventory item named "${name}" already exists for this branch.`,
+        error: `An inventory item named "${name}" with unit "${itemUnitUpper}" already exists for this branch.`,
         existingItem: existingSameBranch
       });
     }
@@ -762,7 +765,7 @@ const getRecipeMargins = async (req, res) => {
           const inv = r.inventoryItem;
           if (inv && inv.costPrice) {
             try {
-              const convertedQty = convertUnit(r.quantity, r.unit, inv.unit, inv.packageConversions);
+              const convertedQty = convertUnit(r.quantity, r.unit, inv.unit, inv.packageConversions, inv.name);
               foodCost += convertedQty * inv.costPrice;
             } catch {
               foodCost += r.quantity * inv.costPrice;
@@ -2159,7 +2162,7 @@ const confirmReceiving = async (req, res) => {
           throw new Error(`Inventory item ID ${item.inventoryItemId} not found.`);
         }
 
-        const convertedReceivedQty = convertUnit(item.quantity, item.unit, existingItem.unit, existingItem.packageConversions);
+        const convertedReceivedQty = convertUnit(item.quantity, item.unit, existingItem.unit, existingItem.packageConversions, existingItem.name);
         const qtyBefore = existingItem.stockLevel;
         const qtyAfter = qtyBefore + convertedReceivedQty;
         const purchaseQty = convertedReceivedQty;
@@ -3553,10 +3556,11 @@ const bulkAddInventoryItems = async (req, res) => {
       const trimmedName = String(name).trim();
       const trimmedUnit = String(unit).trim().toUpperCase();
 
-      // Check if duplicate item name already exists in branch
+      // Check if duplicate item name with SAME UNIT already exists in branch
       const existing = await prisma.inventoryItem.findFirst({
         where: {
           name: { equals: trimmedName, mode: 'insensitive' },
+          unit: { equals: trimmedUnit, mode: 'insensitive' },
           branchId: resolvedBranchId
         }
       });
@@ -3610,6 +3614,7 @@ const bulkAddInventoryItems = async (req, res) => {
             expiryDate: expiryDate ? new Date(expiryDate) : null,
             supplierId: supplierId ? parseInt(supplierId, 10) : null,
             supplierName: itemData.supplierName ? String(itemData.supplierName).trim() : null,
+            packageConversions: itemData.packageConversions || null,
             branchId: resolvedBranchId
           },
           include: { supplier: true, branch: true }

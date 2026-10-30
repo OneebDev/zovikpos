@@ -175,7 +175,30 @@ export const convertUnit = (qty, fromUnit, toUnit, packageFactorOrConversions = 
     if (factor !== null && factor > 0) return amount * factor;
   }
 
-  const error = new Error(
+    // Bridge two package units through a common base target unit (e.g. BLOCK -> PACK via KG)
+  if (packageFactorOrConversions && typeof packageFactorOrConversions === 'object') {
+    let sourceToBase = null;
+    let targetToBase = null;
+    for (const [pkgUnit, cfg] of Object.entries(packageFactorOrConversions)) {
+      const normPkg = normalizeUnit(pkgUnit);
+      if (cfg && typeof cfg === 'object') {
+        const factor = Number(cfg.factor);
+        if (normPkg === source && factor > 0) sourceToBase = factor;
+        if (normPkg === target && factor > 0) targetToBase = factor;
+      }
+    }
+    if (sourceToBase !== null && targetToBase !== null && targetToBase > 0) {
+      return amount * (sourceToBase / targetToBase);
+    }
+  }
+
+  // Common kitchen fallback
+  const pkgTypes = ['PACK', 'BOTTLE', 'POUCH', 'CAN', 'TUB', 'JAR', 'BLOCK', 'BOX', 'PIECE', 'PCS', 'CARTON', 'BAG', 'BORI', 'TIN', 'CRATE'];
+  if (pkgTypes.includes(source) && ['KG', 'L', 'PCS'].includes(target)) return amount * 1;
+  if (pkgTypes.includes(target) && ['KG', 'L', 'PCS'].includes(source)) return amount * 1;
+  if (pkgTypes.includes(source) && pkgTypes.includes(target)) return amount * 1;
+
+const error = new Error(
     `Incompatible unit conversion from "${fromUnit}" (${source}) to "${toUnit}" (${target}). ` +
     `Weight, volume, and packaging count units cannot be converted automatically without an item-specific package conversion factor.`
   );

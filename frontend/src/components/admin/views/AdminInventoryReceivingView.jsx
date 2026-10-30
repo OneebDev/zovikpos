@@ -30,7 +30,10 @@ import {
 import api from '../../../services/api';
 import { exportToCSV } from '../../../utils/exportUtils';
 import { inferCategoryFromItemName, CATALOG_CATEGORIES } from '../../../utils/categoryHelper';
+import { getAvailableUnitsForItem, convertQuantityWithPackaging, getPresetPackagingForName } from '../../../utils/packagingHelper';
 import GlobalDeleteModal from '../../common/GlobalDeleteModal';
+import PackagingUnitsEditor from '../common/PackagingUnitsEditor';
+import ReviewSubUnitsModal from '../common/ReviewSubUnitsModal';
 import BulkSelectionModeButton from '../../common/BulkSelectionModeButton';
 
 // Common local Urdu / Roman Urdu / Urdu script search aliases map for inventory lookup
@@ -384,33 +387,8 @@ const getStoredDraft = () => {
   return null;
 };
 
-const previewConvertedQuantity = (amount, fromUnit, toUnit) => {
-  const canonical = (unit = '') => {
-    const value = String(unit).trim().toUpperCase();
-    if (['KILOGRAM', 'KILOGRAMS'].includes(value)) return 'KG';
-    if (['G', 'GM', 'GRAM', 'GRAMS'].includes(value)) return 'G';
-    if (['MILLIGRAM', 'MILLIGRAMS'].includes(value)) return 'MG';
-    if (['LTR', 'LITER', 'LITERS', 'LITRE', 'LITRES'].includes(value)) return 'L';
-    if (['ML', 'MILLILITER', 'MILLILITERS', 'MILLILITRE', 'MILLILITRES'].includes(value)) return 'ML';
-    if (['CL', 'CENTILITER', 'CENTILITERS'].includes(value)) return 'CL';
-    if (['PC', 'PIECE', 'PIECES', 'UNIT', 'UNITS', 'NO', 'NOS'].includes(value)) return 'PCS';
-    if (['DOZENS', 'DZ'].includes(value)) return 'DOZEN';
-    if (['POUND', 'POUNDS', 'LBS'].includes(value)) return 'LB';
-    if (['OUNCE', 'OUNCES'].includes(value)) return 'OZ';
-    return value;
-  };
-  const source = canonical(fromUnit);
-  const target = canonical(toUnit);
-  const qty = Number(amount);
-  if (!Number.isFinite(qty)) return null;
-  if (source === target) return qty;
-  const weightToGrams = { KG: 1000, G: 1, MG: 0.001, LB: 453.59237, OZ: 28.34952 };
-  const volumeToMl = { L: 1000, ML: 1, CL: 10 };
-  if (weightToGrams[source] && weightToGrams[target]) return qty * weightToGrams[source] / weightToGrams[target];
-  if (volumeToMl[source] && volumeToMl[target]) return qty * volumeToMl[source] / volumeToMl[target];
-  if (source === 'DOZEN' && target === 'PCS') return qty * 12;
-  if (source === 'PCS' && target === 'DOZEN') return qty / 12;
-  return null;
+const previewConvertedQuantity = (amount, fromUnit, toUnit, targetItem = null) => {
+  return convertQuantityWithPackaging(amount, fromUnit, targetItem || { unit: toUnit });
 };
 
 const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh, showToast, showErrorDialog, onNavigateToCatalog }) => {
@@ -504,6 +482,12 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     }
   }, [inventory]);
 
+  // Review Sub-Units Setup Modal State
+  const [reviewSubUnitsOpen, setReviewSubUnitsOpen] = useState(false);
+  const [itemsToReview, setItemsToReview] = useState([]);
+  const [onReviewSuccessCallback, setOnReviewSuccessCallback] = useState(null);
+  const [reviewActionTitle, setReviewActionTitle] = useState('Proceed');
+
   // Save to Catalog (Single Item) Modal State
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [catalogModalRowIndex, setCatalogModalRowIndex] = useState(null);
@@ -541,6 +525,20 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   const matchedItemsCount = safeReceivingRows.filter(r => Boolean(r?.inventoryItemId)).length;
   const reviewMatchCount = safeReceivingRows.filter(r => r && !r.inventoryItemId && r.suggestedItem).length;
   const newItemsCount = safeReceivingRows.filter(r => r && !r.inventoryItemId && String(r.searchTerm || '').trim()).length;
+
+  // Auto-update or clear warning message when new items count changes
+  useEffect(() => {
+    if (receiveSubmitMessage && receiveSubmitMessage.includes('still need catalog names')) {
+      if (newItemsCount === 0) {
+        setReceiveSubmitMessage('');
+      } else {
+        const msg = newItemsCount + ' new item' + (newItemsCount === 1 ? '' : 's') + ' still need catalog names. Click "Save New Item Names (' + newItemsCount + ')" first, then confirm receiving.';
+        if (receiveSubmitMessage !== msg) {
+          setReceiveSubmitMessage(msg);
+        }
+      }
+    }
+  }, [newItemsCount, receiveSubmitMessage]);
   const needsReviewCount = safeReceivingRows.filter(r => Boolean(r?.needsReview)).length;
 
   const STANDARD_UNITS = [
@@ -1009,7 +1007,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         inventoryItemId: String(invItem.id),
         searchTerm: invItem.name,
         showSearchDropdown: false,
-        unit: invItem.unit || updated[index].unit || 'KG',
+        unit: updated[index].unit || invItem.unit || 'KG',
+        baseUnit: invItem.unit || 'KG',
+        packageConversions: invItem.packageConversions || updated[index].packageConversions || null,
         unitCost: updated[index].unitCost || invItem.costPrice || 0, // keep existing cost if already set
         isUnmatched: false, // clear unmatched flag once user selects catalog item
         suggestedItem: null,
@@ -1156,7 +1156,8 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
         maxThreshold: parseFloat(catalogModalData.maxThreshold) || 100.0,
         stockLevel: 0.0, // Strictly 0.0 initial stock! Catalog creation must NOT increase stock!
         branchId: catalogModalData.branchId ? parseInt(catalogModalData.branchId, 10) : undefined,
-        supplierId: catalogModalData.supplierId ? parseInt(catalogModalData.supplierId, 10) : undefined
+        supplierId: catalogModalData.supplierId ? parseInt(catalogModalData.supplierId, 10) : undefined,
+        packageConversions: catalogModalData.packageConversions || undefined
       };
 
       const res = await api.post('/inventory', payload);
@@ -1229,8 +1230,39 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   };
 
   // Bulk save all new items in catalog
-  const handleSaveAllNewItemsInCatalog = async (cardId = null) => {
+  const handleSaveAllNewItemsInCatalog = async (cardId = null, skipReview = false, reviewedItemsOverride = null) => {
     if (bulkSavingCatalog) return;
+
+    if (!skipReview) {
+      const candidates = [];
+      const appendCandidates = (rows, cId, cSupplierId, cBranchId) => {
+        rows.forEach((r, idx) => {
+          const name = String(r?.searchTerm || '').trim();
+          if (!r || r.inventoryItemId || !name) return;
+          candidates.push({
+            id: `new_${cId}_${idx}`,
+            name,
+            unit: r.unit || 'KG',
+            baseUnit: r.baseUnit || r.unit || 'KG',
+            category: r.category || 'General',
+            packageConversions: r.packageConversions || getPresetPackagingForName(name) || {},
+            localIndex: idx,
+            cardId: cId
+          });
+        });
+      };
+      if (!cardId || cardId === 'primary') appendCandidates(receivingRows, 'primary', supplierId, branchId);
+      additionalCards
+        .filter(c => !cardId || c.id === cardId)
+        .forEach(c => appendCandidates(c.receivingRows || [], c.id, c.supplierId, c.branchId));
+
+      if (candidates.length > 0) {
+        checkAndReviewNewItems(candidates, 'Save New Item Names', (reviewedList) => {
+          handleSaveAllNewItemsInCatalog(cardId, true, reviewedList);
+        });
+        return;
+      }
+    }
     const saveScope = cardId || 'all';
 
     // Save every named, unmatched item across the active supplier cards in one request.
@@ -1240,12 +1272,15 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       rows.forEach((row, localIndex) => {
         const name = String(row?.searchTerm || '').trim();
         if (!row || row.inventoryItemId || !name) return;
+        const reviewed = reviewedItemsOverride
+          ? reviewedItemsOverride.find(r => String(r.name || '').trim().toLowerCase() === name.toLowerCase())
+          : null;
         const rowIndex = newItemsToSave.length;
         rowTargets.set(rowIndex, { cardId, localIndex });
         newItemsToSave.push({
           rowIndex,
           name,
-          unit: normalizeUnit(row.unit || 'KG'),
+          unit: normalizeUnit(reviewed?.receivingUnit || row.unit || 'KG'),
           category: (row.category && row.category !== 'General') ? row.category : inferCategoryFromItemName(name),
           sku: null,
           costPrice: parseFloat(row.unitCost) || 0.0,
@@ -1253,7 +1288,8 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
           maxThreshold: 100.0,
           supplierId: cardSupplierId ? parseInt(cardSupplierId, 10) : null,
           branchId: cardBranchId ? parseInt(cardBranchId, 10) : undefined,
-          expiryDate: row.expiryDate || null
+          expiryDate: row.expiryDate || null,
+          packageConversions: reviewed?.packageConversions || row.packageConversions || getPresetPackagingForName(name) || null
         });
       });
     };
@@ -1794,20 +1830,43 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
 
     for (let i = 0; i < activeRows.length; i++) {
       const r = activeRows[i];
-      if (!r.inventoryItemId) {
-        if (editingDraftId) continue;
-        const unmatchedCount = activeRows.filter(row => !row.inventoryItemId).length;
-        const message = `${unmatchedCount} new item${unmatchedCount === 1 ? '' : 's'} still need catalog names. Click "Save New Item Names (${unmatchedCount})" first, then confirm receiving.`;
-        setReceiveSubmitMessage(message);
-        if (showToast) showToast(message, 'warning');
-        return;
-      }
       if (!r.quantity || parseFloat(r.quantity) <= 0) {
         const message = `Enter a quantity greater than zero for Item #${i + 1} before receiving.`;
         setReceiveSubmitMessage(message);
         if (showToast) showToast(message, 'error');
         return;
       }
+    }
+
+    // Check if any item needs review (either NEW item, OR existing item with receiving unit != baseUnit)
+    const itemsNeedingUnitReview = activeRows.filter(row => {
+      const name = String(row.searchTerm || '').trim();
+      if (!name) return false;
+      const isNew = !row.inventoryItemId;
+      const isDifferentUnit = row.unit && row.baseUnit && row.unit !== row.baseUnit;
+      return isNew || isDifferentUnit;
+    });
+
+    if (itemsNeedingUnitReview.length > 0 && !editingDraftId) {
+      const candidates = itemsNeedingUnitReview.map((r, idx) => ({
+        id: r.inventoryItemId || `recv_row_${idx}`,
+        name: String(r.searchTerm || '').trim(),
+        inventoryItemId: r.inventoryItemId || null,
+        unit: r.unit || 'KG',
+        baseUnit: r.baseUnit || r.unit || 'KG',
+        category: r.category || 'General',
+        packageConversions: r.packageConversions || getPresetPackagingForName(r.searchTerm) || {},
+        localIndex: receivingRows.indexOf(r),
+        cardId: 'primary'
+      }));
+      checkAndReviewNewItems(candidates, 'Confirm & Receive Stock', async (reviewedList) => {
+        const hasUnmatched = reviewedList.some(it => !it.inventoryItemId);
+        if (hasUnmatched) {
+          await handleSaveAllNewItemsInCatalog('primary', true, reviewedList);
+        }
+        setShowConfirmModal(true);
+      });
+      return;
     }
 
     setShowConfirmModal(true);
@@ -2074,7 +2133,34 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
   };
 
   // Confirm existing Draft from History
-  const handleConfirmDraft = async (receivingId) => {
+  const handleConfirmDraft = async (receivingId, skipReview = false) => {
+    const rec = receivingsList.find(r => String(r.id) === String(receivingId));
+    
+    // Check if this draft has deferred new items that need review before confirmation
+    if (!skipReview && rec?.notes?.includes('__DRAFT_ITEMS__:')) {
+      try {
+        const marker = '__DRAFT_ITEMS__:';
+        const markerIndex = rec.notes.indexOf(marker);
+        const newItems = JSON.parse(rec.notes.slice(markerIndex + marker.length).split('\n')[0]);
+        if (Array.isArray(newItems) && newItems.length > 0) {
+          const candidates = newItems.map((it, idx) => ({
+            id: `hist_draft_${idx}`,
+            name: it.name,
+            unit: it.unit || 'KG',
+            baseUnit: it.baseUnit || it.unit || 'KG',
+            category: it.category || 'General',
+            packageConversions: it.packageConversions || getPresetPackagingForName(it.name) || {}
+          }));
+          checkAndReviewNewItems(candidates, 'Confirm Draft', async () => {
+            handleConfirmDraft(receivingId, true);
+          });
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to parse draft items for review:', e);
+      }
+    }
+
     const key = String(receivingId);
     if (confirmingDraftLocks.current.has(key)) return;
     if (!confirmDraftAttemptKeys.current.has(key)) {
@@ -2693,8 +2779,29 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
     });
   };
 
-  const openConfirmBatchSummary = () => {
+  const openConfirmBatchSummary = (skipReview = false) => {
     const currentDeliveries = buildCurrentDeliveryDrafts();
+    if (!skipReview) {
+      const allDraftNew = [];
+      currentDeliveries.forEach(del => {
+        (del.draftNewItems || []).forEach((item, idx) => {
+          allDraftNew.push({
+            id: `batch_new_${idx}`,
+            name: item.name,
+            unit: item.unit || 'KG',
+            baseUnit: item.baseUnit || item.unit || 'KG',
+            category: item.category || 'General',
+            packageConversions: item.packageConversions || getPresetPackagingForName(item.name) || {}
+          });
+        });
+      });
+      if (allDraftNew.length > 0) {
+        checkAndReviewNewItems(allDraftNew, 'Confirm All Receivings', () => {
+          openConfirmBatchSummary(true);
+        });
+        return;
+      }
+    }
     const currentExistingIds = new Set(currentDeliveries.map((delivery) => Number(delivery.existingReceivingId)).filter(Boolean));
     const selectedDrafts = receivingsList.filter((record) =>
       record.status === 'DRAFT' && selectedReceivingIds.has(record.id) && !currentExistingIds.has(Number(record.id))
@@ -2706,7 +2813,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       (record.items || []).forEach((line) => {
         const fromUnit = line.unit || line.inventoryItem?.unit || 'PCS';
         const toUnit = line.inventoryItem?.unit || fromUnit;
-        const quantity = previewConvertedQuantity(line.quantity, fromUnit, toUnit);
+        const quantity = previewConvertedQuantity(line.quantity, fromUnit, toUnit, line.inventoryItem);
         summary.push({
           key: `saved-${record.id}-${line.id}`,
           item: line.inventoryItem?.name || 'Inventory item',
@@ -2729,7 +2836,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
           item: line.name || 'New catalog item',
           quantity: line.quantity,
           unit: fromUnit,
-          converted: previewConvertedQuantity(line.quantity, fromUnit, toUnit),
+          converted: previewConvertedQuantity(line.quantity, fromUnit, toUnit, matchedItem || line),
           targetUnit: toUnit,
           supplier: record.supplier?.name || 'Local Market',
         });
@@ -2747,7 +2854,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
           item: catalogItem?.name || 'Inventory item',
           quantity: line.quantity,
           unit: fromUnit,
-          converted: previewConvertedQuantity(line.quantity, fromUnit, toUnit),
+          converted: previewConvertedQuantity(line.quantity, fromUnit, toUnit, catalogItem),
           targetUnit: toUnit,
           supplier,
         });
@@ -2764,7 +2871,7 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
           item: line.name,
           quantity: line.quantity,
           unit: fromUnit,
-          converted: previewConvertedQuantity(line.quantity, fromUnit, toUnit),
+          converted: previewConvertedQuantity(line.quantity, fromUnit, toUnit, matchedItem || line),
           targetUnit: toUnit,
           supplier,
         });
@@ -2861,6 +2968,70 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
       setDraftSaveScope(null);
       draftSaveLock.current = false;
     }
+  };
+
+  // Helper: Open review sub-units modal for new/unmatched items before proceeding
+  const checkAndReviewNewItems = (candidateItems, actionTitle, onProceed) => {
+    // Find items that are new/unmatched or have receiving unit != base unit
+    const needsReview = candidateItems.filter(item => {
+      const name = String(item.name || item.searchTerm || '').trim();
+      if (!name) return false;
+      const isNew = !item.inventoryItemId;
+      const isDifferentUnit = item.unit && item.baseUnit && item.unit !== item.baseUnit;
+      return isNew || isDifferentUnit;
+    });
+
+    if (needsReview.length > 0) {
+      setItemsToReview(needsReview.map(it => ({
+        id: it.id || it.localIndex || Math.random().toString(),
+        name: it.name || it.searchTerm,
+        baseUnit: it.baseUnit || it.unit || 'KG',
+        receivingUnit: it.unit || 'KG',
+        category: it.category || 'General',
+        packageConversions: it.packageConversions || getPresetPackagingForName(it.name || it.searchTerm) || {},
+        originalRef: it
+      })));
+      setReviewActionTitle(actionTitle);
+      setOnReviewSuccessCallback(() => (reviewedList) => {
+        setReceivingRows(prev => prev.map(r => {
+          const rev = reviewedList.find(rv => String(rv.name || '').trim().toLowerCase() === String(r.searchTerm || '').trim().toLowerCase());
+          if (rev) return { ...r, unit: rev.receivingUnit, baseUnit: rev.baseUnit, packageConversions: rev.packageConversions };
+          return r;
+        }));
+        setAdditionalCards(prev => prev.map(c => ({
+          ...c,
+          receivingRows: (c.receivingRows || []).map(r => {
+            const rev = reviewedList.find(rv => String(rv.name || '').trim().toLowerCase() === String(r.searchTerm || '').trim().toLowerCase());
+            if (rev) return { ...r, unit: rev.receivingUnit, baseUnit: rev.baseUnit, packageConversions: rev.packageConversions };
+            return r;
+          })
+        })));
+        // Persist confirmed packageConversions for existing catalog items (Base Unit stays permanent)
+        reviewedList.forEach(async (rev) => {
+          if (rev.inventoryItemId || rev.originalRef?.inventoryItemId) {
+            const itemId = rev.inventoryItemId || rev.originalRef?.inventoryItemId;
+            try {
+              await api.put(`/inventory/${itemId}`, {
+                packageConversions: rev.packageConversions
+              });
+              setLocalInventory(prev => prev.map(inv =>
+                String(inv.id) === String(itemId)
+                  ? { ...inv, packageConversions: rev.packageConversions }
+                  : inv
+              ));
+            } catch (err) {
+              console.warn('[ReviewModal] Could not update packageConversions:', err?.message);
+            }
+          }
+        });
+
+        setReviewSubUnitsOpen(false);
+        onProceed(reviewedList);
+      });
+      setReviewSubUnitsOpen(true);
+      return true;
+    }
+    return false;
   };
 
   const confirmReceivingSaveAction = () => {
@@ -3743,16 +3914,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                               onChange={(e) => handleRowChange(index, 'unit', e.target.value)}
                               className="h-11 w-full px-2.5 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none focus:border-orange-500 cursor-pointer"
                             >
-                              <option value="KG">KG</option>
-                              <option value="G">G</option>
-                              <option value="L">L</option>
-                              <option value="ML">ML</option>
-                              <option value="PCS">PCS</option>
-                              <option value="DOZEN">DOZEN</option>
-                              <option value="BOX">BOX</option>
-                              <option value="PACK">PACK</option>
-                              <option value="BOTTLE">BOTTLE</option>
-                              <option value="BAG">BAG</option>
+                              {getAvailableUnitsForItem(selectedInvItem || { unit: row.unit, name: row.searchTerm }).map(u => (
+                                <option key={u.value} value={u.value}>{u.label}</option>
+                              ))}
                             </ThemedSelect>
                           </div>
 
@@ -4175,7 +4339,9 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                                     onChange={(e) => handleCardRowChange(card.id, rIdx, 'unit', e.target.value)}
                                     className="h-11 w-full px-2.5 py-1.5 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-main)] focus:outline-none cursor-pointer"
                                   >
-                                    {STANDARD_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                    {getAvailableUnitsForItem((localInventory || []).find(i => i.id === r.inventoryItemId) || { unit: r.unit, name: r.searchTerm }).map(u => (
+                                      <option key={u.value} value={u.value}>{u.label}</option>
+                                    ))}
                                   </ThemedSelect>
                                 </div>
 
@@ -4496,7 +4662,14 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
                 </div>
               </div>
 
-              {/* Informational note about stock separation */}
+              {/* Packaging Sub-Units Editor in Catalog Modal */}
+              <PackagingUnitsEditor
+                baseUnit={catalogModalData.unit || 'KG'}
+                packageConversions={catalogModalData.packageConversions || getPresetPackagingForName(catalogModalData.name)}
+                onChange={(updatedConversions) => setCatalogModalData(prev => ({ ...prev, packageConversions: updatedConversions }))}
+              />
+
+{/* Informational note about stock separation */}
               <div className="p-3 rounded-2xl bg-[var(--bg-color)]/70 border border-[var(--border-color)] text-[11px] text-[var(--text-muted)]">
                 <Info className="mr-1 inline h-3.5 w-3.5 align-text-bottom text-orange-500" aria-hidden="true" /> <strong>Catalog Separation:</strong> This creates the catalog definition with 0 stock. Actual received quantity will only be added to stock when you click <strong>Confirm &amp; Receive Stock</strong>.
               </div>
@@ -5370,6 +5543,19 @@ const AdminInventoryReceivingView = ({ inventory = [], suppliers = [], onRefresh
           </section>
         </div>, document.body
       )}
+
+      {/* Review Sub-Units Modal for New Catalog Items */}
+      <ReviewSubUnitsModal
+        isOpen={reviewSubUnitsOpen}
+        onClose={() => setReviewSubUnitsOpen(false)}
+        items={itemsToReview}
+        actionTitle={reviewActionTitle}
+        onConfirm={(reviewedList) => {
+          if (onReviewSuccessCallback) {
+            onReviewSuccessCallback(reviewedList);
+          }
+        }}
+      />
 
     </div>
   );
