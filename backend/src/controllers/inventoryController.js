@@ -3243,11 +3243,11 @@ const updateBatchExpiry = async (req, res) => {
   try {
     const formattedExpiry = expiryDate ? new Date(expiryDate) : null;
 
-    if (receivingItemId || source === 'BATCH') {
+    const hasReceivingId = receivingItemId !== undefined && receivingItemId !== null && !isNaN(parseInt(receivingItemId, 10));
+    const hasInventoryId = inventoryItemId !== undefined && inventoryItemId !== null && !isNaN(parseInt(inventoryItemId, 10));
+
+    if (hasReceivingId) {
       const recItemId = parseInt(receivingItemId, 10);
-      if (isNaN(recItemId)) {
-        return res.status(400).json({ error: 'Valid receivingItemId is required.' });
-      }
 
       const existing = await prisma.inventoryReceivingItem.findUnique({
         where: { id: recItemId },
@@ -3355,11 +3355,11 @@ const clearBatchExpiry = async (req, res) => {
   const { source, receivingItemId, inventoryItemId } = req.body;
 
   try {
-    if (source === 'BATCH' || receivingItemId) {
+    const hasReceivingId = receivingItemId !== undefined && receivingItemId !== null && !isNaN(parseInt(receivingItemId, 10));
+    const hasInventoryId = inventoryItemId !== undefined && inventoryItemId !== null && !isNaN(parseInt(inventoryItemId, 10));
+
+    if (hasReceivingId) {
       const recItemId = parseInt(receivingItemId, 10);
-      if (isNaN(recItemId)) {
-        return res.status(400).json({ error: 'Valid receivingItemId is required.' });
-      }
 
       const existing = await prisma.inventoryReceivingItem.findUnique({
         where: { id: recItemId },
