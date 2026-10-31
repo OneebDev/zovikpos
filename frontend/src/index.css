@@ -217,6 +217,22 @@ body {
   scrollbar-gutter: stable;
 }
 
+/* Also apply sticky table container behavior to desktop table wrappers in inventory */
+.overflow-x-auto:has(> table) {
+  max-height: min(72vh, 850px);
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+  position: relative;
+}
+
+.overflow-x-auto:has(> table) thead,
+.overflow-x-auto:has(> table) thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+
 /* Make table header sticky inside the scroll container */
 .glass-table table thead,
 .sticky-table-container table thead {

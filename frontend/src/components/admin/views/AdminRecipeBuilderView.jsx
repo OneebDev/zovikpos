@@ -580,7 +580,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
       </div>
 
       {/* 4. Recipe Table / List */}
-      <div className="glass-table overflow-x-auto">
+      <div className="glass-table sticky-table-container">
         {loading ? (
           <div className="p-12 text-center text-[var(--text-muted)] text-xs space-y-2">
             <RefreshCw className="w-6 h-6 animate-spin mx-auto text-orange-400" />
@@ -599,7 +599,7 @@ const AdminRecipeBuilderView = ({ inventory = [], onRefresh, showToast, onOpenAd
             <p>Try searching for another term or select "All Categories".</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="w-full">
             <table className="inventory-single-row-table w-full min-w-[960px] text-left text-xs divide-y divide-[var(--border-color)]">
               <thead className=" text-[10px] font-black uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border-color)]" style={{ background: 'var(--table-header-bg)' }}>
                 <tr>
