@@ -1734,6 +1734,45 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, sessionExpired, cart, activeOrders]);
 
+  // ─── 8-Minute Inactivity Warning (Problem B) ────────────────────────────
+  const [showIdleWarning, setShowIdleWarning] = useState(false);
+  const idleTimerRef = useRef(null);
+
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    setShowIdleWarning(false);
+    idleTimerRef.current = setTimeout(() => {
+      // Only show if no cart items and no active unfinished orders
+      const hasCartItems = Object.values(cart).some(item => item.quantity > 0);
+      const hasUnfinishedOrders = activeOrders.some(o => !['COMPLETED', 'CANCELLED', 'REJECTED', 'REFUNDED', 'PAYMENT_FAILED'].includes(o.status));
+      if (!hasCartItems && !hasUnfinishedOrders) {
+        setShowIdleWarning(true);
+      }
+    }, 8 * 60 * 1000); // 8 minutes
+  }, [cart, activeOrders]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const events = ['mousedown', 'touchstart', 'keydown', 'scroll'];
+    const handler = () => resetIdleTimer();
+    events.forEach(e => window.addEventListener(e, handler, { passive: true }));
+    resetIdleTimer();
+    return () => {
+      events.forEach(e => window.removeEventListener(e, handler));
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    };
+  }, [sessionId, resetIdleTimer]);
+
+  const handleContinueDining = async () => {
+    setShowIdleWarning(false);
+    resetIdleTimer();
+    if (sessionId) {
+      try {
+        await api.get(`/sessions/${sessionId}`, { headers: { 'X-Session-Activity': 'true' } });
+      } catch {}
+    }
+  };
+
   const handleTransferTableAndOrders = async () => {
     if (isTableSwitchingRef.current) return;
     const curSessionId = sessionId || localStorage.getItem('customer_sessionId');
@@ -2862,7 +2901,28 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
       </header>
 
       {/* FAQ Modal */}
-      {showFAQ && <FAQModal onClose={() => setShowFAQ(false)} />}
+      {showFAQ && (
+        <FAQModal onClose={() => setShowFAQ(false)} />
+      )}
+
+      {/* Inactivity Warning Modal (Problem B) */}
+      {showIdleWarning && createPortal(
+        <div className="customer-idle-overlay" role="dialog" aria-modal="true" aria-label="Inactivity warning">
+          <div className="customer-idle-modal glass">
+            <div className="customer-idle-modal__icon">⏰</div>
+            <h3 className="customer-idle-modal__title">Are you still dining?</h3>
+            <p className="customer-idle-modal__text">Your session will expire in 2 minutes due to inactivity.</p>
+            <button
+              type="button"
+              className="customer-idle-modal__btn"
+              onClick={handleContinueDining}
+            >
+              Continue Dining
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Table Switching Confirmation Modal */}
       {showTableSwitchModal && (
@@ -3530,8 +3590,11 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                     // Per-variant independent quantity — keyed by variant's own id
                     const currentVariantQty = pendingQty[selectedVariant.id] || 1;
                     const inCartQty = variants.reduce((sum, v) => sum + (cart[v.id]?.quantity || 0), 0);
-                    const isOutOfStock = variants.every((v) => v.stock <= 0);
-                    const isSelectedOutOfStock = selectedVariant.stock <= 0;
+                    const totalGroupStock = variants.reduce((sum, v) => sum + Math.max(0, v.stock ?? 0), 0);
+                    const isOutOfStock = totalGroupStock <= 0;
+                    const isLowStock = totalGroupStock > 0 && totalGroupStock <= 5;
+                    const selectedStock = Math.max(0, selectedVariant.stock ?? 0);
+                    const isSelectedOutOfStock = selectedStock <= 0;
                     const startingPrice = Math.min(...variants.map((variant) => Number(variant.price) || 0));
                     const toggleCard = (event) => {
                       if (isOutOfStock) return;
@@ -3601,6 +3664,9 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                           )}
                           {isOutOfStock && (
                             <span className="customer-food-card__sold-out glass">Sold Out</span>
+                          )}
+                          {isLowStock && !isOutOfStock && (
+                            <span className="customer-food-card__low-stock glass">Low Stock — Only {totalGroupStock} left!</span>
                           )}
                         </div>
 
@@ -3687,6 +3753,7 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                                           >
                                             <span className="customer-food-card__variant-label">{variant.unit || 'Standard'}</span>
                                             <small>Rs. {Number(variant.price).toLocaleString('en-PK', { maximumFractionDigits: 0 })}</small>
+                                            {variant.stock <= 0 && <small style={{color: 'var(--danger, #ef4444)', fontSize: '9px', fontWeight: 800}}>Sold Out</small>}
                                             {isSelected && <Check className="customer-food-card__variant-check" aria-hidden="true" />}
                                           </button>
                                         );
@@ -3723,7 +3790,8 @@ const CustomerDashboard = ({ tableIdFromRoute, onLogout }) => {
                                   <button
                                     type="button"
                                     aria-label="Increase quantity"
-                                    onClick={(event) => { event.stopPropagation(); setPendingQty((prev) => ({ ...prev, [selectedVariant.id]: (prev[selectedVariant.id] || 1) + 1 })); }}
+                                    onClick={(event) => { event.stopPropagation(); setPendingQty((prev) => ({ ...prev, [selectedVariant.id]: Math.min(selectedStock || 99, (prev[selectedVariant.id] || 1) + 1) })); }}
+                                    disabled={currentVariantQty >= (selectedStock || 99)}
                                     className="icon-btn icon-btn--36">
                                     <Plus aria-hidden="true" />
                                   </button>

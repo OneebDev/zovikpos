@@ -2,6 +2,7 @@ const { prisma } = require('../config/db');
 const { generateQR } = require('../utils/generateQRCode');
 const { broadcastEvent } = require('../sockets/socket');
 const crypto = require('crypto');
+const { convertUnit } = require('../utils/unitConverter');
 
 const menuCache = new Map();
 const MENU_CACHE_TTL_MS = 10 * 1000;
@@ -35,27 +36,56 @@ const getAllItems = async (req, res) => {
     });
 
     const enrichedItems = items.map(item => {
-      const hasStock = item.stock > 0;
       let rawIngredientsAvailable = true;
       const outOfStockIngredients = [];
+      let maxCookable = Infinity;
 
       if (item.recipeItems && item.recipeItems.length > 0) {
         for (const r of item.recipeItems) {
-          if (r.inventoryItem && r.inventoryItem.stockLevel <= 0) {
+          const inv = r.inventoryItem;
+          if (!inv || (inv.stockLevel ?? 0) <= 0) {
             rawIngredientsAvailable = false;
-            outOfStockIngredients.push(r.inventoryItem.name);
+            if (inv?.name) outOfStockIngredients.push(inv.name);
+            maxCookable = 0;
+            continue;
+          }
+          let neededInInvUnit = r.quantity;
+          try {
+            neededInInvUnit = convertUnit(r.quantity, r.unit, inv.unit, inv.packageConversions, inv.name);
+          } catch {
+            neededInInvUnit = r.quantity;
+          }
+          if (neededInInvUnit > 0) {
+            const possible = Math.floor(inv.stockLevel / neededInInvUnit);
+            if (possible < maxCookable) maxCookable = possible;
           }
         }
       }
 
-      const isAvailable = item.isActive && hasStock && rawIngredientsAvailable;
+      const preparedStock = Math.max(0, item.stock ?? 0);
+      const cookableStock = (item.recipeItems && item.recipeItems.length > 0)
+        ? (maxCookable === Infinity ? 0 : Math.max(0, maxCookable))
+        : 0;
 
-      return {
+      // Rule 4: Total sellable stock = pre-prepared portions + cook-to-order portions
+      const sellableStock = preparedStock + cookableStock;
+
+      const isAvailable = Boolean(item.isActive && sellableStock > 0);
+
+      const result = {
         ...item,
+        stock: sellableStock,
+        sellableStock,
         isAvailable,
         rawIngredientsAvailable,
-        outOfStockIngredients
       };
+
+      // Only expose technical ingredient names to admin / vendor view, never to customer menu (Problem 1)
+      if (all === 'true') {
+        result.outOfStockIngredients = outOfStockIngredients;
+      }
+
+      return result;
     });
 
     const payload = { items: enrichedItems };
@@ -126,6 +156,10 @@ const updateItem = async (req, res) => {
     if (unit !== undefined) updateData.unit = unit;
     if (groupName !== undefined) updateData.groupName = groupName;
     if (stock !== undefined) updateData.stock = parseInt(stock, 10);
+    if (req.body.addStock !== undefined) {
+      const addVal = parseInt(req.body.addStock, 10);
+      if (!isNaN(addVal) && addVal > 0) updateData.stock = { increment: addVal };
+    }
     if (prepTime !== undefined) updateData.prepTime = parseInt(prepTime, 10);
     if (imageUrl !== undefined) updateData.imageUrl = imageUrl || null;
     if (isActive !== undefined) updateData.isActive = isActive;

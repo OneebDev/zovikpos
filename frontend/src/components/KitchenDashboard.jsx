@@ -443,6 +443,11 @@ const KitchenDashboard = ({ user }) => {
                           <h4 className="font-extrabold text-[var(--text-main)] text-sm font-mono">
                             {order.orderNumber || `#000${order.id}`}
                           </h4>
+                          {order.isAddOn && (
+                            <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded text-[9px] font-black uppercase tracking-wider">
+                              ADD-ON / R{order.roundNumber || 2}
+                            </span>
+                          )}
                           {elapsed.isCritical && (
                             <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-400 rounded text-[9px] font-black uppercase tracking-wider">
                               CRITICAL
@@ -532,6 +537,11 @@ const KitchenDashboard = ({ user }) => {
                           <h4 className="font-extrabold text-[var(--text-main)] text-sm font-mono">
                             {order.orderNumber || `#000${order.id}`}
                           </h4>
+                          {order.isAddOn && (
+                            <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded text-[9px] font-black uppercase tracking-wider">
+                              ADD-ON / R{order.roundNumber || 2}
+                            </span>
+                          )}
                           {elapsed.isCritical && (
                             <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-400 rounded text-[9px] font-black uppercase tracking-wider animate-pulse">
                               DELAYED
@@ -611,9 +621,16 @@ const KitchenDashboard = ({ user }) => {
                 >
                   <div className="flex justify-between items-start">
                     <div>
-                      <h4 className="font-extrabold text-[var(--text-main)] text-sm font-mono">
-                        {order.orderNumber || `#000${order.id}`}
-                      </h4>
+                      <div className="flex items-center space-x-2">
+                        <h4 className="font-extrabold text-[var(--text-main)] text-sm font-mono">
+                          {order.orderNumber || `#000${order.id}`}
+                        </h4>
+                        {order.isAddOn && (
+                          <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded text-[9px] font-black uppercase tracking-wider">
+                            ADD-ON / R{order.roundNumber || 2}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] text-emerald-400 font-semibold mt-0.5 block">
                         Placement: {formatTableDisplay(order)}
                       </span>

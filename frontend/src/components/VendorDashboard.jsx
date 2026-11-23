@@ -858,6 +858,77 @@ const VendorDashboard = ({ user }) => {
               </button>
             </div>
 
+            {/* Cashier Multi-Round Table Billing Overview (Rule 6) */}
+            {(() => {
+              const tableMap = {};
+              for (const ord of orders) {
+                if (['COMPLETED', 'CANCELLED', 'REJECTED', 'PAYMENT_FAILED'].includes(ord.status)) continue;
+                const key = ord.sessionId || (ord.tableId ? `table_${ord.tableId}` : null);
+                if (!key) continue;
+                if (!tableMap[key]) {
+                  tableMap[key] = {
+                    key,
+                    tableLabel: resolveTableLabel(ord),
+                    customerName: ord.user?.name || 'Guest',
+                    rounds: [],
+                    totalAmount: 0,
+                    dueAmount: 0,
+                  };
+                }
+                tableMap[key].rounds.push(ord);
+                const amt = Number(ord.total || 0);
+                tableMap[key].totalAmount += amt;
+                if (ord.paymentStatus !== 'PAID') {
+                  tableMap[key].dueAmount += amt;
+                }
+              }
+              const multiRoundTables = Object.values(tableMap).filter((t) => t.rounds.length > 1);
+              if (multiRoundTables.length === 0) return null;
+              return (
+                <div className="p-4 bg-[var(--card-bg)] border border-amber-500/30 rounded-2xl space-y-3 shadow-md mb-4">
+                  <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                      <h4 className="font-extrabold text-[var(--text-main)] text-xs uppercase tracking-wider font-mono">
+                        Active Table Billing Statements ({multiRoundTables.length})
+                      </h4>
+                    </div>
+                    <span className="text-[10px] text-[var(--text-muted)] font-mono font-bold">Grouped Multi-Round Totals</span>
+                  </div>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {multiRoundTables.map((tbl) => (
+                      <div key={tbl.key} className="p-3 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] space-y-1.5 text-xs">
+                        <div className="flex justify-between items-center">
+                          <strong className="text-amber-400 font-extrabold">{tbl.tableLabel}</strong>
+                          <span className="text-[10px] text-[var(--text-muted)]">{tbl.customerName}</span>
+                        </div>
+                        <div className="space-y-0.5 text-[10px] font-mono text-[var(--text-muted)]">
+                          {tbl.rounds.map((r) => (
+                            <div key={r.id} className="flex justify-between">
+                              <span>Round {r.roundNumber || 1} ({r.orderNumber || `#${r.id}`})</span>
+                              <span className={r.paymentStatus === 'PAID' ? 'text-emerald-400' : 'text-amber-400 font-bold'}>
+                                Rs. {Number(r.total || 0).toFixed(0)} {r.paymentStatus === 'PAID' ? '✓' : '(Due)'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="border-t border-[var(--border-color)] pt-1 flex justify-between font-extrabold font-mono text-xs">
+                          <span className="text-[var(--text-main)]">Table Total:</span>
+                          <span className="text-emerald-400">Rs. {tbl.totalAmount.toFixed(2)}</span>
+                        </div>
+                        {tbl.dueAmount > 0 && (
+                          <div className="flex justify-between font-extrabold font-mono text-[11px] text-amber-400">
+                            <span>Balance Due:</span>
+                            <span>Rs. {tbl.dueAmount.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
               {displayedVerificationOrders.length === 0 ? (
                 <div className="col-span-full py-16 text-center bg-[var(--card-bg)]/60 border border-[var(--border-color)] border-dashed rounded-3xl">
@@ -885,7 +956,14 @@ const VendorDashboard = ({ user }) => {
                     <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
                       <div>
                         <span className="text-[10px] text-[var(--text-muted)] font-mono tracking-wider">ORDER NUMBER</span>
-                        <h4 className="font-extrabold text-[var(--text-main)] text-base font-mono">{order.orderNumber || `#000${order.id}`}</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-extrabold text-[var(--text-main)] text-base font-mono">{order.orderNumber || `#000${order.id}`}</h4>
+                          {order.isAddOn && (
+                            <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded text-[9px] font-black uppercase tracking-wider">
+                              Add-on R{order.roundNumber || 2}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <span
                         className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold border uppercase ${
@@ -975,7 +1053,14 @@ const VendorDashboard = ({ user }) => {
                     <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
                       <div>
                         <span className="text-[10px] text-[var(--text-muted)] font-mono tracking-wider">ORDER NUMBER</span>
-                        <h4 className="font-extrabold text-[var(--text-main)] text-base font-mono">{order.orderNumber || `#000${order.id}`}</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-extrabold text-[var(--text-main)] text-base font-mono">{order.orderNumber || `#000${order.id}`}</h4>
+                          {order.isAddOn && (
+                            <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded text-[9px] font-black uppercase tracking-wider">
+                              Add-on R{order.roundNumber || 2}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <span
                         className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold border ${
@@ -1059,6 +1144,7 @@ const VendorDashboard = ({ user }) => {
                 <span className="text-[10px] text-[var(--text-muted)] font-mono tracking-wider block">ORDER RECEIPT</span>
                 <h3 className="text-base font-extrabold text-[var(--text-main)] font-mono">
                   {selectedOrder.orderNumber || `#000${selectedOrder.id}`}
+                  {selectedOrder.isAddOn ? ` (Round ${selectedOrder.roundNumber || 2})` : ''}
                 </h3>
               </div>
               <button
@@ -1115,9 +1201,50 @@ const VendorDashboard = ({ user }) => {
               </div>
 
               <div className="pt-2 flex justify-between items-center text-sm font-extrabold border-t border-[var(--border-color)]">
-                <span className="text-[var(--text-muted)]">Total Charged:</span>
+                <span className="text-[var(--text-muted)]">Total Charged (This Round):</span>
                 <span className="text-lg text-emerald-400 font-mono">Rs. {Number(selectedOrder.total || 0).toFixed(2)}</span>
               </div>
+
+              {/* Multi-Round Table Billing Statement (Rule 6) */}
+              {(() => {
+                const sessionKey = selectedOrder.sessionId || (selectedOrder.tableId ? `table_${selectedOrder.tableId}` : null);
+                const relatedOrders = sessionKey
+                  ? orders.filter(
+                      (o) =>
+                        (o.sessionId === selectedOrder.sessionId || (selectedOrder.tableId && o.tableId === selectedOrder.tableId)) &&
+                        !['CANCELLED', 'REJECTED'].includes(o.status)
+                    )
+                  : [];
+                if (relatedOrders.length <= 1) return null;
+                const grandTableTotal = relatedOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+                const totalDue = relatedOrders.reduce((sum, o) => sum + (o.paymentStatus !== 'PAID' ? Number(o.total || 0) : 0), 0);
+                return (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl space-y-2 mt-2">
+                    <div className="flex justify-between items-center text-xs font-black text-amber-400">
+                      <span>Table Statement ({relatedOrders.length} rounds)</span>
+                      <span className="font-mono text-sm">Rs. {grandTableTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="space-y-1 text-[11px] text-[var(--text-muted)] border-t border-amber-500/20 pt-1.5">
+                      {relatedOrders.map((ro) => (
+                        <div key={ro.id} className="flex justify-between font-mono">
+                          <span>
+                            {ro.orderNumber || `#${ro.id}`} (R{ro.roundNumber || 1}) — {ro.paymentStatus === 'PAID' ? 'PAID' : 'DUE'}
+                          </span>
+                          <span className={ro.paymentStatus === 'PAID' ? 'text-emerald-400' : 'text-amber-400'}>
+                            Rs. {Number(ro.total || 0).toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {totalDue > 0 && (
+                      <div className="flex justify-between items-center text-xs font-black text-rose-400 border-t border-amber-500/20 pt-1">
+                        <span>Total Balance Due:</span>
+                        <span className="font-mono">Rs. {totalDue.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="pt-2">

@@ -27,6 +27,7 @@ const OrderTrackingPage = () => {
   const navigate = useNavigate();
 
   const [order, setOrder] = useState(null);
+  const [sessionOrders, setSessionOrders] = useState([]);
   const displayTableLabel = resolveTableLabel({
     tableLabel: order?.tableLabel,
     tableNumber: order?.tableNumber,
@@ -107,6 +108,9 @@ const OrderTrackingPage = () => {
           setOrder(res.data.order);
           setTargetTable(res.data.order?.tableNumber || '');
           setOrderNotFound(false);
+          if (Array.isArray(res.data.sessionOrders) && res.data.sessionOrders.length > 0) {
+            setSessionOrders(res.data.sessionOrders);
+          }
         }
       } catch (err) {
         if (isMounted && !timedOut && err?.name !== 'CanceledError' && err?.name !== 'AbortError') {
@@ -142,6 +146,9 @@ const OrderTrackingPage = () => {
       if (updatedOrder && (updatedOrder.id === orderId || updatedOrder.trackingToken === trackingToken)) {
         setOrder(updatedOrder);
       }
+      if (updatedOrder?.id) {
+        setSessionOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? { ...o, ...updatedOrder } : o)));
+      }
     };
 
     const fetchLatestOrder = async () => {
@@ -151,7 +158,12 @@ const OrderTrackingPage = () => {
       const pollTimeoutId = window.setTimeout(() => pollController?.abort(), 8000);
       try {
         const res = await api.get(`/orders/track/${encodeURIComponent(trackingToken)}`, { signal: pollController.signal });
-        if (res.data?.order && !pollController.signal.aborted) setOrder(res.data.order);
+        if (res.data?.order && !pollController.signal.aborted) {
+          setOrder(res.data.order);
+          if (Array.isArray(res.data.sessionOrders) && res.data.sessionOrders.length > 0) {
+            setSessionOrders(res.data.sessionOrders);
+          }
+        }
       } catch {
         // Keep the last successful order visible while the socket or network reconnects.
       } finally {
@@ -383,6 +395,44 @@ const OrderTrackingPage = () => {
 
       <div className="customer-tracking-content">
 
+        {/* Multi-Order Round Tabs (Problem D) */}
+        {sessionOrders.length > 1 && (
+          <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Order rounds">
+            {sessionOrders.map((sOrder, idx) => {
+              const isSelected = order?.id === sOrder.id;
+              const roundNum = sOrder.roundNumber || (idx + 1);
+              return (
+                <button
+                  key={sOrder.id || idx}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  onClick={() => setOrder(sOrder)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+                    isSelected
+                      ? 'bg-[#E85D2A] text-white shadow-md shadow-orange-500/20'
+                      : 'bg-white dark:bg-[#252525] border border-stone-200 dark:border-stone-800 text-stone-700 dark:text-stone-300 hover:border-[#E85D2A]'
+                  }`}
+                >
+                  <span>Round {roundNum}</span>
+                  {sOrder.isAddOn && (
+                    <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-black ${
+                      isSelected ? 'bg-black/20 text-white' : 'bg-amber-500/15 text-amber-500'
+                    }`}>
+                      Add-on
+                    </span>
+                  )}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                    isSelected ? 'bg-white/20 text-white' : 'bg-stone-100 dark:bg-stone-800 text-stone-500'
+                  }`}>
+                    {sOrder.status}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Main Tracker Card */}
         <div className="tracking-card glass">
 
@@ -390,7 +440,7 @@ const OrderTrackingPage = () => {
           <div className="tracking-order-meta flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#F5F5F4] dark:border-[#2A2A2A] pb-6">
             <div>
               <span className="text-[10px] font-black text-[#E85D2A] uppercase tracking-widest block mb-1">
-                Order Tracking
+                Order Tracking {order?.roundNumber ? `• Round ${order.roundNumber}` : ''} {order?.isAddOn ? '(Add-on)' : ''}
               </span>
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#171717] dark:text-white">
                 {order.orderNumber || `#000${order.id}`}
@@ -653,7 +703,15 @@ const OrderTrackingPage = () => {
             </div>
 
             <div className="tracking-receipt__totals">
-              <div className="tracking-receipt__grand-total"><span>Total</span><strong>{formatPrice(order.total || 0)}</strong></div>
+              <div className="tracking-receipt__grand-total"><span>Total (Round {order.roundNumber || 1})</span><strong>{formatPrice(order.total || 0)}</strong></div>
+              {sessionOrders.length > 1 && (
+                <div className="pt-2 mt-2 border-t border-dashed border-stone-200 dark:border-stone-700 flex justify-between text-xs font-black text-stone-600 dark:text-stone-300">
+                  <span>Table Total ({sessionOrders.length} rounds combined)</span>
+                  <span className="text-[#E85D2A] font-black">
+                    {formatPrice(sessionOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0))}
+                  </span>
+                </div>
+              )}
             </div>
           </section>
 

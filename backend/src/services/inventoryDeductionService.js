@@ -105,16 +105,23 @@ const deductInventoryForConfirmedOrder = async (orderId, userId = null, tx = nul
       throw new Error(`Order #${orderId} not found for inventory deduction.`);
     }
 
-    // Idempotency check: if USAGE logs already exist for this orderId, skip double deduction
+    // Idempotency check: check if order already has an INVENTORY_DEDUCTED status history entry or USAGE logs (Rule 3)
+    const existingDeductionRecord = await db.orderStatusHistory.findFirst({
+      where: {
+        orderId: order.id,
+        newStatus: 'INVENTORY_DEDUCTED',
+      },
+    });
+
     const existingUsageLogs = await db.inventoryLog.findMany({
       where: {
         orderId: order.id,
-        type: 'USAGE'
-      }
+        type: 'USAGE',
+      },
     });
 
-    if (existingUsageLogs.length > 0) {
-      console.log(`[InventoryDeduction] Order #${order.orderNumber} already has USAGE logs. Skipping redundant deduction.`);
+    if (existingDeductionRecord || existingUsageLogs.length > 0) {
+      console.log(`[InventoryDeduction] Order #${order.orderNumber} already has deduction record. Skipping redundant deduction.`);
       return { success: true, message: 'Already deducted.', itemsToEmit: [] };
     }
 
@@ -156,13 +163,24 @@ const deductInventoryForConfirmedOrder = async (orderId, userId = null, tx = nul
     for (const orderItem of order.orderItems) {
       const menuItem = orderItem.menuItem;
       const itemQty = orderItem.quantity;
+      if (!menuItem) continue;
 
-      // Deduct MenuItem front-end display stock
-      if (menuItem) {
+      // Rule 2 & Rule 4: Deduct prepared portion without ever dropping below 0
+      const currentPreparedStock = Math.max(0, menuItem.stock ?? 0);
+      const preparedDeduct = Math.min(currentPreparedStock, itemQty);
+      const cookToOrderDeduct = itemQty - preparedDeduct;
+
+      if (preparedDeduct > 0) {
         await db.menuItem.update({
           where: { id: menuItem.id },
-          data: { stock: { decrement: itemQty } }
+          data: { stock: { decrement: preparedDeduct } }
         });
+        console.log(`[InventoryDeduction] Item "${orderItem.nameSnapshot}" (Order #${order.orderNumber}): deducted ${preparedDeduct} prepared portion(s). Remaining: ${currentPreparedStock - preparedDeduct}`);
+      }
+
+      // If cookToOrderDeduct <= 0, no raw ingredients need to be deducted
+      if (cookToOrderDeduct <= 0) {
+        continue;
       }
 
       // Check if menuItem has explicit RecipeItems mapped
@@ -178,7 +196,7 @@ const deductInventoryForConfirmedOrder = async (orderId, userId = null, tx = nul
             console.warn(`[InventoryDeduction] Branch mismatch: Order branch ${order.branchId} vs Inventory branch ${invItem.branchId} for ${invItem.name}`);
           }
 
-          const rawNeededQty = recipe.quantity * itemQty;
+          const rawNeededQty = recipe.quantity * cookToOrderDeduct;
           let convertedQty;
           try {
             convertedQty = convertUnit(rawNeededQty, recipe.unit, invItem.unit, invItem.packageConversions);
@@ -294,6 +312,17 @@ const deductInventoryForConfirmedOrder = async (orderId, userId = null, tx = nul
       }
     }
 
+    // Record atomic idempotency status history entry (Rule 3)
+    await db.orderStatusHistory.create({
+      data: {
+        orderId: order.id,
+        previousStatus: order.status,
+        newStatus: 'INVENTORY_DEDUCTED',
+        changedByUserId: userId || order.userId || null,
+        note: `Inventory deducted for Order #${order.orderNumber}`,
+      },
+    });
+
     return { success: true, message: `Inventory deducted for Order #${order.orderNumber}`, itemsToEmit };
   };
 
@@ -346,29 +375,69 @@ const restoreInventoryForOrder = async (orderId, userId = null, reason = 'Order 
       throw new Error(`Order #${orderId} not found for inventory restoration.`);
     }
 
+    // Rule 3: Idempotency check: if already restored, exit immediately
+    const existingRestoreRecord = await db.orderStatusHistory.findFirst({
+      where: {
+        orderId: order.id,
+        newStatus: 'INVENTORY_RESTORED',
+      },
+    });
+
+    if (existingRestoreRecord) {
+      console.log(`[InventoryRestoration] Order #${order.orderNumber} already has INVENTORY_RESTORED record. Skipping.`);
+      return { success: true, message: 'Already restored.', itemsToEmit: [] };
+    }
+
+    // Only restore if inventory was actually deducted!
+    const wasDeducted = await db.orderStatusHistory.findFirst({
+      where: {
+        orderId: order.id,
+        newStatus: 'INVENTORY_DEDUCTED',
+      },
+    });
+
     // Find all USAGE logs generated for this order
     const usageLogs = await db.inventoryLog.findMany({
       where: {
         orderId: order.id,
-        type: 'USAGE'
-      }
+        type: 'USAGE',
+      },
     });
+
+    if (!wasDeducted && usageLogs.length === 0) {
+      console.log(`[InventoryRestoration] Order #${order.orderNumber} was never deducted. Skipping restoration.`);
+      return { success: true, message: 'Never deducted.', itemsToEmit: [] };
+    }
 
     // Find any existing RESTORATION logs for this order to guarantee idempotency
     const existingRestorations = await db.inventoryLog.findMany({
       where: {
         orderId: order.id,
-        type: 'RESTORATION'
-      }
+        type: 'RESTORATION',
+      },
     });
 
-    // Restore MenuItem stock if not already restored
+    // Restore MenuItem stock for prepared portions that were deducted
     for (const orderItem of order.orderItems) {
       if (orderItem.menuItem) {
-        await db.menuItem.update({
-          where: { id: orderItem.menuItemId },
-          data: { stock: { increment: orderItem.quantity } }
-        });
+        const itemUsageLogs = usageLogs.filter(l => l.orderItemId === orderItem.id);
+        let cookedPortions = 0;
+        if (itemUsageLogs.length > 0 && orderItem.menuItem.recipeItems?.length > 0) {
+          const firstRecipe = orderItem.menuItem.recipeItems[0];
+          const matchedLog = itemUsageLogs.find(l => l.inventoryItemId === firstRecipe.inventoryItemId);
+          if (matchedLog && firstRecipe.quantity > 0) {
+            const rawUsed = Math.abs(matchedLog.changeQty);
+            cookedPortions = Math.min(orderItem.quantity, Math.round(rawUsed / firstRecipe.quantity));
+          }
+        }
+        const preparedToRestore = Math.max(0, orderItem.quantity - cookedPortions);
+        if (preparedToRestore > 0) {
+          await db.menuItem.update({
+            where: { id: orderItem.menuItemId },
+            data: { stock: { increment: preparedToRestore } },
+          });
+          console.log(`[InventoryRestoration] Restored ${preparedToRestore} prepared portion(s) for "${orderItem.nameSnapshot}" (Order #${order.orderNumber})`);
+        }
       }
     }
 
@@ -448,6 +517,17 @@ const restoreInventoryForOrder = async (orderId, userId = null, reason = 'Order 
         itemsToEmit.push(updatedInv);
       }
     }
+
+    // Record atomic idempotency status history entry (Rule 3)
+    await db.orderStatusHistory.create({
+      data: {
+        orderId: order.id,
+        previousStatus: order.status,
+        newStatus: 'INVENTORY_RESTORED',
+        changedByUserId: userId || null,
+        note: `Inventory restored for Order #${order.orderNumber}: ${reason}`,
+      },
+    });
 
     return { success: true, message: `Inventory restored for Order #${order.orderNumber}`, itemsToEmit };
   };

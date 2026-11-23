@@ -290,42 +290,86 @@ const createOrder = async (req, res) => {
           `;
         }
 
+        // Case 2: Lock MenuItem rows in ascending order to prevent race conditions on last portion
+        const sortedMenuItemIds = Array.from(mergedItemsMap.keys()).sort((a, b) => a - b);
+        if (sortedMenuItemIds.length > 0) {
+          await tx.$queryRaw`
+            SELECT id FROM "MenuItem"
+            WHERE id IN (${Prisma.join(sortedMenuItemIds)})
+            ORDER BY id ASC
+            FOR UPDATE;
+          `;
+        }
+
         let subtotal = 0.0;
         const orderItemsData = [];
 
         for (const [mId, qty] of mergedItemsMap) {
-          let menuItem = menuMap.get(mId);
-          if (!menuItem && tx.menuItem?.findUnique) {
-            menuItem = await tx.menuItem.findUnique({
-              where: { id: mId },
-              include: { recipeItems: { include: { inventoryItem: true } } },
-            });
-          }
+          // Re-fetch fresh menuItem under row lock
+          const menuItem = await tx.menuItem.findUnique({
+            where: { id: mId },
+            include: { recipeItems: { include: { inventoryItem: true } } },
+          });
+
           if (!menuItem || !menuItem.isActive) {
-            const err = new Error(`Menu item with ID ${mId} is not available.`);
+            const err = new Error('Sorry! This dish is temporarily unavailable right now.');
             err.code = 'ITEM_UNAVAILABLE';
             err.itemName = menuItem?.name || `Item #${mId}`;
             throw err;
           }
 
-          // Stock check: If recipe exists, verify ingredient stock levels
-          if (menuItem.recipeItems && menuItem.recipeItems.length > 0) {
+          // Rule 5: Calculate active pending unconfirmed orders under SELECT FOR UPDATE to prevent overselling
+          const pendingAgg = await tx.orderItem.aggregate({
+            where: {
+              menuItemId: mId,
+              order: {
+                status: { in: ['PENDING', 'PAYMENT_PENDING'] },
+              },
+            },
+            _sum: {
+              quantity: true,
+            },
+          });
+          const pendingReservedQty = pendingAgg._sum.quantity || 0;
+          const rawPreparedStock = Math.max(0, menuItem.stock ?? 0);
+          const effectivePreparedStock = Math.max(0, rawPreparedStock - pendingReservedQty);
+
+          // Rule 4: Partial prepared stock + cook-to-order fulfillment
+          const preparedToUse = Math.min(effectivePreparedStock, qty);
+          const cookToOrderQty = qty - preparedToUse;
+          const hasRecipes = menuItem.recipeItems && menuItem.recipeItems.length > 0;
+
+          if (cookToOrderQty > 0) {
+            if (!hasRecipes) {
+              const err = new Error(
+                effectivePreparedStock > 0
+                  ? `Only ${effectivePreparedStock} portion${effectivePreparedStock > 1 ? 's' : ''} available for "${menuItem.name}".`
+                  : 'Sorry! This dish is temporarily unavailable right now.'
+              );
+              err.code = effectivePreparedStock > 0 ? 'INSUFFICIENT_STOCK' : 'ITEM_UNAVAILABLE';
+              err.itemName = menuItem.name;
+              throw err;
+            }
+
+            // Cook-to-order: validate raw ingredients for cookToOrderQty only
             for (const recipe of menuItem.recipeItems) {
               const invItem = recipe.inventoryItem;
               if (!invItem) continue;
-              const rawNeeded = recipe.quantity * qty;
+              const rawNeeded = recipe.quantity * cookToOrderQty;
               let neededInInvUnit;
               try {
-                neededInInvUnit = convertUnit(rawNeeded, recipe.unit, invItem.unit, invItem.packageConversions);
+                neededInInvUnit = convertUnit(rawNeeded, recipe.unit, invItem.unit, invItem.packageConversions, invItem.name);
               } catch {
                 neededInInvUnit = rawNeeded;
               }
-              if (invItem.stockLevel < neededInInvUnit) {
-                throw new Error(`Insufficient inventory for "${invItem.name}". Needed: ${neededInInvUnit} ${invItem.unit}, Available: ${invItem.stockLevel} ${invItem.unit}.`);
+              if ((invItem.stockLevel ?? 0) < neededInInvUnit) {
+                console.warn(`[OrderCreation] Insufficient raw inventory for "${invItem.name}" (ID ${invItem.id}). Needed: ${neededInInvUnit} ${invItem.unit}, Available: ${invItem.stockLevel} ${invItem.unit}. Dish: "${menuItem.name}"`);
+                const err = new Error('Sorry! This dish is temporarily unavailable right now.');
+                err.code = 'ITEM_UNAVAILABLE';
+                err.itemName = menuItem.name;
+                throw err;
               }
             }
-          } else if (menuItem.stock > 0 && menuItem.stock < qty) {
-            throw new Error(`Insufficient stock for "${menuItem.name}". Only ${menuItem.stock} available.`);
           }
 
           const itemSubtotal = roundMoney(menuItem.price * qty);
@@ -347,6 +391,26 @@ const createOrder = async (req, res) => {
 
         const orderNumber = generateOrderNumber();
         const initialStatus = requestedMethod === 'COD' ? 'PENDING' : (paymentStatus === 'PENDING_VERIFICATION' ? 'PAYMENT_PENDING' : 'PENDING');
+
+        // Problem D: Compute roundNumber for add-on orders on active tables
+        let roundNumber = 1;
+        if (resolvedSessionId) {
+          const priorCount = await tx.order.count({
+            where: {
+              sessionId: resolvedSessionId,
+              status: { notIn: ['CANCELLED', 'REJECTED'] },
+            },
+          });
+          roundNumber = priorCount + 1;
+        } else if (resolvedTableId) {
+          const priorCount = await tx.order.count({
+            where: {
+              tableId: resolvedTableId,
+              status: { notIn: ['CANCELLED', 'REJECTED', 'COMPLETED'] },
+            },
+          });
+          roundNumber = priorCount + 1;
+        }
 
       const newOrder = await tx.order.create({
         data: {
@@ -422,10 +486,13 @@ const createOrder = async (req, res) => {
         }
       }
 
-      return withTableLabel({
+      const finalizedOrder = withTableLabel({
         ...updatedWithTracking,
         etaPrediction: etaSaved,
       });
+      finalizedOrder.roundNumber = roundNumber;
+      finalizedOrder.isAddOn = roundNumber > 1;
+      return finalizedOrder;
     }, TX_OPTIONS);
   });
 
@@ -812,7 +879,31 @@ const getAllOrders = async (req, res) => {
       paginatedAdminRequest ? prisma.order.count({ where: whereClause }) : Promise.resolve(null),
     ]);
 
-    const response = { orders: orders.map(withTableLabel) };
+    // Problem D: Enrich orders with roundNumber for KDS display and unified billing
+    const sessionOrderCounts = {};
+    const chronological = [...orders].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    const roundMap = new Map();
+    for (const o of chronological) {
+      const key = o.sessionId || (o.tableId ? `table_${o.tableId}` : null);
+      if (key) {
+        sessionOrderCounts[key] = (sessionOrderCounts[key] || 0) + 1;
+        roundMap.set(o.id, sessionOrderCounts[key]);
+      } else {
+        roundMap.set(o.id, 1);
+      }
+    }
+
+    const response = {
+      orders: orders.map((o) => {
+        const labeled = withTableLabel(o);
+        const rNum = roundMap.get(o.id) || 1;
+        return {
+          ...labeled,
+          roundNumber: rNum,
+          isAddOn: rNum > 1,
+        };
+      }),
+    };
     if (paginatedAdminRequest && exportAll !== 'true') {
       response.pagination = {
         ...pagination,
@@ -860,7 +951,36 @@ const getOrderById = async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized access to this order.' });
     }
 
-    return res.json({ order: withTableLabel(order) });
+    let roundNumber = 1;
+    let sessionOrders = [];
+    if (order.sessionId) {
+      const allSessionOrders = await prisma.order.findMany({
+        where: {
+          sessionId: order.sessionId,
+          status: { notIn: ['CANCELLED', 'REJECTED'] },
+        },
+        include: {
+          orderItems: { include: { menuItem: true } },
+          etaPrediction: true,
+          payment: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      const orderIdx = allSessionOrders.findIndex((o) => o.id === order.id);
+      roundNumber = orderIdx >= 0 ? orderIdx + 1 : 1;
+      sessionOrders = allSessionOrders.map((o, idx) => ({
+        ...withTableLabel(o),
+        roundNumber: idx + 1,
+        isAddOn: idx > 0,
+      }));
+    }
+
+    const trackedOrder = {
+      ...withTableLabel(order),
+      roundNumber,
+      isAddOn: roundNumber > 1,
+    };
+    return res.json({ order: trackedOrder, sessionOrders });
   } catch (error) {
     console.error('Get order by ID error:', error);
     return res.status(500).json({ error: 'Failed to retrieve order.' });

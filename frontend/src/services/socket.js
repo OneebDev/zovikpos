@@ -55,6 +55,20 @@ socket.on('disconnect', (reason) => {
   console.log('Disconnected from socket server:', reason);
 });
 
+// Mobile backgrounding & network change auto-reconnect (Problem C)
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !socket.connected) {
+      socket.connect();
+    }
+  });
+  window.addEventListener('online', () => {
+    if (!socket.connected) {
+      socket.connect();
+    }
+  });
+}
+
 export const connectSocket = (user) => {
   const nextUser = user || null;
   const token = getTokenForUser(nextUser);

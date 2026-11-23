@@ -83,7 +83,15 @@ const getOrCreateCart = async (sessionId) => {
     where: { sessionId },
     include: {
       items: {
-        include: { menuItem: true },
+        include: {
+          menuItem: {
+            include: {
+              recipeItems: {
+                include: { inventoryItem: true },
+              },
+            },
+          },
+        },
       },
     },
   });
@@ -97,7 +105,15 @@ const getOrCreateCart = async (sessionId) => {
       data: { sessionId },
       include: {
         items: {
-          include: { menuItem: true },
+          include: {
+            menuItem: {
+              include: {
+                recipeItems: {
+                  include: { inventoryItem: true },
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -110,26 +126,76 @@ const getOrCreateCart = async (sessionId) => {
  * Helper to check stock availability for a menu item based on recipes or static stock
  */
 const verifyStockForQty = (menuItem, qty) => {
-  if (menuItem.recipeItems && menuItem.recipeItems.length > 0) {
+  const preparedStock = Math.max(0, menuItem.stock ?? 0);
+  const hasRecipes = menuItem.recipeItems && menuItem.recipeItems.length > 0;
+
+  // 1. Prepared stock alone fully satisfies requested quantity
+  if (preparedStock >= qty) {
+    return null;
+  }
+
+  // 2. Rule 4: Partial prepared portion + cook-to-order remainder fulfillment
+  const remainderQty = qty - preparedStock;
+
+  if (hasRecipes) {
+    let bottleneckItem = null;
+    let minCookable = Infinity;
+
     for (const recipe of menuItem.recipeItems) {
       const invItem = recipe.inventoryItem;
       if (!invItem) continue;
-      const rawNeeded = recipe.quantity * qty;
-      let neededInInvUnit;
+
+      let neededForOneInInvUnit;
       try {
-        neededInInvUnit = convertUnit(rawNeeded, recipe.unit, invItem.unit, invItem.packageConversions);
+        neededForOneInInvUnit = convertUnit(recipe.quantity, recipe.unit, invItem.unit, invItem.packageConversions, invItem.name);
       } catch {
-        neededInInvUnit = rawNeeded;
+        neededForOneInInvUnit = recipe.quantity;
       }
-      if (invItem.stockLevel < neededInInvUnit) {
-        return `Insufficient inventory for "${invItem.name}". Needed: ${neededInInvUnit} ${invItem.unit}, Available: ${invItem.stockLevel} ${invItem.unit}.`;
+
+      const availableInStock = invItem.stockLevel ?? 0;
+      const possibleCookable = neededForOneInInvUnit > 0 ? Math.floor(availableInStock / neededForOneInInvUnit) : 0;
+      if (possibleCookable < minCookable) {
+        minCookable = possibleCookable;
+      }
+
+      const totalRawNeeded = neededForOneInInvUnit * remainderQty;
+      if (availableInStock < totalRawNeeded) {
+        bottleneckItem = invItem;
+        console.warn(`[CartStock] Insufficient inventory for "${invItem.name}" (ID ${invItem.id}). Remainder needed: ${totalRawNeeded} ${invItem.unit}, Available: ${availableInStock} ${invItem.unit}. Dish: "${menuItem.name}"`);
       }
     }
-    return null;
+
+    const safeCookable = minCookable === Infinity ? 0 : Math.max(0, minCookable);
+    const totalAvailable = preparedStock + safeCookable;
+
+    if (bottleneckItem || remainderQty > safeCookable) {
+      return {
+        customerError: totalAvailable > 0
+          ? `Only ${totalAvailable} portion${totalAvailable > 1 ? 's' : ''} available.`
+          : 'Sorry! This dish is temporarily unavailable right now.',
+        availableStock: totalAvailable,
+        code: totalAvailable > 0 ? 'INSUFFICIENT_STOCK' : 'ITEM_UNAVAILABLE',
+      };
+    }
+
+    return null; // Prepared + cooked portion fulfills full requested qty
   }
-  if (menuItem.stock > 0 && menuItem.stock < qty) {
-    return `Only ${menuItem.stock} units available in stock.`;
+
+  // 3. Static stock with no recipes
+  if (preparedStock <= 0) {
+    return {
+      customerError: 'Sorry! This dish is temporarily unavailable right now.',
+      availableStock: 0,
+      code: 'ITEM_UNAVAILABLE',
+    };
+  } else if (preparedStock < qty) {
+    return {
+      customerError: `Only ${preparedStock} portion${preparedStock > 1 ? 's' : ''} available.`,
+      availableStock: preparedStock,
+      code: 'INSUFFICIENT_STOCK',
+    };
   }
+
   return null;
 };
 
@@ -145,28 +211,49 @@ const getCart = async (req, res) => {
 
     const cart = await getOrCreateCart(sessionId);
 
-    // Calculate totals and check stock freshness
+    // Calculate totals, check stock freshness, and clamp quantity if stock dropped (Case 1)
     let subtotal = 0.0;
-    const items = cart.items.map((item) => {
+    const warnings = [];
+    const items = [];
+
+    for (const item of cart.items) {
+      let qty = item.quantity;
+      if (item.menuItem) {
+        const stockVerification = verifyStockForQty(item.menuItem, qty);
+        if (stockVerification && stockVerification.availableStock < qty) {
+          const avail = stockVerification.availableStock;
+          if (avail > 0) {
+            warnings.push(`"${item.menuItem.name}" quantity adjusted to ${avail} due to limited stock.`);
+            qty = avail;
+            await prisma.cartItem.update({
+              where: { id: item.id },
+              data: { quantity: avail }
+            }).catch(() => {});
+          } else {
+            warnings.push(`"${item.menuItem.name}" is temporarily out of stock.`);
+          }
+        }
+      }
+
       const itemPrice = item.menuItem?.price ?? item.price;
-      const itemSubtotal = itemPrice * item.quantity;
+      const itemSubtotal = itemPrice * qty;
       subtotal += itemSubtotal;
 
-      return {
+      items.push({
         id: item.id,
         menuItemId: item.menuItemId,
         name: item.menuItem?.name || 'Unknown Item',
         description: item.menuItem?.description,
         price: itemPrice,
-        quantity: item.quantity,
+        quantity: qty,
         subtotal: itemSubtotal,
         category: item.menuItem?.category,
         imageUrl: item.menuItem?.imageUrl,
         stock: item.menuItem?.stock ?? 0,
         isActive: item.menuItem?.isActive ?? true,
         prepTime: item.menuItem?.prepTime ?? 5,
-      };
-    });
+      });
+    }
 
     const tax = 0.0; // Can be adjusted if tax config is enabled
     const total = subtotal + tax;
@@ -180,6 +267,7 @@ const getCart = async (req, res) => {
         tax,
         total,
         itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
+        warnings,
         updatedAt: cart.updatedAt,
       },
     });
@@ -229,7 +317,7 @@ const addItemToCart = async (req, res) => {
 
     const stockError = verifyStockForQty(menuItem, parseInt(quantity, 10));
     if (stockError) {
-      return res.status(400).json({ error: stockError });
+      return res.status(400).json({ error: stockError.customerError, availableStock: stockError.availableStock, code: stockError.code });
     }
 
     const cart = await getOrCreateCart(sessionId);
@@ -261,7 +349,7 @@ const addItemToCart = async (req, res) => {
       }
       const updatedStockError = verifyStockForQty(menuItem, newQuantity);
       if (updatedStockError) {
-        return res.status(400).json({ error: updatedStockError });
+        return res.status(400).json({ error: updatedStockError.customerError, availableStock: updatedStockError.availableStock, code: updatedStockError.code });
       }
 
       await prisma.cartItem.update({
@@ -345,7 +433,7 @@ const updateCartItem = async (req, res) => {
       if (cartItem.menuItem) {
         const updateStockErr = verifyStockForQty(cartItem.menuItem, newQty);
         if (updateStockErr) {
-          return res.status(400).json({ error: updateStockErr });
+          return res.status(400).json({ error: updateStockErr.customerError, availableStock: updateStockErr.availableStock, code: updateStockErr.code });
         }
       }
 

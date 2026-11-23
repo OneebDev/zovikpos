@@ -570,3 +570,63 @@
 @media (prefers-reduced-motion: reduce) {
   .customer-modal--install .customer-modal__platform-indicator { transition: none; }
 }
+
+/* Inactivity Warning Modal (Problem B) */
+.customer-idle-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: fadeIn 0.2s ease-out;
+}
+.customer-idle-modal {
+  width: 100%;
+  max-width: 380px;
+  padding: 28px 24px;
+  text-align: center;
+  border-radius: 20px;
+  background: var(--surface, #1e1e1e);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+.customer-idle-modal__icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+.customer-idle-modal__title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text, #fff);
+  margin-bottom: 8px;
+}
+.customer-idle-modal__text {
+  font-size: 13px;
+  color: var(--text-secondary, #a8a29e);
+  margin-bottom: 20px;
+  line-height: 1.4;
+}
+.customer-idle-modal__btn {
+  width: 100%;
+  padding: 12px 20px;
+  border-radius: 12px;
+  background: var(--accent, #E85D2A);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+}
+.customer-idle-modal__btn:hover {
+  opacity: 0.95;
+  transform: translateY(-1px);
+}
+.customer-idle-modal__btn:active {
+  transform: translateY(0);
+}

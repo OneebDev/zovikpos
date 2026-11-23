@@ -292,7 +292,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
     isAvailable: true,
     imageUrl: '',
     variants: [
-      { id: null, ...parseVariantLabel('250 gm'), price: '' }
+      { id: null, ...parseVariantLabel('250 gm'), price: '', prepTime: '10', stock: '50' }
     ]
   });
 
@@ -332,7 +332,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
       isAvailable: true,
       imageUrl,
       variants: [
-        { id: null, ...parseVariantLabel('250 gm'), price: '' }
+        { id: null, ...parseVariantLabel('250 gm'), price: '', prepTime, stock }
       ]
     });
 
@@ -364,6 +364,8 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
         id: v.id,
         ...parseVariantLabel(v.unit),
         price: String(v.price ?? ''),
+        prepTime: String(v.prepTime ?? primary.prepTime ?? '10'),
+        stock: String(v.stock ?? primary.stock ?? '50'),
       })),
     });
 
@@ -396,6 +398,8 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
           id: variantItem.id,
           ...parseVariantLabel(variantItem.unit),
           price: String(variantItem.price ?? ''),
+          prepTime: String(variantItem.prepTime ?? '10'),
+          stock: String(variantItem.stock ?? '50'),
         }
       ]
     });
@@ -414,7 +418,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
       ...prev,
       variants: [
         ...prev.variants,
-        { id: null, ...parseVariantLabel('500 gm'), price: '' }
+        { id: null, ...parseVariantLabel('500 gm'), price: '', prepTime: prev.prepTime || '10', stock: prev.stock || '50' }
       ]
     }));
   };
@@ -519,9 +523,9 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
           price: parseFloat(v.price),
           unit: effectiveUnit || '1 No.',
           groupName: effectiveGroupName,
-          prepTime: parseInt(formData.prepTime, 10) || 10,
+          prepTime: parseInt(v.prepTime ?? formData.prepTime, 10) || 10,
           description: formData.description?.trim() || null,
-          stock: parseInt(formData.stock, 10) || 50,
+          stock: parseInt(v.stock ?? formData.stock, 10) || 0,
           isActive: formData.isAvailable,
           imageUrl: finalImageUrl || null,
         };
@@ -1170,7 +1174,7 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                     const labelErrorId = `variant-label-error-${idx}`;
                     const quantityUnit = NUMERIC_UNITS.includes(v.unit);
                     return (
-                      <div key={idx} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 p-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg sm:grid-cols-[minmax(0,1fr)_8rem_auto]">
+                      <div key={idx} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 p-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg sm:grid-cols-[minmax(0,1.2fr)_6rem_4.5rem_4.5rem_auto]">
                         <div className="col-span-2 min-w-0 sm:col-span-1">
                           <div className="flex min-w-0 items-start gap-2">
                             {quantityUnit && (
@@ -1247,7 +1251,35 @@ const AdminMenuView = ({ inventory = [], onRefresh, showToast }) => {
                             onChange={(event) => handleVariantChange(idx, 'price', event.target.value ? Math.floor(Math.abs(Number(event.target.value))) : '')}
                             placeholder="Price (Rs.)"
                             aria-label="Price (Rs.)"
-                            className="h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-color)] px-2.5 text-xs font-mono font-bold text-[var(--text-main)] outline-none focus-visible:border-orange-500 focus-visible:ring-2 focus-visible:ring-orange-500/35"
+                            className="h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-color)] px-2 text-xs font-mono font-bold text-[var(--text-main)] outline-none focus-visible:border-orange-500 focus-visible:ring-2 focus-visible:ring-orange-500/35"
+                          />
+                        </div>
+
+                        <div className="min-w-0 space-y-0.5">
+                          <input
+                            type="number"
+                            step="1"
+                            min="0"
+                            value={v.prepTime ?? ''}
+                            onChange={(event) => handleVariantChange(idx, 'prepTime', event.target.value ? Math.floor(Math.abs(Number(event.target.value))) : '')}
+                            placeholder="Prep (m)"
+                            aria-label="Prep time in minutes"
+                            title="Portion prep time in minutes"
+                            className="h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-color)] px-2 text-xs font-mono text-[var(--text-main)] outline-none focus-visible:border-orange-500 focus-visible:ring-2 focus-visible:ring-orange-500/35"
+                          />
+                        </div>
+
+                        <div className="min-w-0 space-y-0.5">
+                          <input
+                            type="number"
+                            step="1"
+                            min="0"
+                            value={v.stock ?? ''}
+                            onChange={(event) => handleVariantChange(idx, 'stock', event.target.value ? Math.floor(Math.abs(Number(event.target.value))) : '')}
+                            placeholder="Stock"
+                            aria-label="Daily prepared stock"
+                            title="Daily prepared stock / portions"
+                            className="h-11 w-full rounded-lg border border-[var(--border-color)] bg-[var(--bg-color)] px-2 text-xs font-mono text-[var(--text-main)] outline-none focus-visible:border-orange-500 focus-visible:ring-2 focus-visible:ring-orange-500/35"
                           />
                         </div>
 

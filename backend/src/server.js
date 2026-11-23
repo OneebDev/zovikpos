@@ -189,7 +189,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/eta', etaRoutes);
 
 // Health check endpoint for Heroku
-app.get('/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
   res.status(200).json({
     status: 'healthy',
     service: 'ZovikPOS Backend API',
